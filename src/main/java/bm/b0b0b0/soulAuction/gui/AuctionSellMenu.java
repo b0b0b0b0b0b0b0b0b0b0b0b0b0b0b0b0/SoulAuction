@@ -36,6 +36,7 @@ public final class AuctionSellMenu implements InventoryHolder {
     private int sellAmount;
     private ItemStack backingStack;
     private volatile boolean skipCloseReturn;
+    private volatile boolean reservedReleased;
 
     public AuctionSellMenu(UUID viewerId, String auctionId, AuctionService auctionService, MessageService messageService) {
         this(viewerId, auctionId, auctionService, messageService, 100, 0);
@@ -60,22 +61,35 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     public void syncAmountFromItem() {
+        reconcileBackingFromSlot();
+        clampSellAmount();
+        refresh();
+    }
+
+    private void reconcileBackingFromSlot() {
         ItemStack inSlot = inventory.getItem(ITEM_SLOT);
         if (inSlot == null || inSlot.isEmpty()) {
             backingStack = null;
-            sellAmount = 1;
-            refresh();
+            if (sellAmount < 1) {
+                sellAmount = 1;
+            }
             return;
         }
         if (backingStack == null || !backingStack.isSimilar(inSlot)) {
             backingStack = inSlot.clone();
             sellAmount = backingStack.getAmount();
-        } else if (inSlot.getAmount() > sellAmount) {
-            backingStack.setAmount(Math.max(backingStack.getAmount(), inSlot.getAmount()));
-            sellAmount = backingStack.getAmount();
+            return;
         }
-        clampSellAmount();
-        refresh();
+        int inAmount = inSlot.getAmount();
+        int reservedAmount = backingStack.getAmount();
+        if (inAmount > reservedAmount) {
+            backingStack = inSlot.clone();
+            sellAmount = inAmount;
+            return;
+        }
+        if (inAmount < sellAmount) {
+            sellAmount = inAmount;
+        }
     }
 
     public boolean hasBackingStack() {
@@ -87,7 +101,11 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     public boolean shouldReturnOnClose() {
-        return !skipCloseReturn;
+        return !skipCloseReturn && !reservedReleased;
+    }
+
+    public boolean isReservedReleased() {
+        return reservedReleased;
     }
 
     public int sellAmount() {
@@ -119,8 +137,14 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     public ItemStack takeReservedItem() {
+        if (reservedReleased) {
+            return null;
+        }
+        reconcileBackingFromSlot();
         ItemStack taken = backingStack;
         backingStack = null;
+        reservedReleased = true;
+        skipCloseReturn = true;
         inventory.setItem(ITEM_SLOT, null);
         if (taken == null || taken.isEmpty()) {
             return null;
@@ -177,6 +201,8 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     public void refresh() {
+        reconcileBackingFromSlot();
+        clampSellAmount();
         fillDecor();
         String formattedPrice = auctionService.formatPrice(price, auctionId, viewerId);
         Map<String, String> placeholders = Map.of("price", formattedPrice);
@@ -290,6 +316,7 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     private void changeAmount(int delta) {
+        reconcileBackingFromSlot();
         sellAmount += delta;
         clampSellAmount();
         refresh();
@@ -306,14 +333,16 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     private int maxStackAmount() {
-        if (backingStack != null && !backingStack.isEmpty()) {
-            return backingStack.getAmount();
-        }
         ItemStack inSlot = inventory.getItem(ITEM_SLOT);
-        if (inSlot == null || inSlot.isEmpty()) {
+        int inSlotAmount = inSlot == null || inSlot.isEmpty() ? 0 : inSlot.getAmount();
+        int backingAmount = backingStack == null || backingStack.isEmpty() ? 0 : backingStack.getAmount();
+        if (inSlotAmount <= 0 && backingAmount <= 0) {
             return 1;
         }
-        return inSlot.getAmount();
+        if (inSlotAmount > 0 && backingAmount > 0 && !backingStack.isSimilar(inSlot)) {
+            return inSlotAmount;
+        }
+        return Math.max(inSlotAmount, backingAmount);
     }
 
     private Map<String, String> amountPlaceholders() {

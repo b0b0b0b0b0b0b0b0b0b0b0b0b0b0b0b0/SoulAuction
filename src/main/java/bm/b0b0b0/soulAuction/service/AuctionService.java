@@ -360,12 +360,18 @@ public final class AuctionService {
         if (item == null || item.isEmpty()) {
             return SellResult.failure(SellFailure.EMPTY_HAND);
         }
-        int sellAmount = amount <= 0 ? item.getAmount() : Math.min(amount, item.getAmount());
-        if (amount > 0 && amount > item.getAmount()) {
+        if (item.getAmount() < 1) {
+            return SellResult.failure(SellFailure.INVALID_AMOUNT);
+        }
+        int sellAmount = amount <= 0 ? item.getAmount() : amount;
+        if (sellAmount < 1 || sellAmount > item.getAmount()) {
             return SellResult.failure(SellFailure.INVALID_AMOUNT);
         }
         ItemStack soldItem = item.clone();
         soldItem.setAmount(sellAmount);
+        if (soldItem.getAmount() != sellAmount) {
+            return SellResult.failure(SellFailure.INVALID_AMOUNT);
+        }
         Object sellLock = playerSellLocks.computeIfAbsent(seller.getUniqueId(), ignored -> new Object());
         synchronized (sellLock) {
             SellResult result = listingCreator.create(seller, auctionId, price, soldItem, definitionLookup());

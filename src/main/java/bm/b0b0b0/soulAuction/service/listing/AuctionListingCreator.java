@@ -79,6 +79,21 @@ public final class AuctionListingCreator {
         if (!redisSellGuard.tryAcquireSellLock(seller.getUniqueId())) {
             return SellResult.failure(SellFailure.SELL_LOCK_FAILED);
         }
+        try {
+            return createLocked(seller, auctionId, price, soldItem, definitions);
+        } finally {
+            redisSellGuard.releaseSellLock(seller.getUniqueId());
+        }
+    }
+
+    private SellResult createLocked(Player seller, String auctionId, int price, ItemStack soldItem, DefinitionLookup definitions) {
+        if (soldItem == null || soldItem.getType().isAir() || soldItem.getAmount() < 1) {
+            return SellResult.failure(SellFailure.EMPTY_HAND);
+        }
+        AuctionSettings settings = configSupplier.get().auctionSettings();
+        if (!settings.limits.allowSelling) {
+            return SellResult.failure(SellFailure.SELL_DISABLED);
+        }
         AuctionDefinitionSettings definition = definitions.find(auctionId);
         if (definition == null) {
             return SellResult.failure(SellFailure.AUCTION_NOT_FOUND);

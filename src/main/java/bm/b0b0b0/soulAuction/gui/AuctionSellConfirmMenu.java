@@ -29,6 +29,7 @@ public final class AuctionSellConfirmMenu implements InventoryHolder {
     private final Inventory inventory;
     private ItemStack heldStack;
     private volatile boolean skipCloseReturn;
+    private volatile boolean heldReleased;
 
     public AuctionSellConfirmMenu(
             UUID viewerId,
@@ -80,13 +81,26 @@ public final class AuctionSellConfirmMenu implements InventoryHolder {
     }
 
     public boolean shouldReturnOnClose() {
-        return !skipCloseReturn;
+        return !skipCloseReturn && !heldReleased;
+    }
+
+    public boolean isHeldReleased() {
+        return heldReleased;
     }
 
     public ItemStack takeHeldStack() {
+        if (heldReleased) {
+            return null;
+        }
+        heldReleased = true;
+        skipCloseReturn = true;
         ItemStack taken = heldStack;
         heldStack = null;
-        return taken;
+        inventory.setItem(ITEM_SLOT, null);
+        if (taken == null || taken.isEmpty()) {
+            return null;
+        }
+        return taken.clone();
     }
 
     public ItemStack heldStack() {

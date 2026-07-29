@@ -21,6 +21,7 @@ import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.block.Container;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -127,6 +128,10 @@ public final class AuctionGuiListener implements Listener {
         if (!(event.getView().getTopInventory().getHolder(false) instanceof AuctionSellMenu sellMenu)) {
             return;
         }
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        boolean touchesItemSlot = false;
         for (int rawSlot : event.getRawSlots()) {
             if (rawSlot >= event.getView().getTopInventory().getSize()) {
                 continue;
@@ -135,7 +140,45 @@ public final class AuctionGuiListener implements Listener {
                 event.setCancelled(true);
                 return;
             }
+            touchesItemSlot = true;
         }
+        if (!touchesItemSlot) {
+            event.setCancelled(true);
+            return;
+        }
+        PluginSchedulers.runLater(plugin, player, 1L, sellMenu::syncAmountFromItem);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onSellMenuClickMonitor(InventoryClickEvent event) {
+        if (!(event.getView().getTopInventory().getHolder(false) instanceof AuctionSellMenu sellMenu)) {
+            return;
+        }
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        int topSize = event.getView().getTopInventory().getSize();
+        boolean affectsItemSlot = false;
+        if (event.getClickedInventory() == event.getView().getTopInventory()
+                && event.getSlot() == sellMenu.itemSlot()) {
+            affectsItemSlot = true;
+        }
+        if (event.getClickedInventory() instanceof PlayerInventory
+                && event.isShiftClick()
+                && event.getCurrentItem() != null
+                && !event.getCurrentItem().isEmpty()) {
+            affectsItemSlot = true;
+        }
+        if (event.getClick() == org.bukkit.event.inventory.ClickType.NUMBER_KEY) {
+            int hotbar = event.getHotbarButton();
+            if (hotbar >= 0 && event.getRawSlot() < topSize && event.getRawSlot() == sellMenu.itemSlot()) {
+                affectsItemSlot = true;
+            }
+        }
+        if (!affectsItemSlot) {
+            return;
+        }
+        PluginSchedulers.runLater(plugin, player, 1L, sellMenu::syncAmountFromItem);
     }
 
     @EventHandler
@@ -145,6 +188,9 @@ public final class AuctionGuiListener implements Listener {
         }
         if (event.getInventory().getHolder(false) instanceof AuctionSellConfirmMenu confirmMenu) {
             if (!confirmMenu.shouldReturnOnClose()) {
+                return;
+            }
+            if (confirmMenu.isHeldReleased()) {
                 return;
             }
             returnHeldStack(player, confirmMenu.takeHeldStack());
@@ -159,6 +205,10 @@ public final class AuctionGuiListener implements Listener {
         if (!sellMenu.shouldReturnOnClose()) {
             return;
         }
+        if (sellMenu.isReservedReleased()) {
+            return;
+        }
+        sellMenu.syncAmountFromItem();
         ItemStack reserved = sellMenu.takeReservedItem();
         returnHeldStack(player, reserved);
     }
@@ -196,20 +246,22 @@ public final class AuctionGuiListener implements Listener {
     }
 
     private void openSellConfirm(Player player, AuctionSellMenu setupMenu) {
+        if (!player.getUniqueId().equals(setupMenu.viewerId())) {
+            return;
+        }
         setupMenu.syncAmountFromItem();
-        ItemStack stack = setupMenu.reservedItem();
+        ItemStack stack = setupMenu.takeReservedItem();
         if (stack == null || stack.isEmpty()) {
             messageService.send(player, "error-sell-menu-no-item");
             return;
         }
-        stack = setupMenu.takeReservedItem();
-        setupMenu.skipCloseReturn();
+        int sellAmount = Math.min(Math.max(1, setupMenu.sellAmount()), stack.getAmount());
         AuctionSellConfirmMenu confirmMenu = new AuctionSellConfirmMenu(
                 player.getUniqueId(),
                 setupMenu.auctionId(),
                 stack,
                 setupMenu.price(),
-                setupMenu.sellAmount(),
+                sellAmount,
                 auctionService,
                 messageService
         );
@@ -513,11 +565,20 @@ public final class AuctionGuiListener implements Listener {
     }
 
     private void handleSellClick(InventoryClickEvent event, Player player, AuctionSellMenu menu) {
+        if (!player.getUniqueId().equals(menu.viewerId())) {
+            event.setCancelled(true);
+            return;
+        }
         if (event.isShiftClick()) {
             event.setCancelled(true);
             return;
         }
         if (event.getClickedInventory() instanceof PlayerInventory) {
+            return;
+        }
+        if (event.getClick() == org.bukkit.event.inventory.ClickType.DOUBLE_CLICK
+                || event.getClick() == org.bukkit.event.inventory.ClickType.SWAP_OFFHAND) {
+            event.setCancelled(true);
             return;
         }
         int slot = event.getSlot();
@@ -532,7 +593,7 @@ public final class AuctionGuiListener implements Listener {
                     return;
                 }
             }
-            PluginSchedulers.run(plugin, player, menu::syncAmountFromItem);
+            PluginSchedulers.runLater(plugin, player, 1L, menu::syncAmountFromItem);
             return;
         }
         event.setCancelled(true);
@@ -548,26 +609,35 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         if (action == AuctionSellMenu.MenuAction.TO_CONFIRM) {
+            menu.syncAmountFromItem();
             openSellConfirm(player, menu);
             return;
         }
     }
 
     private void handleSellConfirmClick(InventoryClickEvent event, Player player, AuctionSellConfirmMenu menu) {
+        if (!player.getUniqueId().equals(menu.viewerId())) {
+            event.setCancelled(true);
+            return;
+        }
         if (event.getClickedInventory() instanceof PlayerInventory) {
+            event.setCancelled(true);
+            return;
+        }
+        if (event.getClick() == org.bukkit.event.inventory.ClickType.DOUBLE_CLICK
+                || event.getClick() == org.bukkit.event.inventory.ClickType.SWAP_OFFHAND) {
+            event.setCancelled(true);
             return;
         }
         event.setCancelled(true);
         int slot = event.getSlot();
         if (menu.isExit(slot)) {
-            menu.skipCloseReturn();
             ItemStack stack = menu.takeHeldStack();
             returnHeldStack(player, stack);
             openBrowser(player, menu.auctionId());
             return;
         }
         if (menu.isNo(slot)) {
-            menu.skipCloseReturn();
             ItemStack stack = menu.takeHeldStack();
             openSellSetup(player, menu.auctionId(), stack, menu.price(), menu.sellAmount());
             return;
@@ -584,7 +654,6 @@ public final class AuctionGuiListener implements Listener {
         int sellAmount = Math.min(menu.sellAmount(), stack.getAmount());
         ItemStack sold = stack.clone();
         sold.setAmount(sellAmount);
-        menu.skipCloseReturn();
         SellResult result = auctionService.createListingFromItem(
                 player,
                 menu.auctionId(),

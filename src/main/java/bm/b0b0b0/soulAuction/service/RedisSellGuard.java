@@ -79,6 +79,14 @@ public final class RedisSellGuard {
         localLocks.releaseListingLock(listingId);
     }
 
+    public void releaseSellLock(UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        localLocks.releaseSellLock(playerId);
+        releaseDistributed("soulauction:sell-lock:" + playerId);
+    }
+
     public void publishCacheInvalidate(String auctionId) {
         if (plugin == null || jedisPool == null || !pubSubEnabled) {
             return;
