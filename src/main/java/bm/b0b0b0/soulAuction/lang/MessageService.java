@@ -57,6 +57,24 @@ public final class MessageService {
         return output;
     }
 
+    public List<Component> componentsFromTemplates(List<String> templates, Map<String, String> placeholders) {
+        if (templates == null || templates.isEmpty()) {
+            return List.of();
+        }
+        List<Component> output = new ArrayList<>(templates.size());
+        for (String line : templates) {
+            if (line == null || line.isBlank()) {
+                continue;
+            }
+            String formatted = line.replace("{prefix}", template("prefix"));
+            for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+                formatted = formatted.replace("{" + entry.getKey() + "}", entry.getValue());
+            }
+            output.add(miniMessage.deserialize(formatted));
+        }
+        return output;
+    }
+
     public String raw(String key) {
         return template(key);
     }

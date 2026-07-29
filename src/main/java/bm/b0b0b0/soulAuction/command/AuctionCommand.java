@@ -6,10 +6,17 @@ import bm.b0b0b0.soulAuction.gui.PlayerRecordsMenu;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
+import bm.b0b0b0.soulAuction.model.result.CancelFailure;
+import bm.b0b0b0.soulAuction.model.result.CancelResult;
+import bm.b0b0b0.soulAuction.model.result.ClaimResult;
+import bm.b0b0b0.soulAuction.model.result.SellFailure;
+import bm.b0b0b0.soulAuction.model.result.SellResult;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterState;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
@@ -29,12 +36,14 @@ public final class AuctionCommand implements CommandExecutor {
     private static final String PERMISSION_CANCEL_ANY = "soulauction.command.cancel.any";
     private static final String PERMISSION_LIMIT = "soulauction.command.limit";
     private static final String PERMISSION_RELOAD = "soulauction.command.reload";
+    private static final String PERMISSION_ADMIN = "soulauction.command.admin";
 
     private final JavaPlugin plugin;
     private final Supplier<PluginConfig> configSupplier;
     private final MessageService messageService;
     private final AuctionService auctionService;
     private final Runnable reloadAction;
+    private final AuctionAdminCommand adminCommand;
 
     public AuctionCommand(
             JavaPlugin plugin,
@@ -48,6 +57,7 @@ public final class AuctionCommand implements CommandExecutor {
         this.messageService = messageService;
         this.auctionService = auctionService;
         this.reloadAction = reloadAction;
+        this.adminCommand = new AuctionAdminCommand(plugin, messageService, auctionService);
     }
 
     @Override
@@ -57,6 +67,12 @@ public final class AuctionCommand implements CommandExecutor {
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("limit")) {
             return handleLimit(sender, args);
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("purge")) {
+            return adminCommand.purge(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("admin")) {
+            return adminCommand.handle(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
         }
         if (!(sender instanceof Player player)) {
             sender.sendMessage(messageService.component("error-only-player"));
@@ -133,6 +149,8 @@ public final class AuctionCommand implements CommandExecutor {
             return true;
         }
         auctionService.setBrowsePreferences(player.getUniqueId(), new AuctionService.BrowsePreferences(auctionId, 0, query));
+        BrowseFilterState current = auctionService.browseFilterState(player.getUniqueId());
+        auctionService.setBrowseFilterState(player.getUniqueId(), current.withSearch(query));
         return openAuction(player, auctionId);
     }
 
@@ -246,7 +264,7 @@ public final class AuctionCommand implements CommandExecutor {
             player.sendMessage(messageService.component("error-invalid-price"));
             return true;
         }
-        AuctionService.SellResult result = auctionService.createListing(player, auctionId, price);
+        SellResult result = auctionService.createListing(player, auctionId, price);
         if (!result.success()) {
             sendSellError(player, result.failure());
             return true;
@@ -290,7 +308,7 @@ public final class AuctionCommand implements CommandExecutor {
             return true;
         }
         boolean claimAll = args.length > 1 && args[1].equalsIgnoreCase("all");
-        AuctionService.ClaimResult result = auctionService.claim(player, claimAll);
+        ClaimResult result = auctionService.claim(player, claimAll);
         if (result.claimed() == 0 && result.failed() == 0) {
             player.sendMessage(messageService.component("claim-empty"));
             return true;
@@ -315,9 +333,9 @@ public final class AuctionCommand implements CommandExecutor {
             return true;
         }
         boolean canCancelAny = player.hasPermission(PERMISSION_CANCEL_ANY);
-        AuctionService.CancelResult result = auctionService.cancelListing(player, listingId, canCancelAny);
+        CancelResult result = auctionService.cancelListing(player, listingId, canCancelAny);
         if (!result.success()) {
-            if (result.failure() == AuctionService.CancelFailure.NOT_OWNER) {
+            if (result.failure() == CancelFailure.NOT_OWNER) {
                 player.sendMessage(messageService.component("error-cancel-not-owner"));
             } else {
                 player.sendMessage(messageService.component("error-listing-unavailable"));
@@ -347,6 +365,10 @@ public final class AuctionCommand implements CommandExecutor {
         var prefs = auctionService.consumeBrowsePreferences(player.getUniqueId());
         int page = prefs.map(AuctionService.BrowsePreferences::page).orElse(0);
         String search = prefs.map(AuctionService.BrowsePreferences::searchQuery).orElse(null);
+        if (search != null && !search.isBlank()) {
+            BrowseFilterState current = auctionService.browseFilterState(player.getUniqueId());
+            auctionService.setBrowseFilterState(player.getUniqueId(), current.withSearch(search));
+        }
         AuctionBrowserMenu menu = new AuctionBrowserMenu(
                 player.getUniqueId(),
                 auctionId,
@@ -368,22 +390,7 @@ public final class AuctionCommand implements CommandExecutor {
         }
     }
 
-    private void sendSellError(Player player, AuctionService.SellFailure failure) {
-        String key = switch (failure) {
-            case SELL_DISABLED -> "error-sell-disabled";
-            case SELL_LOCK_FAILED -> "error-sell-lock-failed";
-            case SELL_DISABLED_IN_AUCTION -> "error-sell-disabled-in-auction";
-            case SELL_PERMISSION_DENIED -> "error-sell-auction-denied";
-            case AUCTION_NOT_FOUND -> "error-auction-not-found";
-            case INVALID_PRICE -> "error-invalid-price";
-            case ECONOMY_UNAVAILABLE -> "error-economy-unavailable";
-            case AUCTION_LIMIT_REACHED -> "error-auction-limit";
-            case GLOBAL_LIMIT_REACHED -> "error-global-limit";
-            case BLOCKED_ITEM -> "error-blocked-item";
-            case EMPTY_HAND -> "error-main-hand-empty";
-            case PRICE_TOO_LOW -> "error-price-too-low";
-            case PRICE_TOO_HIGH -> "error-price-too-high";
-        };
-        player.sendMessage(messageService.component(key));
+    private void sendSellError(Player player, SellFailure failure) {
+        player.sendMessage(messageService.component(failure.messageKey()));
     }
 }

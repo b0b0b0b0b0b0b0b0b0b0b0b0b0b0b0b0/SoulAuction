@@ -27,6 +27,7 @@ public final class PlayerRecordsMenu implements InventoryHolder {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("dd.MM HH:mm");
 
     private final UUID viewerId;
+    private final UUID subjectId;
     private final String auctionId;
     private final PlayerHistoryView view;
     private final AuctionService auctionService;
@@ -41,12 +42,35 @@ public final class PlayerRecordsMenu implements InventoryHolder {
             MessageService messageService
     ) {
         this.viewerId = viewerId;
+        this.subjectId = viewerId;
         this.auctionId = auctionId;
         this.view = view;
         this.auctionService = auctionService;
         this.messageService = messageService;
         this.inventory = Bukkit.createInventory(this, 54, messageService.component(titleKey(view)));
         refresh();
+    }
+
+    public PlayerRecordsMenu(
+            UUID viewerId,
+            UUID subjectId,
+            String auctionId,
+            PlayerHistoryView view,
+            AuctionService auctionService,
+            MessageService messageService
+    ) {
+        this.viewerId = viewerId;
+        this.subjectId = subjectId == null ? viewerId : subjectId;
+        this.auctionId = auctionId;
+        this.view = view;
+        this.auctionService = auctionService;
+        this.messageService = messageService;
+        this.inventory = Bukkit.createInventory(this, 54, messageService.component(titleKey(view)));
+        refresh();
+    }
+
+    public UUID subjectId() {
+        return subjectId;
     }
 
     @Override
@@ -83,7 +107,7 @@ public final class PlayerRecordsMenu implements InventoryHolder {
     }
 
     private void fillSelling() {
-        List<AuctionListing> listings = auctionService.myListings(viewerId, auctionId);
+        List<AuctionListing> listings = auctionService.myListings(subjectId, auctionId);
         for (int i = 0; i < listings.size() && i < 45; i++) {
             AuctionListing listing = listings.get(i);
             ItemStack item = ItemStackCodec.decode(listing.itemBase64());
@@ -100,7 +124,7 @@ public final class PlayerRecordsMenu implements InventoryHolder {
     }
 
     private void fillExpired() {
-        List<ClaimEntry> claims = auctionService.expiredClaims(viewerId);
+        List<ClaimEntry> claims = auctionService.expiredClaims(subjectId);
         int slotIndex = 0;
         for (ClaimEntry claim : claims) {
             if (slotIndex >= 45) {
@@ -124,14 +148,14 @@ public final class PlayerRecordsMenu implements InventoryHolder {
     }
 
     private void fillPurchased() {
-        List<DealHistoryEntry> entries = auctionService.playerPurchases(viewerId, auctionId, 45);
+        List<DealHistoryEntry> entries = auctionService.playerPurchases(subjectId, auctionId, 45);
         for (int i = 0; i < entries.size(); i++) {
             inventory.setItem(i, dealPaper(entries.get(i), true));
         }
     }
 
     private void fillMySales() {
-        List<DealHistoryEntry> entries = auctionService.playerSalesHistory(viewerId, auctionId, 45);
+        List<DealHistoryEntry> entries = auctionService.playerSalesHistory(subjectId, auctionId, 45);
         for (int i = 0; i < entries.size(); i++) {
             inventory.setItem(i, dealPaper(entries.get(i), false));
         }

@@ -2,6 +2,14 @@ package bm.b0b0b0.soulAuction.gui;
 
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.model.result.CancelFailure;
+import bm.b0b0b0.soulAuction.model.result.CancelResult;
+import bm.b0b0b0.soulAuction.model.result.ClaimResult;
+import bm.b0b0b0.soulAuction.model.result.EditPriceResult;
+import bm.b0b0b0.soulAuction.model.result.PurchaseFailure;
+import bm.b0b0b0.soulAuction.model.result.PurchaseResult;
+import bm.b0b0b0.soulAuction.model.result.SellFailure;
+import bm.b0b0b0.soulAuction.model.result.SellResult;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
@@ -48,6 +56,13 @@ public final class AuctionGuiListener implements Listener {
         }
         if (event.getView().getTopInventory().getHolder(false) instanceof AuctionBrowserMenu browserMenu) {
             handleBrowserClick(event, player, browserMenu);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder(false) instanceof AuctionPriceFilterMenu priceFilterMenu) {
+            event.setCancelled(true);
+            if (!(event.getClickedInventory() instanceof PlayerInventory)) {
+                priceFilterMenu.click(event.getSlot());
+            }
             return;
         }
         if (event.getView().getTopInventory().getHolder(false) instanceof AuctionSellMenu sellMenu) {
@@ -146,6 +161,15 @@ public final class AuctionGuiListener implements Listener {
                 menu.refresh();
                 return;
             }
+            if (event.isShiftClick() && event.isRightClick()) {
+                boolean added = auctionService.toggleFavoriteSeller(player.getUniqueId(), listing.sellerId());
+                player.sendMessage(messageService.component(
+                        added ? "favorite-added" : "favorite-removed",
+                        Map.of("seller", listing.sellerName())
+                ));
+                menu.refresh();
+                return;
+            }
             if (event.isRightClick()) {
                 ItemStack clicked = event.getView().getTopInventory().getItem(slot);
                 if (openContainerPreviewIfPossible(player, menu, clicked)) {
@@ -198,7 +222,7 @@ public final class AuctionGuiListener implements Listener {
         if (!menu.isYes(slot)) {
             return;
         }
-        AuctionService.PurchaseResult result = auctionService.purchase(player, menu.listingId());
+        PurchaseResult result = auctionService.purchase(player, menu.listingId());
         if (!result.success()) {
             sendPurchaseError(player, result.failure());
             openBrowser(player, menu.auctionId());
@@ -229,7 +253,7 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         if (menu.isRemove(slot)) {
-            AuctionService.CancelResult result = auctionService.cancelListing(player, menu.listingId(), false);
+            CancelResult result = auctionService.cancelListing(player, menu.listingId(), false);
             if (!result.success()) {
                 player.sendMessage(messageService.component("error-listing-unavailable"));
                 openBrowser(player, menu.auctionId());
@@ -244,17 +268,17 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         if (menu.isApply(slot)) {
-            AuctionService.EditPriceResult result = auctionService.editListingPrice(player, menu.listingId(), menu.editedPrice());
-            if (result == AuctionService.EditPriceResult.SUCCESS) {
+            EditPriceResult result = auctionService.editListingPrice(player, menu.listingId(), menu.editedPrice());
+            if (result == EditPriceResult.SUCCESS) {
                 player.sendMessage(messageService.component("owner-price-updated"));
                 menu.refresh();
                 return;
             }
-            if (result == AuctionService.EditPriceResult.INVALID_PRICE) {
+            if (result == EditPriceResult.INVALID_PRICE) {
                 player.sendMessage(messageService.component("error-invalid-price"));
                 return;
             }
-            if (result == AuctionService.EditPriceResult.NOT_OWNER) {
+            if (result == EditPriceResult.NOT_OWNER) {
                 player.sendMessage(messageService.component("error-cancel-not-owner"));
                 openBrowser(player, menu.auctionId());
                 return;
@@ -403,7 +427,7 @@ public final class AuctionGuiListener implements Listener {
                 player.sendMessage(messageService.component("error-sell-menu-no-item"));
                 return;
             }
-            AuctionService.SellResult result = auctionService.createListingFromItem(
+            SellResult result = auctionService.createListingFromItem(
                     player,
                     menu.auctionId(),
                     menu.price(),
@@ -436,36 +460,11 @@ public final class AuctionGuiListener implements Listener {
         }
     }
 
-    private void sendPurchaseError(Player player, AuctionService.PurchaseFailure failure) {
-        String key = switch (failure) {
-            case LISTING_UNAVAILABLE -> "error-listing-unavailable";
-            case AUCTION_NOT_FOUND -> "error-auction-not-found";
-            case BUY_DISABLED_IN_AUCTION -> "error-buy-disabled-in-auction";
-            case BUY_PERMISSION_DENIED -> "error-buy-auction-denied";
-            case ECONOMY_UNAVAILABLE -> "error-economy-unavailable";
-            case OWN_LISTING -> "error-own-listing";
-            case NOT_ENOUGH_MONEY -> "error-not-enough-money";
-            case INVENTORY_FULL -> "error-inventory-full";
-        };
-        player.sendMessage(messageService.component(key));
+    private void sendPurchaseError(Player player, PurchaseFailure failure) {
+        player.sendMessage(messageService.component(failure.messageKey()));
     }
 
-    private void sendSellError(Player player, AuctionService.SellFailure failure) {
-        String key = switch (failure) {
-            case SELL_DISABLED -> "error-sell-disabled";
-            case SELL_LOCK_FAILED -> "error-sell-lock-failed";
-            case SELL_DISABLED_IN_AUCTION -> "error-sell-disabled-in-auction";
-            case SELL_PERMISSION_DENIED -> "error-sell-auction-denied";
-            case AUCTION_NOT_FOUND -> "error-auction-not-found";
-            case INVALID_PRICE -> "error-invalid-price";
-            case ECONOMY_UNAVAILABLE -> "error-economy-unavailable";
-            case AUCTION_LIMIT_REACHED -> "error-auction-limit";
-            case GLOBAL_LIMIT_REACHED -> "error-global-limit";
-            case BLOCKED_ITEM -> "error-blocked-item";
-            case EMPTY_HAND -> "error-main-hand-empty";
-            case PRICE_TOO_LOW -> "error-price-too-low";
-            case PRICE_TOO_HIGH -> "error-price-too-high";
-        };
-        player.sendMessage(messageService.component(key));
+    private void sendSellError(Player player, SellFailure failure) {
+        player.sendMessage(messageService.component(failure.messageKey()));
     }
 }

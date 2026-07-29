@@ -5,6 +5,8 @@ import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.AuctionSort;
+import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterState;
+import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowsePage;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import java.util.EnumMap;
@@ -34,6 +36,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
     private AuctionSort sort;
     private AuctionCategory category;
     private String searchQuery;
+    private boolean favoritesOnly;
 
     public AuctionBrowserMenu(
             UUID viewerId,
@@ -69,7 +72,13 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         this.page = Math.max(0, initialPage);
         this.sort = AuctionSort.NEWEST;
         this.category = AuctionCategory.ALL;
-        this.searchQuery = searchQuery == null || searchQuery.isBlank() ? null : searchQuery.trim();
+        BrowseFilterState filterState = auctionService.browseFilterState(viewerId);
+        this.favoritesOnly = filterState.favoritesOnly();
+        if (searchQuery == null || searchQuery.isBlank()) {
+            this.searchQuery = filterState.searchQuery();
+        } else {
+            this.searchQuery = searchQuery.trim();
+        }
         refresh();
     }
 
@@ -117,6 +126,40 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             refresh();
             return;
         }
+        if (slot == guiSettings.searchSlot) {
+            org.bukkit.entity.Player player = org.bukkit.Bukkit.getPlayer(viewerId);
+            if (player != null) {
+                auctionService.beginPendingChatSearch(viewerId, auctionId);
+                player.closeInventory();
+                player.sendMessage(messageService.component("search-chat-prompt"));
+            }
+            return;
+        }
+        if (slot == guiSettings.favoritesSlot) {
+            favoritesOnly = !favoritesOnly;
+            BrowseFilterState current = auctionService.browseFilterState(viewerId);
+            auctionService.setBrowseFilterState(
+                    viewerId,
+                    new BrowseFilterState(current.searchQuery(), favoritesOnly, current.minPrice(), current.maxPrice())
+            );
+            page = 0;
+            refresh();
+            return;
+        }
+        if (slot == guiSettings.priceFilterSlot) {
+            org.bukkit.entity.Player player = org.bukkit.Bukkit.getPlayer(viewerId);
+            if (player != null) {
+                AuctionPriceFilterMenu filterMenu = new AuctionPriceFilterMenu(
+                        viewerId,
+                        auctionId,
+                        auctionService,
+                        messageService,
+                        guiSettings
+                );
+                player.openInventory(filterMenu.getInventory());
+            }
+            return;
+        }
         Long listingId = listingBySlot.get(slot);
         if (listingId == null) {
             return;
@@ -136,7 +179,13 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         inventory.clear();
         List<Integer> listingSlots = guiSettings.listingSlots;
         int visible = listingSlots.size();
-        AuctionService.BrowsePage browsePage = auctionService.browsePage(auctionId, sort, category, page, visible, searchQuery);
+        BrowseFilterState state = auctionService.browseFilterState(viewerId);
+        BrowseFilterState filter = new BrowseFilterState(
+                searchQuery, favoritesOnly, state.minPrice(), state.maxPrice()
+        );
+        BrowsePage browsePage = auctionService.browsePage(
+                auctionId, sort, category, page, visible, searchQuery, viewerId, filter
+        );
         int total = browsePage.total();
         int maxPage = Math.max(0, (total - 1) / visible);
         List<AuctionListing> listings = browsePage.listings();
@@ -146,10 +195,23 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             ItemStack item = ItemStackCodec.decode(listing.itemBase64());
             ItemMeta itemMeta = item.getItemMeta();
             if (itemMeta != null) {
-                itemMeta.lore(messageService.components(
+                java.util.ArrayList<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>(messageService.components(
                         "listing-lore",
                         Map.of("seller", listing.sellerName(), "price", auctionService.formatPrice(listing.price(), listing.economyType()))
                 ));
+                lore.addAll(messageService.componentsFromTemplates(
+                        auctionService.listingLoreTemplate(auctionId),
+                        Map.of(
+                                "seller", listing.sellerName(),
+                                "price", auctionService.formatPrice(listing.price(), listing.economyType()),
+                                "id", String.valueOf(listing.listingId()),
+                                "auction", listing.auctionId()
+                        )
+                ));
+                if (auctionService.isFavoriteSeller(viewerId, listing.sellerId())) {
+                    lore.add(messageService.component("listing-lore-favorite"));
+                }
+                itemMeta.lore(lore);
                 item.setItemMeta(itemMeta);
             }
             inventory.setItem(slot, item);
@@ -197,11 +259,41 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                         messageService.component("button-category", Map.of("category", categoryName(category)))
                 )
         );
+        inventory.setItem(
+                guiSettings.searchSlot,
+                actionItem(
+                        guiSettings.searchMaterial,
+                        guiSettings.searchCustomModelData,
+                        messageService.component("button-search")
+                )
+        );
+        inventory.setItem(
+                guiSettings.favoritesSlot,
+                actionItem(
+                        guiSettings.favoritesMaterial,
+                        guiSettings.favoritesCustomModelData,
+                        favoritesOnly
+                                ? messageService.component("button-favorites-on")
+                                : messageService.component("button-favorites-off")
+                )
+        );
+        inventory.setItem(
+                guiSettings.priceFilterSlot,
+                actionItem(
+                        guiSettings.priceFilterMaterial,
+                        guiSettings.priceFilterCustomModelData,
+                        messageService.component("button-price-filter")
+                )
+        );
     }
 
     public void nextPage() {
         int visible = guiSettings.listingSlots.size();
-        int total = auctionService.count(auctionId, category, searchQuery);
+        BrowseFilterState state = auctionService.browseFilterState(viewerId);
+        BrowseFilterState filter = new BrowseFilterState(
+                searchQuery, favoritesOnly, state.minPrice(), state.maxPrice()
+        );
+        int total = auctionService.count(auctionId, category, searchQuery, viewerId, filter);
         int maxPage = Math.max(0, (total - 1) / visible);
         if (page < maxPage) {
             page++;

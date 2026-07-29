@@ -1,5 +1,6 @@
 package bm.b0b0b0.soulAuction.service;
 
+import bm.b0b0b0.soulAuction.model.AuditLogEntry;
 import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
@@ -13,7 +14,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -27,14 +30,23 @@ public final class AuctionRuntimeStorage {
     private final Path historyFile;
     private final Path limitsFile;
     private final Path notificationsFile;
+    private final Path favoritesFile;
+    private final Path cooldownsFile;
+    private final Path runtimeBlacklistFile;
+    private final Path auditFile;
     private final Gson gson;
     private final ExecutorService ioExecutor;
     private final List<ClaimEntry> claims;
     private final List<DealHistoryEntry> history;
     private final List<LimitOverrideEntry> limitOverrides;
     private final List<PendingSaleNotification> notifications;
+    private final Map<UUID, List<UUID>> favoriteSellersByViewer;
+    private final Map<UUID, Long> lastSellEpochMillis;
+    private final List<UUID> runtimeBlacklist;
+    private final List<AuditLogEntry> auditLog;
     private final AtomicLong nextClaimId;
     private final AtomicLong nextHistoryId;
+    private final AtomicLong nextAuditId;
     private final AtomicBoolean flushScheduled;
 
     public AuctionRuntimeStorage(Path dataFolder) {
@@ -43,14 +55,23 @@ public final class AuctionRuntimeStorage {
         this.historyFile = dataDirectory.resolve("history.json");
         this.limitsFile = dataDirectory.resolve("limits.json");
         this.notificationsFile = dataDirectory.resolve("notifications.json");
+        this.favoritesFile = dataDirectory.resolve("favorites.json");
+        this.cooldownsFile = dataDirectory.resolve("sell-cooldowns.json");
+        this.runtimeBlacklistFile = dataDirectory.resolve("runtime-blacklist.json");
+        this.auditFile = dataDirectory.resolve("audit.json");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
         this.ioExecutor = Executors.newSingleThreadExecutor();
         this.claims = new ArrayList<>();
         this.history = new ArrayList<>();
         this.limitOverrides = new ArrayList<>();
         this.notifications = new ArrayList<>();
+        this.favoriteSellersByViewer = new HashMap<>();
+        this.lastSellEpochMillis = new HashMap<>();
+        this.runtimeBlacklist = new ArrayList<>();
+        this.auditLog = new ArrayList<>();
         this.nextClaimId = new AtomicLong(1L);
         this.nextHistoryId = new AtomicLong(1L);
+        this.nextAuditId = new AtomicLong(1L);
         this.flushScheduled = new AtomicBoolean(false);
     }
 
@@ -62,6 +83,10 @@ public final class AuctionRuntimeStorage {
                 loadHistorySync();
                 loadLimitsSync();
                 loadNotificationsSync();
+                loadFavoritesSync();
+                loadCooldownsSync();
+                loadRuntimeBlacklistSync();
+                loadAuditSync();
                 flushSync();
             } catch (Exception exception) {
                 throw new IllegalStateException(exception);
@@ -245,6 +270,133 @@ public final class AuctionRuntimeStorage {
         return output;
     }
 
+    public boolean toggleFavoriteSeller(UUID viewerId, UUID sellerId) {
+        synchronized (favoriteSellersByViewer) {
+            List<UUID> favorites = favoriteSellersByViewer.computeIfAbsent(viewerId, ignored -> new ArrayList<>());
+            if (favorites.contains(sellerId)) {
+                favorites.remove(sellerId);
+                scheduleDebouncedFlush();
+                return false;
+            }
+            favorites.add(sellerId);
+            scheduleDebouncedFlush();
+            return true;
+        }
+    }
+
+    public boolean isFavoriteSeller(UUID viewerId, UUID sellerId) {
+        synchronized (favoriteSellersByViewer) {
+            List<UUID> favorites = favoriteSellersByViewer.get(viewerId);
+            return favorites != null && favorites.contains(sellerId);
+        }
+    }
+
+    public List<UUID> favoriteSellers(UUID viewerId) {
+        synchronized (favoriteSellersByViewer) {
+            List<UUID> favorites = favoriteSellersByViewer.get(viewerId);
+            if (favorites == null || favorites.isEmpty()) {
+                return List.of();
+            }
+            return List.copyOf(favorites);
+        }
+    }
+
+    public void recordSell(UUID sellerId) {
+        synchronized (lastSellEpochMillis) {
+            lastSellEpochMillis.put(sellerId, System.currentTimeMillis());
+        }
+        scheduleDebouncedFlush();
+    }
+
+    public long lastSellEpochMillis(UUID sellerId) {
+        synchronized (lastSellEpochMillis) {
+            return lastSellEpochMillis.getOrDefault(sellerId, 0L);
+        }
+    }
+
+    public void addRuntimeBlacklist(UUID playerId) {
+        synchronized (runtimeBlacklist) {
+            if (!runtimeBlacklist.contains(playerId)) {
+                runtimeBlacklist.add(playerId);
+            }
+        }
+        scheduleDebouncedFlush();
+    }
+
+    public void removeRuntimeBlacklist(UUID playerId) {
+        synchronized (runtimeBlacklist) {
+            runtimeBlacklist.remove(playerId);
+        }
+        scheduleDebouncedFlush();
+    }
+
+    public boolean isRuntimeBlacklisted(UUID playerId) {
+        synchronized (runtimeBlacklist) {
+            return runtimeBlacklist.contains(playerId);
+        }
+    }
+
+    public void addAudit(UUID actorId, String actorName, String action, String details) {
+        AuditLogEntry entry = new AuditLogEntry(
+                nextAuditId.getAndIncrement(),
+                System.currentTimeMillis(),
+                actorId,
+                actorName == null ? "-" : actorName,
+                action,
+                details == null ? "" : details
+        );
+        synchronized (auditLog) {
+            auditLog.add(entry);
+            if (auditLog.size() > 3000) {
+                auditLog.remove(0);
+            }
+        }
+        scheduleDebouncedFlush();
+    }
+
+    public List<AuditLogEntry> recentAudit(int limit) {
+        synchronized (auditLog) {
+            int size = auditLog.size();
+            if (size == 0) {
+                return List.of();
+            }
+            int take = Math.min(limit, size);
+            List<AuditLogEntry> output = new ArrayList<>(take);
+            for (int i = size - 1; i >= 0 && output.size() < take; i--) {
+                output.add(auditLog.get(i));
+            }
+            return output;
+        }
+    }
+
+    public int purgeHistoryOlderThan(long maxAgeMillis) {
+        long cutoff = System.currentTimeMillis() - Math.max(0L, maxAgeMillis);
+        int removed;
+        synchronized (history) {
+            int before = history.size();
+            history.removeIf(entry -> entry.createdAtEpochMillis() < cutoff);
+            removed = before - history.size();
+        }
+        if (removed > 0) {
+            scheduleDebouncedFlush();
+        }
+        return removed;
+    }
+
+    public ClaimEntry removeClaimById(long claimId) {
+        synchronized (claims) {
+            for (int i = 0; i < claims.size(); i++) {
+                ClaimEntry entry = claims.get(i);
+                if (entry.claimId() == claimId) {
+                    claims.remove(i);
+                    scheduleDebouncedFlush();
+                    return entry;
+                }
+            }
+        }
+        return null;
+    }
+
     private void scheduleDebouncedFlush() {
         if (!flushScheduled.compareAndSet(false, true)) {
             return;
@@ -384,6 +536,78 @@ public final class AuctionRuntimeStorage {
         }
     }
 
+    private void loadFavoritesSync() throws Exception {
+        synchronized (favoriteSellersByViewer) {
+            favoriteSellersByViewer.clear();
+            if (!Files.exists(favoritesFile)) {
+                return;
+            }
+            try (Reader reader = Files.newBufferedReader(favoritesFile)) {
+                FavoritesPayload payload = gson.fromJson(reader, FavoritesPayload.class);
+                if (payload != null && payload.entries != null) {
+                    for (FavoriteEntry entry : payload.entries) {
+                        favoriteSellersByViewer.put(entry.viewerId, new ArrayList<>(entry.sellerIds));
+                    }
+                }
+            }
+        }
+    }
+
+    private void loadCooldownsSync() throws Exception {
+        synchronized (lastSellEpochMillis) {
+            lastSellEpochMillis.clear();
+            if (!Files.exists(cooldownsFile)) {
+                return;
+            }
+            try (Reader reader = Files.newBufferedReader(cooldownsFile)) {
+                CooldownsPayload payload = gson.fromJson(reader, CooldownsPayload.class);
+                if (payload != null && payload.entries != null) {
+                    for (CooldownEntry entry : payload.entries) {
+                        lastSellEpochMillis.put(entry.playerId, entry.lastSellEpochMillis);
+                    }
+                }
+            }
+        }
+    }
+
+    private void loadRuntimeBlacklistSync() throws Exception {
+        synchronized (runtimeBlacklist) {
+            runtimeBlacklist.clear();
+            if (!Files.exists(runtimeBlacklistFile)) {
+                return;
+            }
+            try (Reader reader = Files.newBufferedReader(runtimeBlacklistFile)) {
+                BlacklistPayload payload = gson.fromJson(reader, BlacklistPayload.class);
+                if (payload != null && payload.playerIds != null) {
+                    runtimeBlacklist.addAll(payload.playerIds);
+                }
+            }
+        }
+    }
+
+    private void loadAuditSync() throws Exception {
+        synchronized (auditLog) {
+            auditLog.clear();
+            if (!Files.exists(auditFile)) {
+                return;
+            }
+            try (Reader reader = Files.newBufferedReader(auditFile)) {
+                AuditPayload payload = gson.fromJson(reader, AuditPayload.class);
+                long maxId = 0L;
+                if (payload != null && payload.entries != null) {
+                    auditLog.addAll(payload.entries);
+                    for (AuditLogEntry entry : payload.entries) {
+                        if (entry.auditId() > maxId) {
+                            maxId = entry.auditId();
+                        }
+                    }
+                }
+                long suggested = payload != null ? payload.nextAuditId : 1L;
+                nextAuditId.set(Math.max(maxId + 1L, Math.max(1L, suggested)));
+            }
+        }
+    }
+
     private void flushSync() throws Exception {
         synchronized (claims) {
             ClaimsPayload claimsPayload = new ClaimsPayload();
@@ -415,6 +639,41 @@ public final class AuctionRuntimeStorage {
                 gson.toJson(notificationsPayload, writer);
             }
         }
+        synchronized (favoriteSellersByViewer) {
+            FavoritesPayload favoritesPayload = new FavoritesPayload();
+            favoritesPayload.entries = new ArrayList<>();
+            for (Map.Entry<UUID, List<UUID>> entry : favoriteSellersByViewer.entrySet()) {
+                favoritesPayload.entries.add(new FavoriteEntry(entry.getKey(), new ArrayList<>(entry.getValue())));
+            }
+            try (Writer writer = Files.newBufferedWriter(favoritesFile)) {
+                gson.toJson(favoritesPayload, writer);
+            }
+        }
+        synchronized (lastSellEpochMillis) {
+            CooldownsPayload cooldownsPayload = new CooldownsPayload();
+            cooldownsPayload.entries = new ArrayList<>();
+            for (Map.Entry<UUID, Long> entry : lastSellEpochMillis.entrySet()) {
+                cooldownsPayload.entries.add(new CooldownEntry(entry.getKey(), entry.getValue()));
+            }
+            try (Writer writer = Files.newBufferedWriter(cooldownsFile)) {
+                gson.toJson(cooldownsPayload, writer);
+            }
+        }
+        synchronized (runtimeBlacklist) {
+            BlacklistPayload blacklistPayload = new BlacklistPayload();
+            blacklistPayload.playerIds = new ArrayList<>(runtimeBlacklist);
+            try (Writer writer = Files.newBufferedWriter(runtimeBlacklistFile)) {
+                gson.toJson(blacklistPayload, writer);
+            }
+        }
+        synchronized (auditLog) {
+            AuditPayload auditPayload = new AuditPayload();
+            auditPayload.nextAuditId = nextAuditId.get();
+            auditPayload.entries = new ArrayList<>(auditLog);
+            try (Writer writer = Files.newBufferedWriter(auditFile)) {
+                gson.toJson(auditPayload, writer);
+            }
+        }
     }
 
     private static final class ClaimsPayload {
@@ -433,5 +692,42 @@ public final class AuctionRuntimeStorage {
 
     private static final class NotificationsPayload {
         private List<PendingSaleNotification> entries;
+    }
+
+    private static final class FavoriteEntry {
+        private UUID viewerId;
+        private List<UUID> sellerIds;
+
+        private FavoriteEntry(UUID viewerId, List<UUID> sellerIds) {
+            this.viewerId = viewerId;
+            this.sellerIds = sellerIds;
+        }
+    }
+
+    private static final class FavoritesPayload {
+        private List<FavoriteEntry> entries;
+    }
+
+    private static final class CooldownEntry {
+        private UUID playerId;
+        private long lastSellEpochMillis;
+
+        private CooldownEntry(UUID playerId, long lastSellEpochMillis) {
+            this.playerId = playerId;
+            this.lastSellEpochMillis = lastSellEpochMillis;
+        }
+    }
+
+    private static final class CooldownsPayload {
+        private List<CooldownEntry> entries;
+    }
+
+    private static final class BlacklistPayload {
+        private List<UUID> playerIds;
+    }
+
+    private static final class AuditPayload {
+        private long nextAuditId;
+        private List<AuditLogEntry> entries;
     }
 }

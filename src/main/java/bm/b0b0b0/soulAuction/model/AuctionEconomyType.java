@@ -4,7 +4,9 @@ import java.util.Locale;
 
 public enum AuctionEconomyType {
     VAULT,
-    PLAYER_POINTS;
+    PLAYER_POINTS,
+    EXPERIENCE,
+    COINS_ENGINE;
 
     public static AuctionEconomyType fromString(String value) {
         if (value == null) {

@@ -5,7 +5,7 @@
 ## Возможности
 
 - Несколько независимых аукционов с разными ID.
-- Отдельная валюта на каждый аукцион: `VAULT` или `PLAYER_POINTS`.
+- Отдельная валюта на каждый аукцион: `VAULT`, `PLAYER_POINTS`, `EXPERIENCE`, `COINS_ENGINE`.
 - Выбор хранилища: `JSON`, `YAML`, `SQLITE`, `MYSQL`.
 - SQL-режимы работают через асинхронный пул соединений.
 - Redis lock перед продажей (для `MYSQL`) для дополнительной anti-dupe защиты.
@@ -13,7 +13,14 @@
 - TTL лотов с автопросрочкой и отправкой предметов в claim-хранилище.
 - Комиссия продажи на уровне каждого аукциона.
 - История сделок и действий (sold/cancelled/expired).
-- Blacklist материалов по каждому аукциону.
+- Whitelist материалов (глобальный режим) + blacklist по аукциону.
+- Cooldown продажи, blacklist игроков, запрет продажи в выбранных мирах.
+- Кэш листингов + Redis pub/sub инвалидация между серверами (`storage.redis.pubSubEnabled`).
+- GUI: поиск через чат, избранные продавцы, фильтр цены, Shift+ПКМ — в избранное.
+- Приоритет сортировки лотов: `soulauction.priority.N`.
+- Broadcast крупных продаж (`announcements` в config).
+- Админ: history/selling/blacklist/recover/audit, `/ah purge <days>`.
+- Поиск учитывает ItemsAdder/Oraxen/MMOItems PDC (best-effort).
 - Динамические лимиты лотов по правам:
   - `soulauction.<auctionId>.<N>`
   - `soulauction.all.<N>`
@@ -44,6 +51,12 @@
 ### Админы
 
 - `/ah reload` — перезагрузка конфигов и сообщений.
+- `/ah purge <days>` — очистка истории сделок старше N дней.
+- `/ah admin history <player> [limit]` — история игрока в чат.
+- `/ah admin selling <player> [auctionId]` — GUI активных лотов игрока.
+- `/ah admin blacklist add|remove <player>` — runtime blacklist продажи.
+- `/ah admin recover <claimId>` — выдать claim в инвентарь.
+- `/ah admin audit [limit]` — последние audit-записи.
 
 ## Права
 
@@ -52,6 +65,8 @@
 - `soulauction.command.ah` — использовать `/ah`.
 - `soulauction.command.sell` — использовать `/ah sell`.
 - `soulauction.command.reload` — использовать `/ah reload`.
+- `soulauction.command.admin` — админ-команды и purge.
+- `soulauction.priority.10` — выше приоритет в сортировке лотах (любое N).
 - `soulauction.command.my` — использовать `/ah my`.
 - `soulauction.command.claim` — использовать `/ah claim`.
 - `soulauction.command.cancel.any` — снимать чужие лоты командой `/ah cancel`.

@@ -57,7 +57,8 @@ public final class AuctionExternalNotifier {
                 null,
                 null,
                 listing.price(),
-                itemLine
+                itemLine,
+                item == null || item.isEmpty() ? null : item.getType().name()
         );
     }
 
@@ -86,7 +87,8 @@ public final class AuctionExternalNotifier {
                 buyerId,
                 buyerName,
                 listing.price(),
-                itemLine
+                itemLine,
+                item.getType().name()
         );
     }
 
@@ -111,7 +113,8 @@ public final class AuctionExternalNotifier {
                 null,
                 null,
                 listing.price(),
-                itemLine
+                itemLine,
+                item.getType().name()
         );
     }
 
@@ -125,7 +128,8 @@ public final class AuctionExternalNotifier {
             UUID buyerId,
             String buyerName,
             int priceValue,
-            String itemLine
+            String itemLine,
+            String itemMaterial
     ) {
         PluginSchedulers.runAsync(plugin, () -> {
             AuctionSettings settings = settingsSupplier.get();
@@ -139,7 +143,8 @@ public final class AuctionExternalNotifier {
                     buyerName,
                     priceValue,
                     itemLine,
-                    eventType
+                    eventType,
+                    itemMaterial
             );
             sendTelegram(settings.notifications.telegram, plainText);
         });
@@ -155,7 +160,8 @@ public final class AuctionExternalNotifier {
             String buyerName,
             int price,
             String itemLine,
-            String eventType
+            String eventType,
+            String itemMaterial
     ) {
         if (!discord.enabled || discord.webhookUrl == null || discord.webhookUrl.isBlank()) {
             return;
@@ -176,6 +182,11 @@ public final class AuctionExternalNotifier {
             fields.add(field("Цена", String.valueOf(price), true));
             fields.add(field("Предмет", truncate(itemLine, 256), false));
             embed.add("fields", fields);
+            if (itemMaterial != null && !itemMaterial.isBlank()) {
+                JsonObject image = new JsonObject();
+                image.addProperty("url", "https://mc-heads.net/minecraft/item/" + itemMaterial.toLowerCase());
+                embed.add("image", image);
+            }
             JsonArray embeds = new JsonArray();
             embeds.add(embed);
             JsonObject payload = new JsonObject();

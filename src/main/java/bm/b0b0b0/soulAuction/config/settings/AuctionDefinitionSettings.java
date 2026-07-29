@@ -16,9 +16,13 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
     @Comment({
             @CommentValue("Economy mode for this auction"),
             @CommentValue("VAULT - server money via Vault"),
-            @CommentValue("PLAYER_POINTS - points via PlayerPoints")
+            @CommentValue("PLAYER_POINTS - points via PlayerPoints"),
+            @CommentValue("EXPERIENCE - player levels (online payout only)"),
+            @CommentValue("COINS_ENGINE - CoinsEngine currency")
     })
     public String economy = "VAULT";
+    @Comment({@CommentValue("CoinsEngine currency for this auction when economy is COINS_ENGINE")})
+    public String coinsEngineCurrency = "";
 
     @Comment({@CommentValue("Allow buying in this auction")})
     public boolean buyEnabled = true;
@@ -55,6 +59,18 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
             @CommentValue("Use Bukkit Material names")
     })
     public List<String> blockedMaterials = List.of("BEDROCK", "BARRIER");
+
+    @Comment({
+            @CommentValue("Allowed materials when global security.materialWhitelistMode is true"),
+            @CommentValue("Empty list means nothing can be sold in whitelist mode")
+    })
+    public List<String> allowedMaterials = List.of();
+
+    @Comment({
+            @CommentValue("Optional MiniMessage lore lines appended to listing item in browser GUI"),
+            @CommentValue("Placeholders: {seller}, {price}, {id}, {auction}")
+    })
+    public List<String> listingLoreTemplate = List.of();
 
     public AuctionDefinitionSettings() {
         super(SoulAuctionSerializerConfig.INSTANCE);

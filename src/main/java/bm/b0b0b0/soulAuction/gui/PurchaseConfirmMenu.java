@@ -1,6 +1,7 @@
 package bm.b0b0b0.soulAuction.gui;
 
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.model.result.PurchaseQuote;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import java.util.Map;
 import java.util.UUID;
@@ -60,7 +61,7 @@ public final class PurchaseConfirmMenu implements InventoryHolder {
     public void refresh() {
         inventory.clear();
         Player buyer = Bukkit.getPlayer(viewerId);
-        AuctionService.PurchaseQuote quote = buyer == null ? null : auctionService.quotePurchase(buyer, listingId);
+        PurchaseQuote quote = buyer == null ? null : auctionService.quotePurchase(buyer, listingId);
         String price = quote == null ? "?" : auctionService.formatPrice(quote.totalCharge(), quote.listing().economyType());
         String basePrice = quote == null ? "?" : auctionService.formatPrice(quote.listing().price(), quote.listing().economyType());
         String buyTax = quote == null ? "0" : String.valueOf(quote.buyTax());

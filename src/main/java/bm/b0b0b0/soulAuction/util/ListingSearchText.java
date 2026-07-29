@@ -24,6 +24,7 @@ public final class ListingSearchText {
         if (meta != null && meta.hasDisplayName()) {
             builder.append(' ').append(PLAIN.serialize(meta.displayName()).toLowerCase(Locale.ROOT));
         }
+        builder.append(CustomItemDisplay.extraSearchTags(item));
         return builder.toString().trim();
     }
 

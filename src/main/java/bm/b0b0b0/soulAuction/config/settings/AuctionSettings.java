@@ -29,6 +29,18 @@ public final class AuctionSettings extends YamlSerializable {
     @Comment({@CommentValue("Discord and Telegram notifications (async HTTP, no extra libraries)")})
     public NotificationsSettings notifications = new NotificationsSettings();
 
+    @NewLine
+    @Comment({@CommentValue("Sell restrictions, cooldowns and player blacklist")})
+    public SecuritySettings security = new SecuritySettings();
+
+    @NewLine
+    @Comment({@CommentValue("In-game broadcast on large sales")})
+    public AnnouncementSettings announcements = new AnnouncementSettings();
+
+    @NewLine
+    @Comment({@CommentValue("CoinsEngine default currency id when economy is COINS_ENGINE")})
+    public String coinsEngineCurrency = "coins";
+
     public AuctionSettings() {
         super(SoulAuctionSerializerConfig.INSTANCE);
     }
@@ -105,6 +117,34 @@ public final class AuctionSettings extends YamlSerializable {
         public int timeoutMs = 1500;
         @Comment({@CommentValue("Sell lock TTL in ms")})
         public long sellLockMillis = 2500L;
+        @NewLine
+        @Comment({@CommentValue("Pub/sub channel for cache invalidation across servers (MYSQL + redis)")})
+        public boolean pubSubEnabled = false;
+        @Comment({@CommentValue("Redis channel name")})
+        public String pubSubChannel = "soulauction:cache";
+    }
+
+    public static final class SecuritySettings {
+
+        @Comment({@CommentValue("Seconds between listing creations per player, 0 disables")})
+        public int sellCooldownSeconds = 0;
+        @Comment({@CommentValue("World names where selling is forbidden")})
+        public List<String> blockedSellWorlds = List.of();
+        @Comment({
+                @CommentValue("If true, only materials listed in auction allowedMaterials may be sold"),
+                @CommentValue("When false, blacklist mode uses blockedMaterials per auction")
+        })
+        public boolean materialWhitelistMode = false;
+        @Comment({@CommentValue("UUIDs blocked from selling (config); admins can extend at runtime")})
+        public List<String> playerBlacklist = List.of();
+    }
+
+    public static final class AnnouncementSettings {
+
+        @Comment({@CommentValue("Broadcast to server when a listing is sold")})
+        public boolean enabled = true;
+        @Comment({@CommentValue("Minimum sale price to announce, 0 = all sales")})
+        public int minPrice = 5000;
     }
 
     public static final class NotificationsSettings {

@@ -25,8 +25,11 @@ public final class GuiGeneralSettings extends YamlSerializable {
     public int previousPageSlot = 45;
     public int historySlot = 46;
     public int categorySlot = 47;
+    public int searchSlot = 48;
     public int refreshSlot = 49;
+    public int favoritesSlot = 50;
     public int sortSlot = 51;
+    public int priceFilterSlot = 52;
     public int nextPageSlot = 53;
 
     @NewLine
@@ -34,8 +37,11 @@ public final class GuiGeneralSettings extends YamlSerializable {
     public String previousPageMaterial = "LIGHT_GRAY_DYE";
     public String historyMaterial = "BOOK";
     public String categoryMaterial = "CHEST";
+    public String searchMaterial = "OAK_SIGN";
     public String refreshMaterial = "SUNFLOWER";
+    public String favoritesMaterial = "NETHER_STAR";
     public String sortMaterial = "COMPASS";
+    public String priceFilterMaterial = "GOLD_NUGGET";
     public String nextPageMaterial = "GRAY_DYE";
 
     @NewLine
@@ -46,6 +52,9 @@ public final class GuiGeneralSettings extends YamlSerializable {
     public int categoryCustomModelData = -1;
     public int sortCustomModelData = -1;
     public int refreshCustomModelData = -1;
+    public int searchCustomModelData = -1;
+    public int favoritesCustomModelData = -1;
+    public int priceFilterCustomModelData = -1;
 
     public GuiGeneralSettings() {
         super(SoulAuctionSerializerConfig.INSTANCE);

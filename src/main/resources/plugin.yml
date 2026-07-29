@@ -3,7 +3,7 @@ version: '1.0'
 main: bm.b0b0b0.soulAuction.SoulAuction
 api-version: '1.21'
 authors: [ b0b0b0 ]
-softdepend: [ Vault, PlayerPoints, PlaceholderAPI ]
+softdepend: [ Vault, PlayerPoints, PlaceholderAPI, CoinsEngine ]
 libraries:
   - net.elytrium:serializer:1.1.1
   - com.google.code.gson:gson:2.11.0
@@ -14,7 +14,7 @@ libraries:
 commands:
   ah:
     description: Open auction menu
-    usage: /ah [auctionId|search|page|selling|expired|purchased|history|sell|my|claim|cancel|limit|reload]
+    usage: /ah [auctionId|search|page|selling|expired|purchased|history|sell|my|claim|cancel|limit|purge|admin|reload]
     aliases: [ax]
 permissions:
   soulauction.command.ah:
@@ -31,3 +31,8 @@ permissions:
     default: op
   soulauction.command.reload:
     default: op
+  soulauction.command.admin:
+    default: op
+  soulauction.priority.1:
+    default: false
+    description: Higher listing sort priority (use soulauction.priority.N)
