@@ -1,0 +1,21 @@
+package bm.b0b0b0.soulAuction.model;
+
+import java.util.Locale;
+
+public enum AuctionEconomyType {
+    VAULT,
+    PLAYER_POINTS;
+
+    public static AuctionEconomyType fromString(String value) {
+        if (value == null) {
+            return VAULT;
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        for (AuctionEconomyType type : values()) {
+            if (type.name().equals(normalized)) {
+                return type;
+            }
+        }
+        return VAULT;
+    }
+}

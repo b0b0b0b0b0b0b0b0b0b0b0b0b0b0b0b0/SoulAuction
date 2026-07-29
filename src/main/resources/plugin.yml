@@ -1,0 +1,33 @@
+name: SoulAuction
+version: '1.0'
+main: bm.b0b0b0.soulAuction.SoulAuction
+api-version: '1.21'
+authors: [ b0b0b0 ]
+softdepend: [ Vault, PlayerPoints, PlaceholderAPI ]
+libraries:
+  - net.elytrium:serializer:1.1.1
+  - com.google.code.gson:gson:2.11.0
+  - com.zaxxer:HikariCP:5.1.0
+  - com.mysql:mysql-connector-j:8.4.0
+  - org.xerial:sqlite-jdbc:3.46.0.0
+  - redis.clients:jedis:5.2.0
+commands:
+  ah:
+    description: Open auction menu
+    usage: /ah [auctionId|sell <price> [auctionId]|sell <auctionId> <price>|my [auctionId]|claim [all]|cancel <id>|limit ...|reload]
+    aliases: [ax]
+permissions:
+  soulauction.command.ah:
+    default: true
+  soulauction.command.sell:
+    default: true
+  soulauction.command.my:
+    default: true
+  soulauction.command.claim:
+    default: true
+  soulauction.command.cancel.any:
+    default: op
+  soulauction.command.limit:
+    default: op
+  soulauction.command.reload:
+    default: op
