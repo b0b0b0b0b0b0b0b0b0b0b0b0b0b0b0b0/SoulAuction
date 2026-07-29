@@ -12,13 +12,16 @@ import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
+import bm.b0b0b0.soulAuction.util.ListingSearchText;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -34,6 +37,11 @@ public final class AuctionService {
     private final PermissionLimitResolver permissionLimitResolver;
     private final RedisSellGuard redisSellGuard;
     private final AuctionRuntimeStorage runtimeStorage;
+    private final TaxPolicyResolver taxPolicyResolver;
+    private final PriceLimitResolver priceLimitResolver;
+    private final ConcurrentHashMap<UUID, BrowsePreferences> browsePreferences;
+    private final ConcurrentHashMap<UUID, Object> playerSellLocks;
+    private final ConcurrentHashMap<Long, Object> listingPurchaseLocks;
 
     public AuctionService(
             AuctionRepository repository,
@@ -42,7 +50,9 @@ public final class AuctionService {
             PlayerPointsBridge playerPointsBridge,
             PermissionLimitResolver permissionLimitResolver,
             RedisSellGuard redisSellGuard,
-            AuctionRuntimeStorage runtimeStorage
+            AuctionRuntimeStorage runtimeStorage,
+            TaxPolicyResolver taxPolicyResolver,
+            PriceLimitResolver priceLimitResolver
     ) {
         this.repository = repository;
         this.configSupplier = configSupplier;
@@ -51,6 +61,30 @@ public final class AuctionService {
         this.permissionLimitResolver = permissionLimitResolver;
         this.redisSellGuard = redisSellGuard;
         this.runtimeStorage = runtimeStorage;
+        this.taxPolicyResolver = taxPolicyResolver;
+        this.priceLimitResolver = priceLimitResolver;
+        this.browsePreferences = new ConcurrentHashMap<>();
+        this.playerSellLocks = new ConcurrentHashMap<>();
+        this.listingPurchaseLocks = new ConcurrentHashMap<>();
+    }
+
+    public record BrowsePage(int total, List<AuctionListing> listings) {
+    }
+
+    public record BrowsePreferences(String auctionId, int page, String searchQuery) {
+    }
+
+    public void setBrowsePreferences(UUID playerId, BrowsePreferences preferences) {
+        if (preferences == null) {
+            browsePreferences.remove(playerId);
+            return;
+        }
+        browsePreferences.put(playerId, preferences);
+    }
+
+    public Optional<BrowsePreferences> consumeBrowsePreferences(UUID playerId) {
+        BrowsePreferences preferences = browsePreferences.remove(playerId);
+        return Optional.ofNullable(preferences);
     }
 
     public CompletableFuture<Void> load() {
@@ -71,18 +105,31 @@ public final class AuctionService {
             return SellResult.failure(SellFailure.EMPTY_HAND);
         }
         ItemStack soldItem = itemInHand.clone();
-        SellResult result = createListingInternal(seller, auctionId, price, soldItem);
-        if (result.success()) {
-            seller.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+        Object sellLock = playerSellLocks.computeIfAbsent(seller.getUniqueId(), ignored -> new Object());
+        synchronized (sellLock) {
+            SellResult result = createListingInternal(seller, auctionId, price, soldItem);
+            if (result.success()) {
+                seller.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+            }
+            return result;
         }
-        return result;
     }
 
     public SellResult createListingFromItem(Player seller, String auctionId, int price, ItemStack item) {
+        return createListingFromItem(seller, auctionId, price, item, item == null ? 0 : item.getAmount());
+    }
+
+    public SellResult createListingFromItem(Player seller, String auctionId, int price, ItemStack item, int amount) {
         if (item == null || item.isEmpty()) {
             return SellResult.failure(SellFailure.EMPTY_HAND);
         }
-        return createListingInternal(seller, auctionId, price, item.clone());
+        int sellAmount = Math.min(Math.max(1, amount), item.getAmount());
+        ItemStack soldItem = item.clone();
+        soldItem.setAmount(sellAmount);
+        Object sellLock = playerSellLocks.computeIfAbsent(seller.getUniqueId(), ignored -> new Object());
+        synchronized (sellLock) {
+            return createListingInternal(seller, auctionId, price, soldItem);
+        }
     }
 
     private SellResult createListingInternal(Player seller, String auctionId, int price, ItemStack soldItem) {
@@ -106,8 +153,12 @@ public final class AuctionService {
         if (!isEconomyAvailable(definition.economy)) {
             return SellResult.failure(SellFailure.ECONOMY_UNAVAILABLE);
         }
-        if (price <= 0 || price > settings.limits.maxPrice) {
-            return SellResult.failure(SellFailure.INVALID_PRICE);
+        PriceLimitResolver.PriceBounds bounds = priceLimitResolver.resolve(seller, definition, settings.limits);
+        if (!bounds.isValid(price)) {
+            if (price < bounds.minPrice()) {
+                return SellResult.failure(SellFailure.PRICE_TOO_LOW);
+            }
+            return SellResult.failure(SellFailure.PRICE_TOO_HIGH);
         }
         String normalizedAuctionId = definition.id.toLowerCase(Locale.ROOT);
         int auctionLimit = resolveEffectiveAuctionLimit(seller, normalizedAuctionId);
@@ -124,6 +175,7 @@ public final class AuctionService {
             return SellResult.failure(SellFailure.BLOCKED_ITEM);
         }
         AuctionCategory category = AuctionCategory.fromMaterial(soldItem.getType());
+        String searchText = ListingSearchText.fromItem(seller.getName(), soldItem);
         AuctionListing listing = repository.create(
                 normalizedAuctionId,
                 seller.getUniqueId(),
@@ -131,13 +183,24 @@ public final class AuctionService {
                 price,
                 AuctionEconomyType.fromString(definition.economy),
                 ItemStackCodec.encode(soldItem),
-                category
+                category,
+                searchText
         );
         repository.flush();
         return SellResult.success(listing);
     }
 
     public PurchaseResult purchase(Player buyer, long listingId) {
+        if (!redisSellGuard.tryAcquireListingLock(listingId)) {
+            return PurchaseResult.failure(PurchaseFailure.LISTING_UNAVAILABLE);
+        }
+        Object purchaseLock = listingPurchaseLocks.computeIfAbsent(listingId, ignored -> new Object());
+        synchronized (purchaseLock) {
+            return purchaseLocked(buyer, listingId);
+        }
+    }
+
+    private PurchaseResult purchaseLocked(Player buyer, long listingId) {
         AuctionSettings settings = settings();
         AuctionListing listing = repository.remove(listingId);
         if (listing == null) {
@@ -164,24 +227,27 @@ public final class AuctionService {
             repository.putBack(listing);
             return PurchaseResult.failure(PurchaseFailure.OWN_LISTING);
         }
-        if (!hasBalance(buyer.getUniqueId(), listing.price(), listing.economyType())) {
+        Player sellerOnline = Bukkit.getPlayer(listing.sellerId());
+        TaxPolicyResolver.TaxAmounts taxes = taxPolicyResolver.resolve(buyer, sellerOnline, definition, listing.price());
+        int charge = taxes.buyerCharge(listing.price());
+        if (!hasBalance(buyer.getUniqueId(), charge, listing.economyType())) {
+            repository.putBack(listing);
+            return PurchaseResult.failure(PurchaseFailure.NOT_ENOUGH_MONEY);
+        }
+        if (!withdrawBalance(buyer.getUniqueId(), charge, listing.economyType())) {
             repository.putBack(listing);
             return PurchaseResult.failure(PurchaseFailure.NOT_ENOUGH_MONEY);
         }
         ItemStack item = ItemStackCodec.decode(listing.itemBase64());
         Map<Integer, ItemStack> leftovers = buyer.getInventory().addItem(item);
         if (!leftovers.isEmpty()) {
+            depositBalance(buyer.getUniqueId(), charge, listing.economyType());
             repository.putBack(listing);
             return PurchaseResult.failure(PurchaseFailure.INVENTORY_FULL);
         }
-        boolean withdrawn = withdrawBalance(buyer.getUniqueId(), listing.price(), listing.economyType());
-        if (!withdrawn) {
-            buyer.getInventory().removeItem(item);
-            repository.putBack(listing);
-            return PurchaseResult.failure(PurchaseFailure.NOT_ENOUGH_MONEY);
-        }
-        int tax = computeTax(listing.price(), definition.saleTaxPercent);
-        int payout = Math.max(0, listing.price() - tax);
+        int saleTax = taxes.saleTax();
+        int buyTax = taxes.buyTax();
+        int payout = taxes.sellerPayout(listing.price());
         depositBalance(listing.sellerId(), payout, listing.economyType());
         runtimeStorage.addHistory(
                 "SOLD",
@@ -190,21 +256,36 @@ public final class AuctionService {
                 listing.sellerId(),
                 buyer.getUniqueId(),
                 listing.price(),
-                tax,
-                listing.economyType()
+                saleTax,
+                listing.economyType(),
+                buyTax
         );
-        Player seller = Bukkit.getPlayer(listing.sellerId());
+        Player seller = sellerOnline;
         if (seller == null) {
             runtimeStorage.addPendingSaleNotification(new PendingSaleNotification(
                     listing.sellerId(),
                     listing.auctionId(),
                     payout,
-                    tax,
+                    saleTax,
                     listing.economyType()
             ));
         }
         repository.flush();
-        return PurchaseResult.success(listing, seller, payout, tax);
+        return PurchaseResult.success(listing, seller, payout, saleTax, buyTax, charge);
+    }
+
+    public PurchaseQuote quotePurchase(Player buyer, long listingId) {
+        AuctionListing listing = repository.findById(listingId);
+        if (listing == null) {
+            return null;
+        }
+        AuctionDefinitionSettings definition = findAuction(listing.auctionId(), configSupplier.get());
+        if (definition == null) {
+            return null;
+        }
+        Player sellerOnline = Bukkit.getPlayer(listing.sellerId());
+        TaxPolicyResolver.TaxAmounts taxes = taxPolicyResolver.resolve(buyer, sellerOnline, definition, listing.price());
+        return new PurchaseQuote(listing, taxes.buyerCharge(listing.price()), taxes.saleTax(), taxes.buyTax());
     }
 
     public int expireListings() {
@@ -240,7 +321,8 @@ public final class AuctionService {
                     null,
                     removed.price(),
                     0,
-                    removed.economyType()
+                    removed.economyType(),
+                    0
             );
             expired++;
         }
@@ -293,7 +375,8 @@ public final class AuctionService {
                     null,
                     listing.price(),
                     0,
-                    listing.economyType()
+                    listing.economyType(),
+                    0
             );
             return CancelResult.success(true);
         }
@@ -306,7 +389,8 @@ public final class AuctionService {
                 null,
                 listing.price(),
                 0,
-                listing.economyType()
+                listing.economyType(),
+                0
         );
         return CancelResult.success(false);
     }
@@ -322,16 +406,18 @@ public final class AuctionService {
             if (!claimAll && claimed > 0) {
                 break;
             }
-            ItemStack item = ItemStackCodec.decode(claim.itemBase64());
+            ClaimEntry removed = runtimeStorage.removeClaim(claim.claimId(), player.getUniqueId());
+            if (removed == null) {
+                continue;
+            }
+            ItemStack item = ItemStackCodec.decode(removed.itemBase64());
             Map<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
             if (!leftovers.isEmpty()) {
+                runtimeStorage.restoreClaim(removed);
                 failed++;
                 continue;
             }
-            ClaimEntry removed = runtimeStorage.removeClaim(claim.claimId(), player.getUniqueId());
-            if (removed != null) {
-                claimed++;
-            }
+            claimed++;
         }
         return new ClaimResult(claimed, failed);
     }
@@ -404,6 +490,18 @@ public final class AuctionService {
         return repository.findById(listingId);
     }
 
+    public List<DealHistoryEntry> playerSalesHistory(UUID playerId, String auctionId, int limit) {
+        return runtimeStorage.playerHistory(playerId, "SOLD", false, true, auctionId, limit);
+    }
+
+    public List<DealHistoryEntry> playerPurchases(UUID playerId, String auctionId, int limit) {
+        return runtimeStorage.playerHistory(playerId, "SOLD", true, false, auctionId, limit);
+    }
+
+    public List<ClaimEntry> expiredClaims(UUID playerId) {
+        return runtimeStorage.claimsByReasons(playerId, List.of("EXPIRED", "CANCELLED", "CANCELLED_TO_CLAIM"));
+    }
+
     public EditPriceResult editListingPrice(Player seller, long listingId, int newPrice) {
         AuctionListing listing = repository.findById(listingId);
         if (listing == null) {
@@ -412,7 +510,12 @@ public final class AuctionService {
         if (!listing.sellerId().equals(seller.getUniqueId())) {
             return EditPriceResult.NOT_OWNER;
         }
-        if (newPrice <= 0 || newPrice > settings().limits.maxPrice) {
+        AuctionDefinitionSettings definition = findAuction(listing.auctionId(), configSupplier.get());
+        if (definition == null) {
+            return EditPriceResult.LISTING_UNAVAILABLE;
+        }
+        PriceLimitResolver.PriceBounds bounds = priceLimitResolver.resolve(seller, definition, settings().limits);
+        if (!bounds.isValid(newPrice)) {
             return EditPriceResult.INVALID_PRICE;
         }
         boolean updated = repository.updatePrice(listingId, newPrice);
@@ -428,41 +531,57 @@ public final class AuctionService {
                 null,
                 newPrice,
                 0,
-                listing.economyType()
+                listing.economyType(),
+                0
         );
         return EditPriceResult.SUCCESS;
     }
 
     public List<AuctionListing> page(String auctionId, AuctionSort sort, AuctionCategory category, int page, int pageSize) {
+        return page(auctionId, sort, category, page, pageSize, null);
+    }
+
+    public BrowsePage browsePage(String auctionId, AuctionSort sort, AuctionCategory category, int page, int pageSize, String searchQuery) {
+        String normalizedQuery = normalizeSearch(searchQuery);
         List<AuctionListing> filtered = new ArrayList<>();
-        for (AuctionListing listing : repository.listAll()) {
-            if (!listing.auctionId().equalsIgnoreCase(auctionId)) {
+        for (AuctionListing listing : repository.listByAuction(auctionId)) {
+            if (category != AuctionCategory.ALL && listing.category() != category) {
                 continue;
             }
-            if (category == AuctionCategory.ALL || listing.category() == category) {
-                filtered.add(listing);
+            if (normalizedQuery != null && !matchesSearch(listing, normalizedQuery)) {
+                continue;
             }
+            filtered.add(listing);
         }
         filtered.sort(comparator(sort));
         int offset = Math.max(0, page) * pageSize;
         if (offset >= filtered.size()) {
-            return List.of();
+            return new BrowsePage(filtered.size(), List.of());
         }
         int end = Math.min(filtered.size(), offset + pageSize);
-        return filtered.subList(offset, end);
+        return new BrowsePage(filtered.size(), filtered.subList(offset, end));
     }
 
-    public int count(String auctionId, AuctionCategory category) {
-        int amount = 0;
-        for (AuctionListing listing : repository.listAll()) {
-            if (!listing.auctionId().equalsIgnoreCase(auctionId)) {
-                continue;
-            }
-            if (category == AuctionCategory.ALL || listing.category() == category) {
-                amount++;
-            }
+    public List<AuctionListing> page(String auctionId, AuctionSort sort, AuctionCategory category, int page, int pageSize, String searchQuery) {
+        return browsePage(auctionId, sort, category, page, pageSize, searchQuery).listings();
+    }
+
+    public int count(String auctionId, AuctionCategory category, String searchQuery) {
+        return browsePage(auctionId, AuctionSort.NEWEST, category, 0, 1, searchQuery).total();
+    }
+
+    private boolean matchesSearch(AuctionListing listing, String query) {
+        if (Long.toString(listing.listingId()).contains(query)) {
+            return true;
         }
-        return amount;
+        return ListingSearchText.resolve(listing).contains(query);
+    }
+
+    private String normalizeSearch(String searchQuery) {
+        if (searchQuery == null || searchQuery.isBlank()) {
+            return null;
+        }
+        return searchQuery.trim().toLowerCase(Locale.ROOT);
     }
 
     public String formatPrice(int price, AuctionEconomyType type) {
@@ -513,6 +632,24 @@ public final class AuctionService {
         return AuctionEconomyType.fromString(definition.economy);
     }
 
+    public int maxPrice(Player player, String auctionId) {
+        AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
+        if (definition == null) {
+            return settings().limits.maxPrice;
+        }
+        return priceLimitResolver.resolve(player, definition, settings().limits).maxPrice();
+    }
+
+    public PriceLimitResolver.PriceBounds priceBounds(Player player, String auctionId) {
+        AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
+        if (definition == null) {
+            return new PriceLimitResolver.PriceBounds(settings().limits.minPrice, settings().limits.maxPrice);
+        }
+        return priceLimitResolver.resolve(player, definition, settings().limits);
+    }
+
+    /** @deprecated use {@link #maxPrice(Player, String)} */
+    @Deprecated
     public int maxPrice() {
         return settings().limits.maxPrice;
     }
@@ -534,8 +671,10 @@ public final class AuctionService {
     private Comparator<AuctionListing> comparator(AuctionSort sort) {
         return switch (sort) {
             case NEWEST -> Comparator.comparingLong(AuctionListing::createdAtEpochMillis).reversed();
+            case OLDEST -> Comparator.comparingLong(AuctionListing::createdAtEpochMillis);
             case PRICE_ASC -> Comparator.comparingInt(AuctionListing::price);
             case PRICE_DESC -> Comparator.comparingInt(AuctionListing::price).reversed();
+            case SELLER_ASC -> Comparator.comparing(AuctionListing::sellerName, String.CASE_INSENSITIVE_ORDER);
         };
     }
 
@@ -575,14 +714,6 @@ public final class AuctionService {
         }
     }
 
-    private int computeTax(int price, double taxPercent) {
-        if (taxPercent <= 0.0D) {
-            return 0;
-        }
-        double bounded = Math.min(95.0D, taxPercent);
-        return (int) Math.floor(price * (bounded / 100.0D));
-    }
-
     private boolean isBlockedMaterial(Material material, List<String> blockedMaterials) {
         if (blockedMaterials == null || blockedMaterials.isEmpty()) {
             return false;
@@ -617,16 +748,37 @@ public final class AuctionService {
         AUCTION_LIMIT_REACHED,
         GLOBAL_LIMIT_REACHED,
         BLOCKED_ITEM,
-        EMPTY_HAND
+        EMPTY_HAND,
+        PRICE_TOO_LOW,
+        PRICE_TOO_HIGH
     }
 
-    public record PurchaseResult(boolean success, PurchaseFailure failure, AuctionListing listing, Player seller, int sellerPayout, int tax) {
-        public static PurchaseResult success(AuctionListing listing, Player seller, int sellerPayout, int tax) {
-            return new PurchaseResult(true, null, listing, seller, sellerPayout, tax);
+    public record PurchaseQuote(AuctionListing listing, int totalCharge, int saleTax, int buyTax) {
+    }
+
+    public record PurchaseResult(
+            boolean success,
+            PurchaseFailure failure,
+            AuctionListing listing,
+            Player seller,
+            int sellerPayout,
+            int tax,
+            int buyTax,
+            int buyerCharge
+    ) {
+        public static PurchaseResult success(
+                AuctionListing listing,
+                Player seller,
+                int sellerPayout,
+                int tax,
+                int buyTax,
+                int buyerCharge
+        ) {
+            return new PurchaseResult(true, null, listing, seller, sellerPayout, tax, buyTax, buyerCharge);
         }
 
         public static PurchaseResult failure(PurchaseFailure failure) {
-            return new PurchaseResult(false, failure, null, null, 0, 0);
+            return new PurchaseResult(false, failure, null, null, 0, 0, 0, 0);
         }
     }
 

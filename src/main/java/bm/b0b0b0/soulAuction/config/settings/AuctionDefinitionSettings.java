@@ -38,8 +38,17 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
     @Comment({@CommentValue("Listing lifetime in seconds before auto-expire")})
     public int listingTtlSeconds = 86400;
 
-    @Comment({@CommentValue("Tax percent taken from sale, example: 5.0")})
+    @Comment({@CommentValue("Tax percent taken from seller payout, example: 5.0")})
     public double saleTaxPercent = 0.0D;
+
+    @Comment({@CommentValue("Tax percent added to buyer payment, example: 2.0")})
+    public double buyTaxPercent = 0.0D;
+
+    @Comment({@CommentValue("Minimum listing price for this auction, 0 uses global min")})
+    public int minPrice = 0;
+
+    @Comment({@CommentValue("Maximum listing price for this auction, 0 uses global max")})
+    public int maxPrice = 0;
 
     @Comment({
             @CommentValue("Blocked materials for selling in this auction"),

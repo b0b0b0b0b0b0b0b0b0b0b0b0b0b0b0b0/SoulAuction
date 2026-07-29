@@ -45,6 +45,20 @@ public final class RedisSellGuard {
         }
     }
 
+    public boolean tryAcquireListingLock(long listingId) {
+        if (jedisPool == null) {
+            return true;
+        }
+        String key = "soulauction:buy-lock:" + listingId;
+        try (Jedis jedis = jedisPool.getResource()) {
+            SetParams params = SetParams.setParams().nx().px(sellLockMillis);
+            String result = jedis.set(key, "1", params);
+            return "OK".equalsIgnoreCase(result);
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
     public void close() {
         if (jedisPool != null) {
             jedisPool.close();

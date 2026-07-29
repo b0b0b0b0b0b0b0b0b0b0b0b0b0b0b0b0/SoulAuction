@@ -30,6 +30,13 @@
 - `/ah sell <auctionId> <price>` — выставить в выбранный аукцион.
 - `/ah sell <price> <auctionId>` — альтернативный порядок аргументов.
 - `/ah my [auctionId]` — показать свои активные лоты.
+- `/ah selling [auctionId]` — GUI активных лотов.
+- `/ah expired [auctionId]` — GUI просроченных предметов (claim).
+- `/ah purchased [auctionId]` — GUI истории покупок.
+- `/ah history [auctionId]` — GUI истории продаж.
+- `/ah search <текст>` — поиск по продавцу/названию/материалу в аукционе по умолчанию.
+- `/ah search <auctionId> <текст>` — поиск в выбранном аукционе.
+- `/ah page <номер> [auctionId]` — открыть нужную страницу аукциона.
 - `/ah claim [all]` — забрать просроченные/снятые предметы.
 - `/ah cancel <id>` — снять свой лот и вернуть предмет.
 - Алиасы команды настраиваются в `config.yml` через `commandAliases` (например `ax`, `auction`).
@@ -70,4 +77,18 @@
 
 Если выдано несколько узлов, берётся максимальный лимит.
 Если узлов нет, берутся дефолты из `limits`.
+
+### Налоги
+
+- `soulauction.tax.bypass` — без налога продажи и покупки.
+- `soulauction.tax.discount.<процент>` — скидка на налог продажи (берётся максимальная).
+
+В `auctions/*.yml`: `saleTaxPercent` (с продавца), `buyTaxPercent` (с покупателя).
+
+### Границы цены
+
+- Глобально: `limits.minPrice`, `limits.maxPrice` в `config.yml`.
+- Per-auction: `minPrice`, `maxPrice` (0 = взять глобальные).
+- `soulauction.price.min.<цена>` — минимальная цена лота для игрока.
+- `soulauction.price.max.<цена>` — максимальная цена лота для игрока.
 

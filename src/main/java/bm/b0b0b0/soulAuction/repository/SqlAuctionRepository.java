@@ -80,7 +80,8 @@ public final class SqlAuctionRepository implements AuctionRepository {
             int price,
             AuctionEconomyType economyType,
             String itemBase64,
-            AuctionCategory category
+            AuctionCategory category,
+            String searchText
     ) {
         long listingId = nextId.getAndIncrement();
         AuctionListing listing = new AuctionListing(
@@ -92,7 +93,8 @@ public final class SqlAuctionRepository implements AuctionRepository {
                 economyType,
                 System.currentTimeMillis(),
                 itemBase64,
-                category
+                category,
+                searchText
         );
         listingsById.put(listingId, listing);
         CompletableFuture.runAsync(() -> insertListing(listing), ioExecutor);
@@ -134,11 +136,23 @@ public final class SqlAuctionRepository implements AuctionRepository {
                 old.economyType(),
                 old.createdAtEpochMillis(),
                 old.itemBase64(),
-                old.category()
+                old.category(),
+                old.searchText()
         );
         listingsById.put(listingId, updated);
         CompletableFuture.runAsync(() -> updatePriceSql(listingId, newPrice), ioExecutor);
         return true;
+    }
+
+    @Override
+    public List<AuctionListing> listByAuction(String auctionId) {
+        List<AuctionListing> output = new ArrayList<>();
+        for (AuctionListing listing : listingsById.values()) {
+            if (listing.auctionId().equalsIgnoreCase(auctionId)) {
+                output.add(listing);
+            }
+        }
+        return output;
     }
 
     @Override

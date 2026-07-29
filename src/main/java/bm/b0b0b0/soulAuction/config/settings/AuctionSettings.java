@@ -35,6 +35,8 @@ public final class AuctionSettings extends YamlSerializable {
         public int defaultMaxActiveListingsPerAuction = 3;
         @Comment({@CommentValue("Default global listing limit if dynamic permission is missing")})
         public int defaultMaxActiveListingsGlobal = 6;
+        @Comment({@CommentValue("Minimum allowed price for one listing")})
+        public int minPrice = 1;
         @Comment({@CommentValue("Maximum allowed price for one listing")})
         public int maxPrice = 500000;
         @Comment({@CommentValue("Allow player to buy their own listing")})

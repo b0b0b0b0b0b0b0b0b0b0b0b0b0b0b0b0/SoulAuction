@@ -1,12 +1,12 @@
 package bm.b0b0b0.soulAuction.gui;
 
 import bm.b0b0b0.soulAuction.lang.MessageService;
-import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -59,12 +59,15 @@ public final class PurchaseConfirmMenu implements InventoryHolder {
 
     public void refresh() {
         inventory.clear();
-        AuctionListing listing = auctionService.listingById(listingId);
-        String price = listing == null ? "?" : auctionService.formatPrice(listing.price(), listing.economyType());
+        Player buyer = Bukkit.getPlayer(viewerId);
+        AuctionService.PurchaseQuote quote = buyer == null ? null : auctionService.quotePurchase(buyer, listingId);
+        String price = quote == null ? "?" : auctionService.formatPrice(quote.totalCharge(), quote.listing().economyType());
+        String basePrice = quote == null ? "?" : auctionService.formatPrice(quote.listing().price(), quote.listing().economyType());
+        String buyTax = quote == null ? "0" : String.valueOf(quote.buyTax());
         inventory.setItem(YES_SLOT, button(
                 Material.LIME_WOOL,
                 messageService.component("buy-confirm-yes"),
-                messageService.components("buy-confirm-lore", Map.of("price", price))
+                messageService.components("buy-confirm-lore", Map.of("price", price, "base", basePrice, "buytax", buyTax))
         ));
         inventory.setItem(NO_SLOT, button(Material.RED_WOOL, messageService.component("buy-confirm-no"), null));
     }

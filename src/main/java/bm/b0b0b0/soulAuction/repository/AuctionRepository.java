@@ -22,7 +22,8 @@ public interface AuctionRepository {
             int price,
             AuctionEconomyType economyType,
             String itemBase64,
-            AuctionCategory category
+            AuctionCategory category,
+            String searchText
     );
 
     AuctionListing remove(long listingId);
@@ -34,6 +35,8 @@ public interface AuctionRepository {
     boolean updatePrice(long listingId, int newPrice);
 
     List<AuctionListing> listAll();
+
+    List<AuctionListing> listByAuction(String auctionId);
 
     int countBySeller(UUID sellerId);
 

@@ -91,7 +91,8 @@ public final class YamlPerItemRepository implements AuctionRepository {
             int price,
             AuctionEconomyType economyType,
             String itemBase64,
-            AuctionCategory category
+            AuctionCategory category,
+            String searchText
     ) {
         long listingId = nextId.getAndIncrement();
         AuctionListing listing = new AuctionListing(
@@ -103,7 +104,8 @@ public final class YamlPerItemRepository implements AuctionRepository {
                 economyType,
                 System.currentTimeMillis(),
                 itemBase64,
-                category
+                category,
+                searchText
         );
         listingsById.put(listingId, listing);
         CompletableFuture.runAsync(() -> writeListingSync(listing), ioExecutor);
@@ -145,11 +147,23 @@ public final class YamlPerItemRepository implements AuctionRepository {
                 old.economyType(),
                 old.createdAtEpochMillis(),
                 old.itemBase64(),
-                old.category()
+                old.category(),
+                old.searchText()
         );
         listingsById.put(listingId, updated);
         CompletableFuture.runAsync(() -> writeListingSync(updated), ioExecutor);
         return true;
+    }
+
+    @Override
+    public List<AuctionListing> listByAuction(String auctionId) {
+        List<AuctionListing> output = new ArrayList<>();
+        for (AuctionListing listing : listingsById.values()) {
+            if (listing.auctionId().equalsIgnoreCase(auctionId)) {
+                output.add(listing);
+            }
+        }
+        return output;
     }
 
     @Override
@@ -193,6 +207,9 @@ public final class YamlPerItemRepository implements AuctionRepository {
             yaml.set("createdAtEpochMillis", listing.createdAtEpochMillis());
             yaml.set("itemBase64", listing.itemBase64());
             yaml.set("category", listing.category().name());
+            if (listing.searchText() != null) {
+                yaml.set("searchText", listing.searchText());
+            }
             yaml.save(file);
             writeMetaSync();
         } catch (IOException exception) {
@@ -225,7 +242,8 @@ public final class YamlPerItemRepository implements AuctionRepository {
                 AuctionEconomyType.fromString(yaml.getString("economyType", "VAULT")),
                 yaml.getLong("createdAtEpochMillis"),
                 yaml.getString("itemBase64", ""),
-                AuctionCategory.valueOf(yaml.getString("category", AuctionCategory.OTHER.name()))
+                AuctionCategory.valueOf(yaml.getString("category", AuctionCategory.OTHER.name())),
+                yaml.getString("searchText", null)
         );
     }
 
@@ -241,7 +259,8 @@ public final class YamlPerItemRepository implements AuctionRepository {
                 economyType,
                 listing.createdAtEpochMillis(),
                 listing.itemBase64(),
-                listing.category()
+                listing.category(),
+                listing.searchText()
         );
     }
 }

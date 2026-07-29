@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -74,7 +75,9 @@ public final class OwnerListingMenu implements InventoryHolder {
             return;
         }
         if (slot == PLUS_SLOT) {
-            editedPrice = Math.min(auctionService.maxPrice(), editedPrice + 100);
+            Player player = Bukkit.getPlayer(viewerId);
+            int max = player == null ? auctionService.maxPrice() : auctionService.maxPrice(player, auctionId);
+            editedPrice = Math.min(max, editedPrice + 100);
             refresh();
         }
     }

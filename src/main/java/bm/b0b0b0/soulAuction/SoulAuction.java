@@ -16,7 +16,9 @@ import bm.b0b0b0.soulAuction.service.EconomyBridge;
 import bm.b0b0b0.soulAuction.service.PermissionLimitResolver;
 import bm.b0b0b0.soulAuction.service.PlayerPointsBridge;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
+import bm.b0b0b0.soulAuction.service.PriceLimitResolver;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
+import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -43,6 +45,8 @@ public final class SoulAuction extends JavaPlugin {
         boolean useRedisSellGuard = storageMode == StorageMode.MYSQL;
         redisSellGuard = new RedisSellGuard(useRedisSellGuard, pluginConfig.auctionSettings().storage.redis);
         PermissionLimitResolver permissionLimitResolver = new PermissionLimitResolver(getName());
+        TaxPolicyResolver taxPolicyResolver = new TaxPolicyResolver();
+        PriceLimitResolver priceLimitResolver = new PriceLimitResolver();
         auctionService = new AuctionService(
                 repository,
                 this::pluginConfig,
@@ -50,7 +54,9 @@ public final class SoulAuction extends JavaPlugin {
                 playerPointsBridge,
                 permissionLimitResolver,
                 redisSellGuard,
-                runtimeStorage
+                runtimeStorage,
+                taxPolicyResolver,
+                priceLimitResolver
         );
         getLogger().info("Vault connected: " + auctionService.hasVault());
         getLogger().info("PlayerPoints connected: " + auctionService.hasPlayerPoints());

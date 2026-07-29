@@ -2,14 +2,18 @@ package bm.b0b0b0.soulAuction.model;
 
 public enum AuctionSort {
     NEWEST,
+    OLDEST,
     PRICE_ASC,
-    PRICE_DESC;
+    PRICE_DESC,
+    SELLER_ASC;
 
     public AuctionSort next() {
         return switch (this) {
-            case NEWEST -> PRICE_ASC;
+            case NEWEST -> OLDEST;
+            case OLDEST -> PRICE_ASC;
             case PRICE_ASC -> PRICE_DESC;
-            case PRICE_DESC -> NEWEST;
+            case PRICE_DESC -> SELLER_ASC;
+            case SELLER_ASC -> NEWEST;
         };
     }
 }

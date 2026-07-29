@@ -12,6 +12,21 @@ public record DealHistoryEntry(
         int price,
         int tax,
         AuctionEconomyType economyType,
-        long createdAtEpochMillis
+        long createdAtEpochMillis,
+        int buyTax
 ) {
+    public DealHistoryEntry(
+            long historyId,
+            String action,
+            String auctionId,
+            long listingId,
+            UUID sellerId,
+            UUID buyerId,
+            int price,
+            int tax,
+            AuctionEconomyType economyType,
+            long createdAtEpochMillis
+    ) {
+        this(historyId, action, auctionId, listingId, sellerId, buyerId, price, tax, economyType, createdAtEpochMillis, 0);
+    }
 }

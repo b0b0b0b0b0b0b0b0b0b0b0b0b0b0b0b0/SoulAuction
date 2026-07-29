@@ -11,6 +11,31 @@ public record AuctionListing(
         AuctionEconomyType economyType,
         long createdAtEpochMillis,
         String itemBase64,
-        AuctionCategory category
+        AuctionCategory category,
+        String searchText
 ) {
+    public AuctionListing(
+            long listingId,
+            String auctionId,
+            UUID sellerId,
+            String sellerName,
+            int price,
+            AuctionEconomyType economyType,
+            long createdAtEpochMillis,
+            String itemBase64,
+            AuctionCategory category
+    ) {
+        this(
+                listingId,
+                auctionId,
+                sellerId,
+                sellerName,
+                price,
+                economyType,
+                createdAtEpochMillis,
+                itemBase64,
+                category,
+                null
+        );
+    }
 }

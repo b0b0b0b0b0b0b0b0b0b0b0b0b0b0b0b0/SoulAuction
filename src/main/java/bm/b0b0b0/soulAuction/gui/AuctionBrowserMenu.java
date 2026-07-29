@@ -33,6 +33,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
     private int page;
     private AuctionSort sort;
     private AuctionCategory category;
+    private String searchQuery;
 
     public AuctionBrowserMenu(
             UUID viewerId,
@@ -40,6 +41,18 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             AuctionService auctionService,
             MessageService messageService,
             GuiGeneralSettings guiSettings
+    ) {
+        this(viewerId, auctionId, auctionService, messageService, guiSettings, 0, null);
+    }
+
+    public AuctionBrowserMenu(
+            UUID viewerId,
+            String auctionId,
+            AuctionService auctionService,
+            MessageService messageService,
+            GuiGeneralSettings guiSettings,
+            int initialPage,
+            String searchQuery
     ) {
         this.viewerId = viewerId;
         this.auctionId = auctionId;
@@ -53,10 +66,15 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         );
         this.listingBySlot = new HashMap<>();
         this.categoryNameByType = createCategoryNames(messageService);
-        this.page = 0;
+        this.page = Math.max(0, initialPage);
         this.sort = AuctionSort.NEWEST;
         this.category = AuctionCategory.ALL;
+        this.searchQuery = searchQuery == null || searchQuery.isBlank() ? null : searchQuery.trim();
         refresh();
+    }
+
+    public String searchQuery() {
+        return searchQuery;
     }
 
     @Override
@@ -118,9 +136,10 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         inventory.clear();
         List<Integer> listingSlots = guiSettings.listingSlots;
         int visible = listingSlots.size();
-        int total = auctionService.count(auctionId, category);
+        AuctionService.BrowsePage browsePage = auctionService.browsePage(auctionId, sort, category, page, visible, searchQuery);
+        int total = browsePage.total();
         int maxPage = Math.max(0, (total - 1) / visible);
-        List<AuctionListing> listings = auctionService.page(auctionId, sort, category, page, listingSlots.size());
+        List<AuctionListing> listings = browsePage.listings();
         for (int i = 0; i < listings.size() && i < listingSlots.size(); i++) {
             AuctionListing listing = listings.get(i);
             int slot = listingSlots.get(i);
@@ -154,7 +173,13 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         );
         inventory.setItem(
                 guiSettings.refreshSlot,
-                actionItem(guiSettings.refreshMaterial, guiSettings.refreshCustomModelData, messageService.component("button-refresh"))
+                actionItem(
+                        guiSettings.refreshMaterial,
+                        guiSettings.refreshCustomModelData,
+                        searchQuery == null
+                                ? messageService.component("button-refresh")
+                                : messageService.component("button-refresh-search", Map.of("query", searchQuery))
+                )
         );
         inventory.setItem(
                 guiSettings.sortSlot,
@@ -176,7 +201,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
 
     public void nextPage() {
         int visible = guiSettings.listingSlots.size();
-        int total = auctionService.count(auctionId, category);
+        int total = auctionService.count(auctionId, category, searchQuery);
         int maxPage = Math.max(0, (total - 1) / visible);
         if (page < maxPage) {
             page++;
@@ -220,8 +245,10 @@ public final class AuctionBrowserMenu implements InventoryHolder {
     private String sortName(AuctionSort value) {
         return switch (value) {
             case NEWEST -> messageService.raw("sort-newest");
+            case OLDEST -> messageService.raw("sort-oldest");
             case PRICE_ASC -> messageService.raw("sort-price-asc");
             case PRICE_DESC -> messageService.raw("sort-price-desc");
+            case SELLER_ASC -> messageService.raw("sort-seller-asc");
         };
     }
 

@@ -3,6 +3,7 @@ package bm.b0b0b0.soulAuction.gui;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -65,6 +66,14 @@ public final class AuctionGuiListener implements Listener {
             handleSalesMenuClick(event, player, salesMenu);
             return;
         }
+        if (event.getView().getTopInventory().getHolder(false) instanceof PlayerHubMenu hubMenu) {
+            handleHubClick(event, player, hubMenu);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder(false) instanceof PlayerRecordsMenu recordsMenu) {
+            handleRecordsMenuClick(event, player, recordsMenu);
+            return;
+        }
         if (event.getView().getTopInventory().getHolder(false) instanceof ContainerPreviewMenu) {
             if (!(event.getClickedInventory() instanceof PlayerInventory)) {
                 event.setCancelled(true);
@@ -109,10 +118,9 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         Map<Integer, ItemStack> leftovers = player.getInventory().addItem(reserved);
-        if (leftovers.isEmpty()) {
-            return;
+        if (!leftovers.isEmpty()) {
+            leftovers.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
         }
-        leftovers.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
     }
 
     private void handleBrowserClick(InventoryClickEvent event, Player player, AuctionBrowserMenu menu) {
@@ -126,8 +134,8 @@ public final class AuctionGuiListener implements Listener {
         event.setCancelled(true);
         int slot = event.getSlot();
         if (slot == configSupplier.get().guiGeneralSettings().historySlot) {
-            RecentSalesMenu historyMenu = new RecentSalesMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
-            PluginSchedulers.run(plugin, player, () -> player.openInventory(historyMenu.getInventory()));
+            PlayerHubMenu hubMenu = new PlayerHubMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
+            PluginSchedulers.run(plugin, player, () -> player.openInventory(hubMenu.getInventory()));
             return;
         }
         Long listingId = menu.listingIdAt(slot);
@@ -169,6 +177,7 @@ public final class AuctionGuiListener implements Listener {
             ItemStack cursor = event.getCursor();
             AuctionSellMenu sellMenu = new AuctionSellMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
             sellMenu.putReservedItem(cursor.clone());
+            sellMenu.syncAmountFromItem();
             event.setCursor(null);
             PluginSchedulers.run(plugin, player, () -> player.openInventory(sellMenu.getInventory()));
             return;
@@ -197,7 +206,7 @@ public final class AuctionGuiListener implements Listener {
         }
         player.sendMessage(messageService.component(
                 "success-bought",
-                Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().economyType()))
+                Map.of("price", auctionService.formatPrice(result.buyerCharge(), result.listing().economyType()))
         ));
         Player seller = result.seller();
         if (seller != null) {
@@ -274,6 +283,45 @@ public final class AuctionGuiListener implements Listener {
         return true;
     }
 
+    private void handleHubClick(InventoryClickEvent event, Player player, PlayerHubMenu menu) {
+        if (event.getClickedInventory() instanceof PlayerInventory) {
+            return;
+        }
+        event.setCancelled(true);
+        if (menu.isBack(event.getSlot())) {
+            openBrowser(player, menu.auctionId());
+            return;
+        }
+        var view = menu.viewAt(event.getSlot());
+        if (view == null) {
+            return;
+        }
+        if (view == PlayerHistoryView.RECENT_AUCTION) {
+            RecentSalesMenu salesMenu = new RecentSalesMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
+            PluginSchedulers.run(plugin, player, () -> player.openInventory(salesMenu.getInventory()));
+            return;
+        }
+        PlayerRecordsMenu recordsMenu = new PlayerRecordsMenu(
+                player.getUniqueId(),
+                menu.auctionId(),
+                view,
+                auctionService,
+                messageService
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(recordsMenu.getInventory()));
+    }
+
+    private void handleRecordsMenuClick(InventoryClickEvent event, Player player, PlayerRecordsMenu menu) {
+        if (event.getClickedInventory() instanceof PlayerInventory) {
+            return;
+        }
+        event.setCancelled(true);
+        if (menu.isBack(event.getSlot())) {
+            PlayerHubMenu hubMenu = new PlayerHubMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
+            PluginSchedulers.run(plugin, player, () -> player.openInventory(hubMenu.getInventory()));
+        }
+    }
+
     private void handleSalesMenuClick(InventoryClickEvent event, Player player, RecentSalesMenu menu) {
         if (event.getClickedInventory() instanceof PlayerInventory) {
             return;
@@ -306,12 +354,17 @@ public final class AuctionGuiListener implements Listener {
     }
 
     private void openBrowser(Player player, String auctionId) {
+        var prefs = auctionService.consumeBrowsePreferences(player.getUniqueId());
+        int page = prefs.map(AuctionService.BrowsePreferences::page).orElse(0);
+        String search = prefs.map(AuctionService.BrowsePreferences::searchQuery).orElse(null);
         AuctionBrowserMenu browserMenu = new AuctionBrowserMenu(
                 player.getUniqueId(),
                 auctionId,
                 auctionService,
                 messageService,
-                configSupplier.get().guiGeneralSettings()
+                configSupplier.get().guiGeneralSettings(),
+                page,
+                search
         );
         PluginSchedulers.run(plugin, player, () -> player.openInventory(browserMenu.getInventory()));
     }
@@ -327,6 +380,7 @@ public final class AuctionGuiListener implements Listener {
         int slot = event.getSlot();
         AuctionSellMenu.MenuAction action = menu.clickTop(slot);
         if (action == AuctionSellMenu.MenuAction.ITEM_SLOT) {
+            PluginSchedulers.run(plugin, player, menu::syncAmountFromItem);
             return;
         }
         event.setCancelled(true);
@@ -342,21 +396,35 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         if (action == AuctionSellMenu.MenuAction.CONFIRM) {
-            ItemStack reserved = menu.reservedItem();
-            if (reserved == null || reserved.isEmpty()) {
+            menu.syncAmountFromItem();
+            int sellAmount = menu.sellAmount();
+            ItemStack sold = menu.consumeForListing(sellAmount);
+            if (sold == null || sold.isEmpty()) {
                 player.sendMessage(messageService.component("error-sell-menu-no-item"));
                 return;
             }
-            AuctionService.SellResult result = auctionService.createListingFromItem(player, menu.auctionId(), menu.price(), reserved);
+            AuctionService.SellResult result = auctionService.createListingFromItem(
+                    player,
+                    menu.auctionId(),
+                    menu.price(),
+                    sold,
+                    sold.getAmount()
+            );
             if (!result.success()) {
+                menu.restoreConsumed(sold);
                 sendSellError(player, result.failure());
                 return;
             }
-            menu.takeReservedItem();
             player.sendMessage(messageService.component(
                     "success-listed",
                     Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().economyType()))
             ));
+            ItemStack remainder = menu.reservedItem();
+            if (remainder != null && !remainder.isEmpty()) {
+                Map<Integer, ItemStack> leftovers = player.getInventory().addItem(remainder);
+                menu.takeReservedItem();
+                leftovers.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
+            }
             AuctionBrowserMenu browserMenu = new AuctionBrowserMenu(
                     player.getUniqueId(),
                     menu.auctionId(),
@@ -395,6 +463,8 @@ public final class AuctionGuiListener implements Listener {
             case GLOBAL_LIMIT_REACHED -> "error-global-limit";
             case BLOCKED_ITEM -> "error-blocked-item";
             case EMPTY_HAND -> "error-main-hand-empty";
+            case PRICE_TOO_LOW -> "error-price-too-low";
+            case PRICE_TOO_HIGH -> "error-price-too-high";
         };
         player.sendMessage(messageService.component(key));
     }

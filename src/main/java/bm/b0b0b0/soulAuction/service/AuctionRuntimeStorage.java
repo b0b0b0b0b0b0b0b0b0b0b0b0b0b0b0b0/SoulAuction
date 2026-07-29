@@ -18,6 +18,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class AuctionRuntimeStorage {
@@ -34,6 +35,7 @@ public final class AuctionRuntimeStorage {
     private final List<PendingSaleNotification> notifications;
     private final AtomicLong nextClaimId;
     private final AtomicLong nextHistoryId;
+    private final AtomicBoolean flushScheduled;
 
     public AuctionRuntimeStorage(Path dataFolder) {
         Path dataDirectory = dataFolder.resolve("data");
@@ -49,6 +51,7 @@ public final class AuctionRuntimeStorage {
         this.notifications = new ArrayList<>();
         this.nextClaimId = new AtomicLong(1L);
         this.nextHistoryId = new AtomicLong(1L);
+        this.flushScheduled = new AtomicBoolean(false);
     }
 
     public CompletableFuture<Void> load() {
@@ -93,7 +96,7 @@ public final class AuctionRuntimeStorage {
         synchronized (claims) {
             claims.add(entry);
         }
-        flush();
+        scheduleDebouncedFlush();
         return entry;
     }
 
@@ -116,7 +119,7 @@ public final class AuctionRuntimeStorage {
                 ClaimEntry entry = claims.get(i);
                 if (entry.claimId() == claimId && entry.ownerId().equals(ownerId)) {
                     claims.remove(i);
-                    flush();
+                    scheduleDebouncedFlush();
                     return entry;
                 }
             }
@@ -124,7 +127,32 @@ public final class AuctionRuntimeStorage {
         return null;
     }
 
-    public void addHistory(String action, String auctionId, long listingId, UUID sellerId, UUID buyerId, int price, int tax, AuctionEconomyType economyType) {
+    public void restoreClaim(ClaimEntry entry) {
+        if (entry == null) {
+            return;
+        }
+        synchronized (claims) {
+            for (ClaimEntry existing : claims) {
+                if (existing.claimId() == entry.claimId()) {
+                    return;
+                }
+            }
+            claims.add(entry);
+        }
+        scheduleDebouncedFlush();
+    }
+
+    public void addHistory(
+            String action,
+            String auctionId,
+            long listingId,
+            UUID sellerId,
+            UUID buyerId,
+            int price,
+            int tax,
+            AuctionEconomyType economyType,
+            int buyTax
+    ) {
         DealHistoryEntry entry = new DealHistoryEntry(
                 nextHistoryId.getAndIncrement(),
                 action,
@@ -135,7 +163,8 @@ public final class AuctionRuntimeStorage {
                 price,
                 tax,
                 economyType,
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                buyTax
         );
         synchronized (history) {
             history.add(entry);
@@ -143,19 +172,93 @@ public final class AuctionRuntimeStorage {
                 history.remove(0);
             }
         }
-        flush();
+        scheduleDebouncedFlush();
     }
 
     public List<DealHistoryEntry> recentHistory(int limit) {
-        List<DealHistoryEntry> output;
         synchronized (history) {
-            output = new ArrayList<>(history);
+            int size = history.size();
+            if (size == 0) {
+                return List.of();
+            }
+            int take = Math.min(limit, size);
+            List<DealHistoryEntry> output = new ArrayList<>(take);
+            for (int i = size - 1; i >= 0 && output.size() < take; i--) {
+                output.add(history.get(i));
+            }
+            return output;
         }
-        output.sort(Comparator.comparingLong(DealHistoryEntry::historyId).reversed());
-        if (output.size() > limit) {
-            return output.subList(0, limit);
+    }
+
+    public List<DealHistoryEntry> playerHistory(
+            UUID playerId,
+            String action,
+            boolean asBuyer,
+            boolean asSeller,
+            String auctionId,
+            int limit
+    ) {
+        List<DealHistoryEntry> snapshot;
+        synchronized (history) {
+            snapshot = new ArrayList<>(history);
+        }
+        List<DealHistoryEntry> output = new ArrayList<>(Math.min(limit, 64));
+        for (int i = snapshot.size() - 1; i >= 0 && output.size() < limit; i--) {
+            DealHistoryEntry entry = snapshot.get(i);
+            if (action != null && !action.isBlank() && !action.equalsIgnoreCase(entry.action())) {
+                continue;
+            }
+            if (auctionId != null && !auctionId.isBlank() && !entry.auctionId().equalsIgnoreCase(auctionId)) {
+                continue;
+            }
+            if (asBuyer && entry.buyerId() != null && entry.buyerId().equals(playerId)) {
+                output.add(entry);
+                continue;
+            }
+            if (asSeller && entry.sellerId().equals(playerId)) {
+                output.add(entry);
+            }
         }
         return output;
+    }
+
+    public List<ClaimEntry> claimsByReasons(UUID ownerId, List<String> reasons) {
+        List<ClaimEntry> output = new ArrayList<>();
+        synchronized (claims) {
+            for (ClaimEntry claim : claims) {
+                if (!claim.ownerId().equals(ownerId)) {
+                    continue;
+                }
+                if (reasons == null || reasons.isEmpty()) {
+                    output.add(claim);
+                    continue;
+                }
+                for (String reason : reasons) {
+                    if (reason != null && reason.equalsIgnoreCase(claim.reason())) {
+                        output.add(claim);
+                        break;
+                    }
+                }
+            }
+        }
+        output.sort(Comparator.comparingLong(ClaimEntry::claimId).reversed());
+        return output;
+    }
+
+    private void scheduleDebouncedFlush() {
+        if (!flushScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        ioExecutor.execute(() -> {
+            try {
+                Thread.sleep(2000L);
+                flushSync();
+            } catch (Exception exception) {
+                throw new IllegalStateException(exception);
+            } finally {
+                flushScheduled.set(false);
+            }
+        });
     }
 
     public void setLimitOverride(UUID playerId, String scope, int limit) {
@@ -166,7 +269,7 @@ public final class AuctionRuntimeStorage {
                 limitOverrides.add(new LimitOverrideEntry(playerId, normalizedScope, limit));
             }
         }
-        flush();
+        scheduleDebouncedFlush();
     }
 
     public int getLimitOverride(UUID playerId, String scope) {
@@ -185,7 +288,7 @@ public final class AuctionRuntimeStorage {
         synchronized (notifications) {
             notifications.add(notification);
         }
-        flush();
+        scheduleDebouncedFlush();
     }
 
     public List<PendingSaleNotification> takePendingSaleNotifications(UUID playerId) {
@@ -200,7 +303,7 @@ public final class AuctionRuntimeStorage {
             });
         }
         if (!output.isEmpty()) {
-            flush();
+            scheduleDebouncedFlush();
         }
         return output;
     }
