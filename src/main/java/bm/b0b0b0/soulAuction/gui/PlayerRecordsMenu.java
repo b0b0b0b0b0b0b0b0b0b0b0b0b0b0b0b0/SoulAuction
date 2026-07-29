@@ -103,7 +103,7 @@ public final class PlayerRecordsMenu implements InventoryHolder {
             case MY_SALES -> fillMySales();
             case RECENT_AUCTION -> fillRecentAuction();
         }
-        inventory.setItem(BACK_SLOT, paper(messageService.component("hub-back"), null));
+        inventory.setItem(BACK_SLOT, backButton(messageService.component("hub-back")));
     }
 
     private void fillSelling() {
@@ -186,6 +186,16 @@ public final class PlayerRecordsMenu implements InventoryHolder {
                         "time", time
                 ))
         );
+    }
+
+    private ItemStack backButton(net.kyori.adventure.text.Component title) {
+        ItemStack item = new ItemStack(Material.LIGHT_GRAY_DYE);
+        ItemMeta itemMeta = item.getItemMeta();
+        if (itemMeta != null) {
+            itemMeta.displayName(title);
+            item.setItemMeta(itemMeta);
+        }
+        return item;
     }
 
     private ItemStack paper(net.kyori.adventure.text.Component title, List<net.kyori.adventure.text.Component> lore) {

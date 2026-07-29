@@ -34,6 +34,7 @@ public final class GuiGeneralSettings extends YamlSerializable {
 
     @NewLine
     @Comment({@CommentValue("Control button materials, Bukkit Material names")})
+    @Comment({@CommentValue("Pagination: prev page = LIGHT_GRAY_DYE (back), next page = GRAY_DYE (forward)")})
     public String previousPageMaterial = "LIGHT_GRAY_DYE";
     public String historyMaterial = "BOOK";
     public String categoryMaterial = "CHEST";
@@ -43,6 +44,9 @@ public final class GuiGeneralSettings extends YamlSerializable {
     public String sortMaterial = "COMPASS";
     public String priceFilterMaterial = "GOLD_NUGGET";
     public String nextPageMaterial = "GRAY_DYE";
+
+    @Comment({@CommentValue("Sub-menu «Back» — light gray dye only")})
+    public String backButtonMaterial = "LIGHT_GRAY_DYE";
 
     @NewLine
     @Comment({@CommentValue("Custom model data for control buttons, -1 disables")})

@@ -80,7 +80,17 @@ public final class RecentSalesMenu implements InventoryHolder {
                     ))
             ));
         }
-        inventory.setItem(BACK_SLOT, historyItem(messageService.component("history-back"), null));
+        inventory.setItem(BACK_SLOT, backButton(messageService.component("history-back")));
+    }
+
+    private ItemStack backButton(net.kyori.adventure.text.Component title) {
+        ItemStack item = new ItemStack(Material.LIGHT_GRAY_DYE);
+        ItemMeta itemMeta = item.getItemMeta();
+        if (itemMeta != null) {
+            itemMeta.displayName(title);
+            item.setItemMeta(itemMeta);
+        }
+        return item;
     }
 
     private ItemStack historyItem(net.kyori.adventure.text.Component title, List<net.kyori.adventure.text.Component> lore) {

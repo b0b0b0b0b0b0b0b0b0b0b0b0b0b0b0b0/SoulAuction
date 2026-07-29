@@ -83,7 +83,7 @@ public final class PlayerHubMenu implements InventoryHolder {
         inventory.setItem(PURCHASED_SLOT, button(Material.DIAMOND, "hub-purchased"));
         inventory.setItem(MY_SALES_SLOT, button(Material.GOLD_INGOT, "hub-my-sales"));
         inventory.setItem(RECENT_SLOT, button(Material.BOOK, "hub-recent-sales"));
-        inventory.setItem(BACK_SLOT, button(Material.GRAY_DYE, "hub-back"));
+        inventory.setItem(BACK_SLOT, button(Material.LIGHT_GRAY_DYE, "hub-back"));
         ItemStack decor = new ItemStack(Material.PURPLE_STAINED_GLASS_PANE);
         ItemMeta decorMeta = decor.getItemMeta();
         if (decorMeta != null) {

@@ -109,7 +109,7 @@ public final class OwnerListingMenu implements InventoryHolder {
                 ))
         ));
         inventory.setItem(REMOVE_SLOT, button(Material.BARRIER, messageService.component("owner-remove-listing")));
-        inventory.setItem(BACK_SLOT, button(Material.GRAY_DYE, messageService.component("owner-back")));
+        inventory.setItem(BACK_SLOT, button(Material.LIGHT_GRAY_DYE, messageService.component("owner-back")));
     }
 
     private ItemStack button(Material material, net.kyori.adventure.text.Component title) {

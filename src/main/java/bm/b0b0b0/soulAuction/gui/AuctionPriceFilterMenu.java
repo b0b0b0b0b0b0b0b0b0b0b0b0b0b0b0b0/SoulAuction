@@ -125,7 +125,11 @@ public final class AuctionPriceFilterMenu implements InventoryHolder {
         inventory.setItem(MAX_PLUS, labeled(Material.LIME_DYE, "price-filter-max-plus", Map.of("step", step)));
         inventory.setItem(APPLY, labeled(Material.EMERALD, "price-filter-apply"));
         inventory.setItem(CLEAR, labeled(Material.BARRIER, "price-filter-clear"));
-        inventory.setItem(BACK, labeled(Material.ARROW, "price-filter-back"));
+        Material backMaterial = Material.matchMaterial(guiSettings.backButtonMaterial);
+        if (backMaterial == null) {
+            backMaterial = Material.LIGHT_GRAY_DYE;
+        }
+        inventory.setItem(BACK, labeled(backMaterial, "price-filter-back"));
         inventory.setItem(4, labeled(Material.GOLD_INGOT, "price-filter-info", Map.of(
                 "min", minFormatted,
                 "max", maxFormatted

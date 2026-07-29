@@ -210,7 +210,7 @@ public final class AuctionSellMenu implements InventoryHolder {
                 messageService.component("sell-amount-plus", Map.of("step", "1")),
                 messageService.components("sell-amount-lore", amountPlaceholders())
         ));
-        inventory.setItem(BACK_SLOT, actionItem(Material.GRAY_DYE, messageService.component("sell-button-back")));
+        inventory.setItem(BACK_SLOT, actionItem(Material.LIGHT_GRAY_DYE, messageService.component("sell-button-back")));
         inventory.setItem(CONFIRM_SLOT, actionItem(Material.LIME_DYE, messageService.component("sell-button-confirm")));
         inventory.setItem(PRICE_SLOT, actionItem(Material.NAME_TAG, messageService.component(
                 "sell-price-current",
