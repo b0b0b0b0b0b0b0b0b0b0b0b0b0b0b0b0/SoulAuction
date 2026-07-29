@@ -21,6 +21,7 @@ public final class AuctionSellMenu implements InventoryHolder {
     private static final int MINUS_BIG_SLOT = 29;
     private static final int QTY_MINUS_SLOT = 20;
     private static final int QTY_PLUS_SLOT = 24;
+    private static final int AMOUNT_INFO_SLOT = 40;
     private static final int PLUS_SMALL_SLOT = 33;
     private static final int PLUS_BIG_SLOT = 34;
     private static final int BACK_SLOT = 45;
@@ -36,13 +37,24 @@ public final class AuctionSellMenu implements InventoryHolder {
     private volatile boolean skipCloseReturn;
 
     public AuctionSellMenu(UUID viewerId, String auctionId, AuctionService auctionService, MessageService messageService) {
+        this(viewerId, auctionId, auctionService, messageService, 100, 1);
+    }
+
+    public AuctionSellMenu(
+            UUID viewerId,
+            String auctionId,
+            AuctionService auctionService,
+            MessageService messageService,
+            int initialPrice,
+            int initialSellAmount
+    ) {
         this.viewerId = viewerId;
         this.auctionId = auctionId;
         this.auctionService = auctionService;
         this.messageService = messageService;
         this.inventory = Bukkit.createInventory(this, 54, messageService.component("sell-menu-title", Map.of("auction", auctionService.auctionDisplayName(auctionId))));
-        this.price = 100;
-        this.sellAmount = 1;
+        this.price = Math.max(1, initialPrice);
+        this.sellAmount = Math.max(1, initialSellAmount);
         refresh();
     }
 
@@ -50,12 +62,16 @@ public final class AuctionSellMenu implements InventoryHolder {
         ItemStack item = inventory.getItem(ITEM_SLOT);
         if (item == null || item.isEmpty()) {
             sellAmount = 1;
+            refresh();
             return;
         }
-        sellAmount = Math.min(sellAmount, item.getAmount());
+        if (sellAmount > item.getAmount()) {
+            sellAmount = item.getAmount();
+        }
         if (sellAmount < 1) {
             sellAmount = 1;
         }
+        refresh();
     }
 
     public void skipCloseReturn() {
@@ -144,7 +160,7 @@ public final class AuctionSellMenu implements InventoryHolder {
             return MenuAction.BACK;
         }
         if (slot == CONFIRM_SLOT) {
-            return MenuAction.CONFIRM;
+            return MenuAction.TO_CONFIRM;
         }
         if (slot == MINUS_SMALL_SLOT) {
             changePrice(-100);
@@ -203,15 +219,20 @@ public final class AuctionSellMenu implements InventoryHolder {
         inventory.setItem(QTY_MINUS_SLOT, actionItem(
                 Material.REDSTONE_BLOCK,
                 messageService.component("sell-amount-minus", Map.of("step", "1")),
-                messageService.components("sell-amount-lore", amountPlaceholders())
+                messageService.components("sell-amount-minus-lore", amountPlaceholders())
         ));
         inventory.setItem(QTY_PLUS_SLOT, actionItem(
                 Material.EMERALD_BLOCK,
                 messageService.component("sell-amount-plus", Map.of("step", "1")),
-                messageService.components("sell-amount-lore", amountPlaceholders())
+                messageService.components("sell-amount-plus-lore", amountPlaceholders())
+        ));
+        inventory.setItem(AMOUNT_INFO_SLOT, actionItem(
+                Material.CHEST,
+                messageService.component("sell-amount-info-title", amountPlaceholders()),
+                messageService.components("sell-amount-info-lore", amountPlaceholders())
         ));
         inventory.setItem(BACK_SLOT, actionItem(Material.LIGHT_GRAY_DYE, messageService.component("sell-button-back")));
-        inventory.setItem(CONFIRM_SLOT, actionItem(Material.LIME_DYE, messageService.component("sell-button-confirm")));
+        inventory.setItem(CONFIRM_SLOT, actionItem(Material.LIME_DYE, messageService.component("sell-button-next")));
         inventory.setItem(PRICE_SLOT, actionItem(Material.NAME_TAG, messageService.component(
                 "sell-price-current",
                 Map.of("price", formattedPrice)
@@ -227,7 +248,7 @@ public final class AuctionSellMenu implements InventoryHolder {
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             if (slot == ITEM_SLOT || slot == PRICE_SLOT || slot == MINUS_SMALL_SLOT || slot == MINUS_BIG_SLOT
                     || slot == PLUS_SMALL_SLOT || slot == PLUS_BIG_SLOT || slot == QTY_MINUS_SLOT || slot == QTY_PLUS_SLOT
-                    || slot == BACK_SLOT || slot == CONFIRM_SLOT) {
+                    || slot == AMOUNT_INFO_SLOT || slot == BACK_SLOT || slot == CONFIRM_SLOT) {
                 continue;
             }
             inventory.setItem(slot, decor);
@@ -279,6 +300,16 @@ public final class AuctionSellMenu implements InventoryHolder {
         refresh();
     }
 
+    public void setSellAmount(int amount) {
+        ItemStack item = inventory.getItem(ITEM_SLOT);
+        int maxAmount = item == null || item.isEmpty() ? 1 : item.getAmount();
+        sellAmount = Math.max(1, Math.min(amount, maxAmount));
+    }
+
+    public void setPrice(int value) {
+        price = Math.max(1, value);
+    }
+
     private Map<String, String> amountPlaceholders() {
         ItemStack item = inventory.getItem(ITEM_SLOT);
         int maxAmount = item == null || item.isEmpty() ? 1 : item.getAmount();
@@ -287,7 +318,7 @@ public final class AuctionSellMenu implements InventoryHolder {
 
     public enum MenuAction {
         BACK,
-        CONFIRM,
+        TO_CONFIRM,
         ITEM_SLOT,
         REFRESH,
         IGNORE

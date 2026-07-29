@@ -75,6 +75,10 @@ public final class AuctionGuiListener implements Listener {
             handleSellClick(event, player, sellMenu);
             return;
         }
+        if (event.getView().getTopInventory().getHolder(false) instanceof AuctionSellConfirmMenu sellConfirmMenu) {
+            handleSellConfirmClick(event, player, sellConfirmMenu);
+            return;
+        }
         if (event.getView().getTopInventory().getHolder(false) instanceof PurchaseConfirmMenu confirmMenu) {
             handlePurchaseConfirmClick(event, player, confirmMenu);
             return;
@@ -112,6 +116,10 @@ public final class AuctionGuiListener implements Listener {
             event.setCancelled(true);
             return;
         }
+        if (event.getView().getTopInventory().getHolder(false) instanceof AuctionSellConfirmMenu) {
+            event.setCancelled(true);
+            return;
+        }
         if (!(event.getView().getTopInventory().getHolder(false) instanceof AuctionSellMenu sellMenu)) {
             return;
         }
@@ -131,17 +139,74 @@ public final class AuctionGuiListener implements Listener {
         if (!(event.getPlayer() instanceof Player player)) {
             return;
         }
+        if (event.getInventory().getHolder(false) instanceof AuctionSellConfirmMenu confirmMenu) {
+            if (!confirmMenu.shouldReturnOnClose()) {
+                return;
+            }
+            returnHeldStack(player, confirmMenu.takeHeldStack());
+            return;
+        }
         if (!(event.getInventory().getHolder(false) instanceof AuctionSellMenu sellMenu)) {
             return;
         }
-        ItemStack reserved = sellMenu.takeReservedItem();
-        if (reserved == null || reserved.isEmpty()) {
+        if (!sellMenu.shouldReturnOnClose()) {
             return;
         }
-        Map<Integer, ItemStack> leftovers = player.getInventory().addItem(reserved);
+        ItemStack reserved = sellMenu.takeReservedItem();
+        returnHeldStack(player, reserved);
+    }
+
+    private void returnHeldStack(Player player, ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        Map<Integer, ItemStack> leftovers = player.getInventory().addItem(stack);
         if (!leftovers.isEmpty()) {
             leftovers.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
         }
+    }
+
+    private void openSellSetup(
+            Player player,
+            String auctionId,
+            ItemStack stack,
+            int price,
+            int sellAmount
+    ) {
+        AuctionSellMenu sellMenu = new AuctionSellMenu(
+                player.getUniqueId(),
+                auctionId,
+                auctionService,
+                messageService,
+                price,
+                sellAmount
+        );
+        if (stack != null && !stack.isEmpty()) {
+            sellMenu.putReservedItem(stack);
+            sellMenu.syncAmountFromItem();
+        }
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(sellMenu.getInventory()));
+    }
+
+    private void openSellConfirm(Player player, AuctionSellMenu setupMenu) {
+        setupMenu.syncAmountFromItem();
+        ItemStack stack = setupMenu.reservedItem();
+        if (stack == null || stack.isEmpty()) {
+            player.sendMessage(messageService.component("error-sell-menu-no-item"));
+            return;
+        }
+        stack = setupMenu.takeReservedItem();
+        setupMenu.skipCloseReturn();
+        AuctionSellConfirmMenu confirmMenu = new AuctionSellConfirmMenu(
+                player.getUniqueId(),
+                setupMenu.auctionId(),
+                stack,
+                setupMenu.price(),
+                setupMenu.sellAmount(),
+                auctionService,
+                messageService
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(confirmMenu.getInventory()));
     }
 
     private void handleBrowserClick(InventoryClickEvent event, Player player, AuctionBrowserMenu menu) {
@@ -434,45 +499,68 @@ public final class AuctionGuiListener implements Listener {
             PluginSchedulers.run(plugin, player, () -> player.openInventory(browserMenu.getInventory()));
             return;
         }
-        if (action == AuctionSellMenu.MenuAction.CONFIRM) {
-            menu.syncAmountFromItem();
-            int sellAmount = menu.sellAmount();
-            ItemStack sold = menu.consumeForListing(sellAmount);
-            if (sold == null || sold.isEmpty()) {
-                player.sendMessage(messageService.component("error-sell-menu-no-item"));
-                return;
-            }
-            SellResult result = auctionService.createListingFromItem(
-                    player,
-                    menu.auctionId(),
-                    menu.price(),
-                    sold,
-                    sold.getAmount()
-            );
-            if (!result.success()) {
-                menu.restoreConsumed(sold);
-                sendSellError(player, result.failure());
-                return;
-            }
-            player.sendMessage(messageService.component(
-                    "success-listed",
-                    Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().auctionId(), player))
-            ));
-            ItemStack remainder = menu.reservedItem();
-            if (remainder != null && !remainder.isEmpty()) {
-                Map<Integer, ItemStack> leftovers = player.getInventory().addItem(remainder);
-                menu.takeReservedItem();
-                leftovers.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
-            }
-            AuctionBrowserMenu browserMenu = new AuctionBrowserMenu(
-                    player.getUniqueId(),
-                    menu.auctionId(),
-                    auctionService,
-                    messageService,
-                    configSupplier.get().guiGeneralSettings()
-            );
-            PluginSchedulers.run(plugin, player, () -> player.openInventory(browserMenu.getInventory()));
+        if (action == AuctionSellMenu.MenuAction.TO_CONFIRM) {
+            openSellConfirm(player, menu);
+            return;
         }
+    }
+
+    private void handleSellConfirmClick(InventoryClickEvent event, Player player, AuctionSellConfirmMenu menu) {
+        if (event.getClickedInventory() instanceof PlayerInventory) {
+            return;
+        }
+        event.setCancelled(true);
+        int slot = event.getSlot();
+        if (menu.isExit(slot)) {
+            menu.skipCloseReturn();
+            ItemStack stack = menu.takeHeldStack();
+            returnHeldStack(player, stack);
+            openBrowser(player, menu.auctionId());
+            return;
+        }
+        if (menu.isNo(slot)) {
+            menu.skipCloseReturn();
+            ItemStack stack = menu.takeHeldStack();
+            openSellSetup(player, menu.auctionId(), stack, menu.price(), menu.sellAmount());
+            return;
+        }
+        if (!menu.isYes(slot)) {
+            return;
+        }
+        ItemStack stack = menu.takeHeldStack();
+        if (stack == null || stack.isEmpty()) {
+            player.sendMessage(messageService.component("error-sell-menu-no-item"));
+            openBrowser(player, menu.auctionId());
+            return;
+        }
+        int sellAmount = Math.min(menu.sellAmount(), stack.getAmount());
+        ItemStack sold = stack.clone();
+        sold.setAmount(sellAmount);
+        menu.skipCloseReturn();
+        SellResult result = auctionService.createListingFromItem(
+                player,
+                menu.auctionId(),
+                menu.price(),
+                sold,
+                sellAmount
+        );
+        if (!result.success()) {
+            returnHeldStack(player, stack);
+            sendSellError(player, result.failure());
+            openSellSetup(player, menu.auctionId(), stack, menu.price(), menu.sellAmount());
+            return;
+        }
+        player.sendMessage(messageService.component(
+                "success-listed",
+                Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().auctionId(), player))
+        ));
+        int left = stack.getAmount() - sellAmount;
+        if (left > 0) {
+            ItemStack remainder = stack.clone();
+            remainder.setAmount(left);
+            returnHeldStack(player, remainder);
+        }
+        openBrowser(player, menu.auctionId());
     }
 
     private void sendPurchaseError(Player player, PurchaseFailure failure) {
