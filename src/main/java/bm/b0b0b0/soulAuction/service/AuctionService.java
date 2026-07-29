@@ -11,6 +11,7 @@ import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.AuctionSort;
 import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
+import bm.b0b0b0.soulAuction.model.PendingExpiredListingNotification;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
 import bm.b0b0b0.soulAuction.model.result.CancelResult;
@@ -34,7 +35,10 @@ import bm.b0b0b0.soulAuction.service.listing.AuctionPurchaseService;
 import bm.b0b0b0.soulAuction.service.listing.ListingLockRunner;
 import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
+import bm.b0b0b0.soulAuction.util.ItemDisplayNames;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
+import bm.b0b0b0.soulAuction.util.ListingDurationFormat;
+import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -66,6 +70,7 @@ public final class AuctionService {
     private final AuctionBrowseService browseService;
     private final ListingLockRunner listingLocks;
     private final AuctionExternalNotifier externalNotifier;
+    private final MessageService messageService;
     private final ConcurrentHashMap<UUID, BrowsePreferences> browsePreferences;
     private final ConcurrentHashMap<UUID, BrowseFilterState> browseFilters;
     private final ConcurrentHashMap<UUID, PendingChatSearch> pendingChatSearch;
@@ -106,6 +111,7 @@ public final class AuctionService {
         this.priceLimitResolver = priceLimitResolver;
         this.listingCache = listingCache;
         this.externalNotifier = externalNotifier;
+        this.messageService = messageService;
         this.listingLocks = new ListingLockRunner();
         AuctionSellPolicy sellPolicy = new AuctionSellPolicy(runtimeStorage);
         CustomItemRuleEngine customItemRuleEngine = new CustomItemRuleEngine();
@@ -172,6 +178,14 @@ public final class AuctionService {
 
     public void beginPendingChatSearch(UUID playerId, String auctionId) {
         pendingChatSearch.put(playerId, new PendingChatSearch(auctionId.toLowerCase(Locale.ROOT)));
+    }
+
+    public void cancelPendingChatSearch(UUID playerId) {
+        pendingChatSearch.remove(playerId);
+    }
+
+    public Optional<PendingChatSearch> peekPendingChatSearch(UUID playerId) {
+        return Optional.ofNullable(pendingChatSearch.get(playerId));
     }
 
     public Optional<PendingChatSearch> consumePendingChatSearch(UUID playerId) {
@@ -428,10 +442,10 @@ public final class AuctionService {
         List<AuctionListing> snapshot = repository.listAll();
         for (AuctionListing listing : snapshot) {
             AuctionDefinitionSettings definition = findAuction(listing.auctionId(), configSupplier.get());
-            if (definition == null) {
+            if (definition == null || definition.listingTtlSeconds <= 0) {
                 continue;
             }
-            long ttlMillis = Math.max(1L, definition.listingTtlSeconds) * 1000L;
+            long ttlMillis = definition.listingTtlSeconds * 1000L;
             if (now - listing.createdAtEpochMillis() < ttlMillis) {
                 continue;
             }
@@ -453,13 +467,14 @@ public final class AuctionService {
         if (removed == null) {
             return false;
         }
-        runtimeStorage.addClaim(
+        ClaimEntry claim = runtimeStorage.addClaim(
                 removed.sellerId(),
                 removed.auctionId(),
                 removed.listingId(),
                 removed.itemBase64(),
                 "EXPIRED"
         );
+        notifyListingExpired(removed, claim);
         repository.flush();
         invalidateListingCache(removed.auctionId(), removed, true);
         runtimeStorage.addHistory(
@@ -869,6 +884,109 @@ public final class AuctionService {
 
     private AuctionSettings settings() {
         return configSupplier.get().auctionSettings();
+    }
+
+    public boolean listingExpiryEnabled(String auctionId) {
+        AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
+        return definition != null && definition.listingTtlSeconds > 0;
+    }
+
+    public int listingTtlSeconds(String auctionId) {
+        AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
+        return definition == null ? 0 : definition.listingTtlSeconds;
+    }
+
+    public long listingExpiresAtEpochMillis(AuctionListing listing) {
+        int ttlSeconds = listingTtlSeconds(listing.auctionId());
+        if (ttlSeconds <= 0) {
+            return Long.MAX_VALUE;
+        }
+        return listing.createdAtEpochMillis() + ttlSeconds * 1000L;
+    }
+
+    public long listingRemainingMillis(AuctionListing listing) {
+        long expiresAt = listingExpiresAtEpochMillis(listing);
+        if (expiresAt == Long.MAX_VALUE) {
+            return Long.MAX_VALUE;
+        }
+        return Math.max(0L, expiresAt - System.currentTimeMillis());
+    }
+
+    public Map<String, String> listingLorePlaceholders(AuctionListing listing, UUID viewerId) {
+        Map<String, String> placeholders = new HashMap<>();
+        placeholders.put("seller", listing.sellerName());
+        placeholders.put("price", formatPrice(listing.price(), listing.auctionId(), viewerId));
+        placeholders.put("id", String.valueOf(listing.listingId()));
+        placeholders.put("auction", listing.auctionId());
+        if (listingExpiryEnabled(listing.auctionId())) {
+            placeholders.put("expires_in", ListingDurationFormat.formatRemainingMillis(listingRemainingMillis(listing)));
+            placeholders.put("expires_at", ListingDurationFormat.formatExpiresAtEpochMillis(listingExpiresAtEpochMillis(listing)));
+        } else {
+            placeholders.put("expires_in", "");
+            placeholders.put("expires_at", "");
+        }
+        return placeholders;
+    }
+
+    public Map<String, String> listingCreatedMessagePlaceholders(Player player, AuctionListing listing) {
+        ItemStack item = ItemStackCodec.decode(listing.itemBase64());
+        Map<String, String> placeholders = listingLorePlaceholders(listing, player.getUniqueId());
+        placeholders.put("item", ItemDisplayNames.plain(item));
+        placeholders.put("amount", String.valueOf(Math.max(1, item.getAmount())));
+        int ttlSeconds = listingTtlSeconds(listing.auctionId());
+        placeholders.put("duration", ListingDurationFormat.formatSeconds(ttlSeconds));
+        if (ttlSeconds > 0) {
+            placeholders.put("expires_at", ListingDurationFormat.formatExpiresAtEpochMillis(listingExpiresAtEpochMillis(listing)));
+        } else {
+            placeholders.put("expires_at", "");
+        }
+        return placeholders;
+    }
+
+    public void sendListingCreatedMessage(Player player, AuctionListing listing) {
+        Map<String, String> placeholders = listingCreatedMessagePlaceholders(player, listing);
+        messageService.send(player, "success-listed", placeholders);
+        if (listingExpiryEnabled(listing.auctionId())) {
+            messageService.send(player, "success-listed-expiry-timed", placeholders);
+        } else {
+            messageService.send(player, "success-listed-expiry-unlimited");
+        }
+    }
+
+    public List<PendingExpiredListingNotification> takePendingExpiredListingNotifications(UUID playerId) {
+        return runtimeStorage.takePendingExpiredListingNotifications(playerId);
+    }
+
+    public void deliverExpiredListingNotification(Player player, PendingExpiredListingNotification notification) {
+        Map<String, String> placeholders = Map.of(
+                "auction", auctionDisplayName(notification.auctionId()),
+                "auction_id", notification.auctionId(),
+                "id", String.valueOf(notification.sourceListingId()),
+                "item", notification.itemLabel(),
+                "claim_id", String.valueOf(notification.claimId())
+        );
+        messageService.send(player, "listing-expired-notification", placeholders);
+        messageService.send(player, "listing-expired-open-hint", placeholders);
+    }
+
+    private void notifyListingExpired(AuctionListing listing, ClaimEntry claim) {
+        if (claim == null) {
+            return;
+        }
+        ItemStack item = ItemStackCodec.decode(listing.itemBase64());
+        PendingExpiredListingNotification notification = new PendingExpiredListingNotification(
+                listing.sellerId(),
+                listing.auctionId(),
+                listing.listingId(),
+                claim.claimId(),
+                ItemDisplayNames.plain(item)
+        );
+        Player online = Bukkit.getPlayer(listing.sellerId());
+        if (online != null && online.isOnline()) {
+            deliverExpiredListingNotification(online, notification);
+            return;
+        }
+        runtimeStorage.addPendingExpiredListingNotification(notification);
     }
 
     private AuctionDefinitionSettings findAuction(String auctionId, PluginConfig config) {

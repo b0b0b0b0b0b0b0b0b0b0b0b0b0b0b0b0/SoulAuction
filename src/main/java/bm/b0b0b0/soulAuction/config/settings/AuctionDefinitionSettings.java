@@ -77,7 +77,7 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
     @Comment({@CommentValue("Permission to create listings in this auction")})
     public String sellPermission = "soulauction.sell.global";
 
-    @Comment({@CommentValue("Listing lifetime in seconds before auto-expire")})
+    @Comment({@CommentValue("Listing lifetime in seconds before auto-expire; 0 or less = no expiry")})
     public int listingTtlSeconds = 86400;
 
     @Comment({@CommentValue("Tax percent taken from seller payout, example: 5.0")})
@@ -106,7 +106,7 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
 
     @Comment({
             @CommentValue("Optional MiniMessage lore lines appended to listing item in browser GUI"),
-            @CommentValue("Placeholders: {seller}, {price}, {id}, {auction}")
+            @CommentValue("Placeholders: {seller}, {price}, {id}, {auction}, {expires_in}, {expires_at}")
     })
     public List<String> listingLoreTemplate = List.of();
 

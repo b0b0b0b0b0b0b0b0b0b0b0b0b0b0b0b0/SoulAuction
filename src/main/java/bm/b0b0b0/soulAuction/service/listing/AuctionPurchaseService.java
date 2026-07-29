@@ -18,7 +18,6 @@ import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -174,7 +173,7 @@ public final class AuctionPurchaseService {
         if (!announcements.enabled || listing.price() < announcements.minPrice) {
             return;
         }
-        Component message = messageService.component(
+        messageService.broadcast(
                 "announce-sale",
                 Map.of(
                         "buyer", buyerName,
@@ -183,7 +182,6 @@ public final class AuctionPurchaseService {
                         "auction", listing.auctionId()
                 )
         );
-        Bukkit.getServer().broadcast(message);
     }
 
     public interface ListingDefinitionLookup {

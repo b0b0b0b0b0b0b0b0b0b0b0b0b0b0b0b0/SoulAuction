@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
@@ -71,28 +70,28 @@ public final class AuctionCommand implements CommandExecutor {
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("purge")) {
             if (!auctionService.isLoaded()) {
-                sender.sendMessage(messageService.component("error-still-loading"));
+                messageService.send(sender, "error-still-loading");
                 return true;
             }
             return adminCommand.purge(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("admin")) {
             if (!auctionService.isLoaded() && !isAdminReadOnly(args)) {
-                sender.sendMessage(messageService.component("error-still-loading"));
+                messageService.send(sender, "error-still-loading");
                 return true;
             }
             return adminCommand.handle(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
         }
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(messageService.component("error-only-player"));
+            messageService.send(sender, "error-only-player");
             return true;
         }
         if (!player.hasPermission(PERMISSION_AH)) {
-            player.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(player, "error-no-permission");
             return true;
         }
         if (!auctionService.isLoaded()) {
-            player.sendMessage(messageService.component("error-still-loading"));
+            messageService.send(player, "error-still-loading");
             return true;
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("sell")) {
@@ -134,12 +133,12 @@ public final class AuctionCommand implements CommandExecutor {
 
     private boolean openRecordsGui(Player player, String[] args, PlayerHistoryView view) {
         if (!player.hasPermission(PERMISSION_MY)) {
-            player.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(player, "error-no-permission");
             return true;
         }
         String auctionId = args.length > 1 ? args[1] : auctionService.defaultAuctionId();
         if (!auctionService.auctionExists(auctionId)) {
-            player.sendMessage(messageService.component("error-auction-not-found"));
+            messageService.send(player, "error-auction-not-found");
             return true;
         }
         PlayerRecordsMenu menu = new PlayerRecordsMenu(player.getUniqueId(), auctionId, view, auctionService, messageService);
@@ -147,9 +146,21 @@ public final class AuctionCommand implements CommandExecutor {
         return true;
     }
 
+    private boolean cancelPendingSearch(Player player) {
+        var pending = auctionService.consumePendingChatSearch(player.getUniqueId());
+        if (pending.isEmpty()) {
+            return true;
+        }
+        messageService.send(player, "search-chat-cancelled");
+        return openAuction(player, pending.get().auctionId());
+    }
+
     private boolean handleSearch(Player player, String[] args) {
+        if (args.length >= 2 && args[1].equalsIgnoreCase("cancel")) {
+            return cancelPendingSearch(player);
+        }
         if (args.length < 2) {
-            player.sendMessage(messageService.component("error-search-usage"));
+            messageService.send(player, "error-search-usage");
             return true;
         }
         String auctionId = auctionService.defaultAuctionId();
@@ -161,7 +172,7 @@ public final class AuctionCommand implements CommandExecutor {
             query = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
         }
         if (query.isBlank()) {
-            player.sendMessage(messageService.component("error-search-usage"));
+            messageService.send(player, "error-search-usage");
             return true;
         }
         auctionService.setBrowsePreferences(player.getUniqueId(), new AuctionService.BrowsePreferences(auctionId, 0, query));
@@ -172,18 +183,18 @@ public final class AuctionCommand implements CommandExecutor {
 
     private boolean handlePage(Player player, String[] args) {
         if (args.length < 2) {
-            player.sendMessage(messageService.component("error-page-usage"));
+            messageService.send(player, "error-page-usage");
             return true;
         }
         int page;
         try {
             page = Integer.parseInt(args[1]) - 1;
         } catch (NumberFormatException exception) {
-            player.sendMessage(messageService.component("error-page-usage"));
+            messageService.send(player, "error-page-usage");
             return true;
         }
         if (page < 0) {
-            player.sendMessage(messageService.component("error-page-usage"));
+            messageService.send(player, "error-page-usage");
             return true;
         }
         String auctionId = args.length > 2 ? args[2] : auctionService.defaultAuctionId();
@@ -194,40 +205,40 @@ public final class AuctionCommand implements CommandExecutor {
     private boolean handleReload(CommandSender sender) {
         if (sender instanceof Player player) {
             if (!player.hasPermission(PERMISSION_RELOAD)) {
-                player.sendMessage(messageService.component("error-no-permission"));
+                messageService.send(player, "error-no-permission");
                 return true;
             }
         }
         reloadAction.run();
-        sender.sendMessage(messageService.component("success-reloaded"));
+        messageService.send(sender, "success-reloaded");
         return true;
     }
 
     private boolean handleLimit(CommandSender sender, String[] args) {
         if (!sender.hasPermission(PERMISSION_LIMIT)) {
-            sender.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(sender, "error-no-permission");
             return true;
         }
         if (args.length != 3 && args.length != 4) {
-            sender.sendMessage(messageService.component("error-limit-usage"));
+            messageService.send(sender, "error-limit-usage");
             return true;
         }
         int limit;
         try {
             limit = Integer.parseInt(args[args.length - 1]);
         } catch (NumberFormatException exception) {
-            sender.sendMessage(messageService.component("error-limit-usage"));
+            messageService.send(sender, "error-limit-usage");
             return true;
         }
         if (limit < 0) {
-            sender.sendMessage(messageService.component("error-limit-usage"));
+            messageService.send(sender, "error-limit-usage");
             return true;
         }
         OfflinePlayer target;
         String scope;
         if (args.length == 3) {
             if (!(sender instanceof Player player)) {
-                sender.sendMessage(messageService.component("error-limit-usage"));
+                messageService.send(sender, "error-limit-usage");
                 return true;
             }
             target = player;
@@ -237,29 +248,29 @@ public final class AuctionCommand implements CommandExecutor {
             scope = args[2];
         }
         if (target.getUniqueId() == null) {
-            sender.sendMessage(messageService.component("error-limit-target"));
+            messageService.send(sender, "error-limit-target");
             return true;
         }
         auctionService.setLimitOverride(target.getUniqueId(), scope.toLowerCase(), limit);
-        sender.sendMessage(messageService.component(
+        messageService.send(sender, 
                 "success-limit-set",
                 Map.of("player", target.getName() == null ? target.getUniqueId().toString() : target.getName(), "scope", scope.toLowerCase(), "limit", String.valueOf(limit))
-        ));
+        );
         return true;
     }
 
     private boolean handleSell(Player player, String[] args) {
         if (!player.hasPermission(PERMISSION_SELL)) {
-            player.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(player, "error-no-permission");
             return true;
         }
         if (args.length < 2) {
-            player.sendMessage(messageService.component("error-sell-usage"));
+            messageService.send(player, "error-sell-usage");
             return true;
         }
         SellArgs sellArgs = parseSellArgs(args);
         if (sellArgs == null) {
-            player.sendMessage(messageService.component("error-invalid-price"));
+            messageService.send(player, "error-invalid-price");
             return true;
         }
         SellResult result = auctionService.createListing(player, sellArgs.auctionId(), sellArgs.price(), sellArgs.amount());
@@ -267,10 +278,7 @@ public final class AuctionCommand implements CommandExecutor {
             sendSellError(player, result.failure());
             return true;
         }
-        player.sendMessage(messageService.component(
-                "success-listed",
-                Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().auctionId(), player))
-        ));
+        auctionService.sendListingCreatedMessage(player, result.listing());
         return true;
     }
 
@@ -316,80 +324,80 @@ public final class AuctionCommand implements CommandExecutor {
 
     private boolean handleMy(Player player, String[] args) {
         if (!player.hasPermission(PERMISSION_MY)) {
-            player.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(player, "error-no-permission");
             return true;
         }
         String auctionId = args.length > 1 ? args[1] : null;
         List<AuctionListing> listings = auctionService.myListings(player.getUniqueId(), auctionId);
-        player.sendMessage(messageService.component("my-listings-header", Map.of("count", String.valueOf(listings.size()))));
+        messageService.send(player, "my-listings-header", Map.of("count", String.valueOf(listings.size())));
         int limit = Math.min(listings.size(), 15);
         for (int i = 0; i < limit; i++) {
             AuctionListing listing = listings.get(i);
-            player.sendMessage(messageService.component(
+            messageService.send(player, 
                     "my-listing-line",
                     Map.of(
                             "id", String.valueOf(listing.listingId()),
                             "auction", listing.auctionId(),
                             "price", auctionService.formatPrice(listing.price(), listing.auctionId(), player)
                     )
-            ));
+            );
         }
         if (listings.isEmpty()) {
-            player.sendMessage(messageService.component("my-listings-empty"));
+            messageService.send(player, "my-listings-empty");
         }
         return true;
     }
 
     private boolean handleClaim(Player player, String[] args) {
         if (!player.hasPermission(PERMISSION_CLAIM)) {
-            player.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(player, "error-no-permission");
             return true;
         }
         boolean claimAll = args.length > 1 && args[1].equalsIgnoreCase("all");
         boolean moneyClaimed = auctionService.claimPendingSalePayments(player);
         ClaimResult result = auctionService.claim(player, claimAll);
         if (moneyClaimed) {
-            player.sendMessage(messageService.component("success-claim-money-auto"));
+            messageService.send(player, "success-claim-money-auto");
         }
         if (result.claimed() == 0 && result.failed() == 0 && !moneyClaimed) {
-            player.sendMessage(messageService.component("claim-empty"));
+            messageService.send(player, "claim-empty");
             return true;
         }
         if (result.claimed() > 0 || result.failed() > 0) {
-            player.sendMessage(messageService.component(
+            messageService.send(player, 
                     "claim-result",
                     Map.of("claimed", String.valueOf(result.claimed()), "failed", String.valueOf(result.failed()))
-            ));
+            );
         }
         return true;
     }
 
     private boolean handleCancel(Player player, String[] args) {
         if (args.length < 2) {
-            player.sendMessage(messageService.component("error-cancel-usage"));
+            messageService.send(player, "error-cancel-usage");
             return true;
         }
         long listingId;
         try {
             listingId = Long.parseLong(args[1]);
         } catch (NumberFormatException exception) {
-            player.sendMessage(messageService.component("error-cancel-usage"));
+            messageService.send(player, "error-cancel-usage");
             return true;
         }
         boolean canCancelAny = player.hasPermission(PERMISSION_CANCEL_ANY);
         CancelResult result = auctionService.cancelListing(player, listingId, canCancelAny);
         if (!result.success()) {
             if (result.failure() == CancelFailure.NOT_OWNER) {
-                player.sendMessage(messageService.component("error-cancel-not-owner"));
+                messageService.send(player, "error-cancel-not-owner");
             } else {
-                player.sendMessage(messageService.component("error-listing-unavailable"));
+                messageService.send(player, "error-listing-unavailable");
             }
             return true;
         }
-        Component message = result.movedToClaim()
-                ? messageService.component("cancelled-to-claim")
-                : messageService.component("cancelled-and-returned");
-        player.sendMessage(message);
+        messageService.send(
+                player,
+                result.movedToClaim() ? "cancelled-to-claim" : "cancelled-and-returned"
+        );
         return true;
     }
 
@@ -405,11 +413,11 @@ public final class AuctionCommand implements CommandExecutor {
             }
         }
         if (!auctionService.auctionExists(auctionId)) {
-            player.sendMessage(messageService.component("error-auction-not-found"));
+            messageService.send(player, "error-auction-not-found");
             return true;
         }
         if (!auctionService.canOpenAuction(player, auctionId)) {
-            player.sendMessage(messageService.component("error-open-auction-denied"));
+            messageService.send(player, "error-open-auction-denied");
             return true;
         }
         var prefs = auctionService.consumeBrowsePreferences(player.getUniqueId());
@@ -434,11 +442,11 @@ public final class AuctionCommand implements CommandExecutor {
 
     private boolean handleView(Player player, String[] args) {
         if (!player.hasPermission(PERMISSION_VIEW)) {
-            player.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(player, "error-no-permission");
             return true;
         }
         if (args.length < 2) {
-            player.sendMessage(messageService.component("error-view-usage"));
+            messageService.send(player, "error-view-usage");
             return true;
         }
         OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
@@ -451,7 +459,7 @@ public final class AuctionCommand implements CommandExecutor {
                 player.getUniqueId(),
                 BrowseFilterState.empty().withSellerFilter(target.getUniqueId())
         );
-        player.sendMessage(messageService.component("success-view-seller", Map.of("player", displayName)));
+        messageService.send(player, "success-view-seller", Map.of("player", displayName));
         return openAuctionWithPreferences(player, auctionId, true);
     }
 
@@ -464,7 +472,7 @@ public final class AuctionCommand implements CommandExecutor {
     }
 
     private void sendSellError(Player player, SellFailure failure) {
-        player.sendMessage(messageService.component(failure.messageKey()));
+        messageService.send(player, failure.messageKey());
     }
 
     private static boolean isAdminReadOnly(String[] args) {

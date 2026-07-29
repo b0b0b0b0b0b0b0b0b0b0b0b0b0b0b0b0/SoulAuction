@@ -34,10 +34,11 @@ public final class AuctionSellMenu implements InventoryHolder {
     private final Inventory inventory;
     private int price;
     private int sellAmount;
+    private ItemStack backingStack;
     private volatile boolean skipCloseReturn;
 
     public AuctionSellMenu(UUID viewerId, String auctionId, AuctionService auctionService, MessageService messageService) {
-        this(viewerId, auctionId, auctionService, messageService, 100, 1);
+        this(viewerId, auctionId, auctionService, messageService, 100, 0);
     }
 
     public AuctionSellMenu(
@@ -54,24 +55,31 @@ public final class AuctionSellMenu implements InventoryHolder {
         this.messageService = messageService;
         this.inventory = Bukkit.createInventory(this, 54, messageService.component("sell-menu-title", Map.of("auction", auctionService.auctionDisplayName(auctionId))));
         this.price = Math.max(1, initialPrice);
-        this.sellAmount = Math.max(1, initialSellAmount);
+        this.sellAmount = Math.max(0, initialSellAmount);
         refresh();
     }
 
     public void syncAmountFromItem() {
-        ItemStack item = inventory.getItem(ITEM_SLOT);
-        if (item == null || item.isEmpty()) {
+        ItemStack inSlot = inventory.getItem(ITEM_SLOT);
+        if (inSlot == null || inSlot.isEmpty()) {
+            backingStack = null;
             sellAmount = 1;
             refresh();
             return;
         }
-        if (sellAmount > item.getAmount()) {
-            sellAmount = item.getAmount();
+        if (backingStack == null || !backingStack.isSimilar(inSlot)) {
+            backingStack = inSlot.clone();
+            sellAmount = backingStack.getAmount();
+        } else if (inSlot.getAmount() > sellAmount) {
+            backingStack.setAmount(Math.max(backingStack.getAmount(), inSlot.getAmount()));
+            sellAmount = backingStack.getAmount();
         }
-        if (sellAmount < 1) {
-            sellAmount = 1;
-        }
+        clampSellAmount();
         refresh();
+    }
+
+    public boolean hasBackingStack() {
+        return backingStack != null && !backingStack.isEmpty();
     }
 
     public void skipCloseReturn() {
@@ -80,44 +88,6 @@ public final class AuctionSellMenu implements InventoryHolder {
 
     public boolean shouldReturnOnClose() {
         return !skipCloseReturn;
-    }
-
-    public ItemStack consumeForListing(int amount) {
-        ItemStack inSlot = inventory.getItem(ITEM_SLOT);
-        if (inSlot == null || inSlot.isEmpty()) {
-            return null;
-        }
-        int take = Math.min(Math.max(1, amount), inSlot.getAmount());
-        ItemStack sold = inSlot.clone();
-        sold.setAmount(take);
-        int left = inSlot.getAmount() - take;
-        if (left > 0) {
-            ItemStack remainder = inSlot.clone();
-            remainder.setAmount(left);
-            inventory.setItem(ITEM_SLOT, remainder);
-        } else {
-            inventory.setItem(ITEM_SLOT, null);
-            skipCloseReturn();
-        }
-        sellAmount = Math.min(sellAmount, Math.max(1, left));
-        return sold;
-    }
-
-    public void restoreConsumed(ItemStack sold) {
-        if (sold == null || sold.isEmpty()) {
-            return;
-        }
-        ItemStack inSlot = inventory.getItem(ITEM_SLOT);
-        if (inSlot == null || inSlot.isEmpty()) {
-            inventory.setItem(ITEM_SLOT, sold);
-            return;
-        }
-        if (inSlot.isSimilar(sold) && inSlot.getAmount() + sold.getAmount() <= inSlot.getMaxStackSize()) {
-            inSlot.setAmount(inSlot.getAmount() + sold.getAmount());
-            inventory.setItem(ITEM_SLOT, inSlot);
-            return;
-        }
-        inventory.setItem(ITEM_SLOT, sold);
     }
 
     public int sellAmount() {
@@ -142,17 +112,31 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     public ItemStack reservedItem() {
-        return inventory.getItem(ITEM_SLOT);
+        if (backingStack == null || backingStack.isEmpty()) {
+            return inventory.getItem(ITEM_SLOT);
+        }
+        return backingStack.clone();
     }
 
     public ItemStack takeReservedItem() {
-        ItemStack item = inventory.getItem(ITEM_SLOT);
+        ItemStack taken = backingStack;
+        backingStack = null;
         inventory.setItem(ITEM_SLOT, null);
-        return item;
+        if (taken == null || taken.isEmpty()) {
+            return null;
+        }
+        return taken.clone();
     }
 
     public void putReservedItem(ItemStack item) {
-        inventory.setItem(ITEM_SLOT, item);
+        if (item == null || item.isEmpty()) {
+            backingStack = null;
+            sellAmount = 1;
+        } else {
+            backingStack = item.clone();
+            sellAmount = backingStack.getAmount();
+        }
+        refresh();
     }
 
     public MenuAction clickTop(int slot) {
@@ -237,10 +221,29 @@ public final class AuctionSellMenu implements InventoryHolder {
                 "sell-price-current",
                 Map.of("price", formattedPrice)
         )));
+        paintItemSlot();
     }
 
     public int price() {
         return price;
+    }
+
+    public void setSellAmount(int amount) {
+        sellAmount = amount;
+        clampSellAmount();
+    }
+
+    public void setPrice(int value) {
+        price = Math.max(1, value);
+    }
+
+    private void paintItemSlot() {
+        if (backingStack == null || backingStack.isEmpty()) {
+            return;
+        }
+        ItemStack display = backingStack.clone();
+        display.setAmount(Math.min(sellAmount, backingStack.getAmount()));
+        inventory.setItem(ITEM_SLOT, display);
     }
 
     private void fillDecor() {
@@ -287,33 +290,34 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     private void changeAmount(int delta) {
-        ItemStack item = inventory.getItem(ITEM_SLOT);
-        int maxAmount = item == null || item.isEmpty() ? 1 : item.getAmount();
-        int next = sellAmount + delta;
-        if (next < 1) {
-            next = 1;
-        }
-        if (next > maxAmount) {
-            next = maxAmount;
-        }
-        sellAmount = next;
+        sellAmount += delta;
+        clampSellAmount();
         refresh();
     }
 
-    public void setSellAmount(int amount) {
-        ItemStack item = inventory.getItem(ITEM_SLOT);
-        int maxAmount = item == null || item.isEmpty() ? 1 : item.getAmount();
-        sellAmount = Math.max(1, Math.min(amount, maxAmount));
+    private void clampSellAmount() {
+        int maxAmount = maxStackAmount();
+        if (sellAmount < 1) {
+            sellAmount = 1;
+        }
+        if (sellAmount > maxAmount) {
+            sellAmount = maxAmount;
+        }
     }
 
-    public void setPrice(int value) {
-        price = Math.max(1, value);
+    private int maxStackAmount() {
+        if (backingStack != null && !backingStack.isEmpty()) {
+            return backingStack.getAmount();
+        }
+        ItemStack inSlot = inventory.getItem(ITEM_SLOT);
+        if (inSlot == null || inSlot.isEmpty()) {
+            return 1;
+        }
+        return inSlot.getAmount();
     }
 
     private Map<String, String> amountPlaceholders() {
-        ItemStack item = inventory.getItem(ITEM_SLOT);
-        int maxAmount = item == null || item.isEmpty() ? 1 : item.getAmount();
-        return Map.of("amount", String.valueOf(sellAmount), "max", String.valueOf(maxAmount));
+        return Map.of("amount", String.valueOf(sellAmount), "max", String.valueOf(maxStackAmount()));
     }
 
     public enum MenuAction {

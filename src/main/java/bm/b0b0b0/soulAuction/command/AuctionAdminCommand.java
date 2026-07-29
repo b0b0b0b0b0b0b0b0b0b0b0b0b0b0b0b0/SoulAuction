@@ -36,11 +36,11 @@ public final class AuctionAdminCommand {
 
     public boolean handle(CommandSender sender, String[] args) {
         if (!sender.hasPermission(PERMISSION_ADMIN)) {
-            sender.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(sender, "error-no-permission");
             return true;
         }
         if (args.length < 1) {
-            sender.sendMessage(messageService.component("error-admin-usage"));
+            messageService.send(sender, "error-admin-usage");
             return true;
         }
         String sub = args[0].toLowerCase();
@@ -57,7 +57,7 @@ public final class AuctionAdminCommand {
             case "migrate" -> migrate(sender, subArgs);
             case "parse" -> parse(sender, subArgs);
             default -> {
-                sender.sendMessage(messageService.component("error-admin-usage"));
+                messageService.send(sender, "error-admin-usage");
                 yield true;
             }
         };
@@ -65,22 +65,22 @@ public final class AuctionAdminCommand {
 
     public boolean purge(CommandSender sender, String[] args) {
         if (!sender.hasPermission(PERMISSION_ADMIN)) {
-            sender.sendMessage(messageService.component("error-no-permission"));
+            messageService.send(sender, "error-no-permission");
             return true;
         }
         if (args.length < 1) {
-            sender.sendMessage(messageService.component("error-purge-usage"));
+            messageService.send(sender, "error-purge-usage");
             return true;
         }
         int days;
         try {
             days = Integer.parseInt(args[0]);
         } catch (NumberFormatException exception) {
-            sender.sendMessage(messageService.component("error-purge-usage"));
+            messageService.send(sender, "error-purge-usage");
             return true;
         }
         int removed = auctionService.purgeHistoryOlderThanDays(days);
-        sender.sendMessage(messageService.component("success-purge", Map.of("removed", String.valueOf(removed), "days", String.valueOf(days))));
+        messageService.send(sender, "success-purge", Map.of("removed", String.valueOf(removed), "days", String.valueOf(days)));
         if (sender instanceof Player player) {
             auctionService.audit(player.getUniqueId(), player.getName(), "PURGE_HISTORY", "days=" + days + ",removed=" + removed);
         }
@@ -89,7 +89,7 @@ public final class AuctionAdminCommand {
 
     private boolean history(CommandSender sender, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(messageService.component("error-admin-history-usage"));
+            messageService.send(sender, "error-admin-history-usage");
             return true;
         }
         OfflinePlayer target = Bukkit.getOfflinePlayer(args[0]);
@@ -98,17 +98,17 @@ public final class AuctionAdminCommand {
             try {
                 limit = Math.min(100, Math.max(1, Integer.parseInt(args[1])));
             } catch (NumberFormatException ignored) {
-                sender.sendMessage(messageService.component("error-admin-history-usage"));
+                messageService.send(sender, "error-admin-history-usage");
                 return true;
             }
         }
         List<DealHistoryEntry> entries = auctionService.adminHistoryForPlayer(target.getUniqueId(), limit);
-        sender.sendMessage(messageService.component(
+        messageService.send(sender, 
                 "admin-history-header",
                 Map.of("player", target.getName() == null ? target.getUniqueId().toString() : target.getName(), "count", String.valueOf(entries.size()))
-        ));
+        );
         for (DealHistoryEntry entry : entries) {
-            sender.sendMessage(messageService.component(
+            messageService.send(sender, 
                     "admin-history-line",
                     Map.of(
                             "action", entry.action(),
@@ -116,24 +116,24 @@ public final class AuctionAdminCommand {
                             "price", auctionService.formatPrice(entry.price(), entry.auctionId()),
                             "auction", entry.auctionId()
                     )
-            ));
+            );
         }
         return true;
     }
 
     private boolean selling(CommandSender sender, String[] args) {
         if (!(sender instanceof Player admin)) {
-            sender.sendMessage(messageService.component("error-only-player"));
+            messageService.send(sender, "error-only-player");
             return true;
         }
         if (args.length < 1) {
-            sender.sendMessage(messageService.component("error-admin-selling-usage"));
+            messageService.send(sender, "error-admin-selling-usage");
             return true;
         }
         OfflinePlayer target = Bukkit.getOfflinePlayer(args[0]);
         String auctionId = args.length > 1 ? args[1] : auctionService.defaultAuctionId();
         if (!auctionService.auctionExists(auctionId)) {
-            admin.sendMessage(messageService.component("error-auction-not-found"));
+            messageService.send(admin, "error-auction-not-found");
             return true;
         }
         PlayerRecordsMenu menu = new PlayerRecordsMenu(
@@ -150,7 +150,7 @@ public final class AuctionAdminCommand {
 
     private boolean blacklist(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(messageService.component("error-admin-blacklist-usage"));
+            messageService.send(sender, "error-admin-blacklist-usage");
             return true;
         }
         OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
@@ -159,67 +159,67 @@ public final class AuctionAdminCommand {
         String action = args[0].toLowerCase();
         if (action.equals("add")) {
             auctionService.adminBlacklistAdd(target.getUniqueId(), actorId, actorName);
-            sender.sendMessage(messageService.component("success-blacklist-add", Map.of("player", target.getName() == null ? target.getUniqueId().toString() : target.getName())));
+            messageService.send(sender, "success-blacklist-add", Map.of("player", target.getName() == null ? target.getUniqueId().toString() : target.getName()));
         } else if (action.equals("remove")) {
             auctionService.adminBlacklistRemove(target.getUniqueId(), actorId, actorName);
-            sender.sendMessage(messageService.component("success-blacklist-remove", Map.of("player", target.getName() == null ? target.getUniqueId().toString() : target.getName())));
+            messageService.send(sender, "success-blacklist-remove", Map.of("player", target.getName() == null ? target.getUniqueId().toString() : target.getName()));
         } else {
-            sender.sendMessage(messageService.component("error-admin-blacklist-usage"));
+            messageService.send(sender, "error-admin-blacklist-usage");
         }
         return true;
     }
 
     private boolean recover(CommandSender sender, String[] args) {
         if (!(sender instanceof Player admin)) {
-            sender.sendMessage(messageService.component("error-only-player"));
+            messageService.send(sender, "error-only-player");
             return true;
         }
         if (args.length < 1) {
-            sender.sendMessage(messageService.component("error-admin-recover-usage"));
+            messageService.send(sender, "error-admin-recover-usage");
             return true;
         }
         long claimId;
         try {
             claimId = Long.parseLong(args[0]);
         } catch (NumberFormatException exception) {
-            sender.sendMessage(messageService.component("error-admin-recover-usage"));
+            messageService.send(sender, "error-admin-recover-usage");
             return true;
         }
         ClaimEntry claim = auctionService.adminRecoverClaim(claimId);
         if (claim == null) {
-            admin.sendMessage(messageService.component("error-claim-not-found"));
+            messageService.send(admin, "error-claim-not-found");
             return true;
         }
         ItemStack item = ItemStackCodec.decode(claim.itemBase64());
         var leftovers = admin.getInventory().addItem(item);
         if (!leftovers.isEmpty()) {
-            admin.sendMessage(messageService.component("error-inventory-full"));
+            messageService.send(admin, "error-inventory-full");
             auctionService.restoreClaimEntry(claim);
             return true;
         }
         auctionService.audit(admin.getUniqueId(), admin.getName(), "ADMIN_RECOVER", "claimId=" + claimId);
-        admin.sendMessage(messageService.component("success-admin-recover", Map.of("id", String.valueOf(claimId))));
+        messageService.send(admin, "success-admin-recover", Map.of("id", String.valueOf(claimId)));
         return true;
     }
 
     private boolean cache(CommandSender sender, String[] args) {
         if (args.length < 1) {
-            sender.sendMessage(messageService.component("error-admin-cache-usage"));
+            messageService.send(sender, "error-admin-cache-usage");
             return true;
         }
         String action = args[0].toLowerCase();
         return switch (action) {
             case "stats" -> {
-                sender.sendMessage(messageService.component("admin-cache-stats", Map.of("stats", auctionService.listingCacheStats())));
+                messageService.send(sender, "admin-cache-stats", Map.of("stats", auctionService.listingCacheStats()));
                 yield true;
             }
             case "rebuild", "invalidate" -> {
                 auctionService.rebuildListingCache();
-                sender.sendMessage(messageService.component("admin-cache-rebuilt"));
+                messageService.send(sender, "admin-cache-rebuilt");
                 yield true;
             }
             default -> {
-                sender.sendMessage(messageService.component("error-admin-cache-usage"));
+                messageService.send(sender, "error-admin-cache-usage");
                 yield true;
             }
         };
@@ -227,17 +227,17 @@ public final class AuctionAdminCommand {
 
     private boolean sellFor(CommandSender sender, String[] args) {
         if (!(sender instanceof Player admin)) {
-            sender.sendMessage(messageService.component("error-only-player"));
+            messageService.send(sender, "error-only-player");
             return true;
         }
         if (args.length < 3) {
-            sender.sendMessage(messageService.component("error-admin-sellfor-usage"));
+            messageService.send(sender, "error-admin-sellfor-usage");
             return true;
         }
         OfflinePlayer target = Bukkit.getOfflinePlayer(args[0]);
         Player online = target.getPlayer();
         if (online == null) {
-            sender.sendMessage(messageService.component("error-player-offline"));
+            messageService.send(sender, "error-player-offline");
             return true;
         }
         String auctionId = args[1];
@@ -245,40 +245,40 @@ public final class AuctionAdminCommand {
         try {
             price = Integer.parseInt(args[2]);
         } catch (NumberFormatException exception) {
-            sender.sendMessage(messageService.component("error-admin-sellfor-usage"));
+            messageService.send(sender, "error-admin-sellfor-usage");
             return true;
         }
         var result = auctionService.createListingFromItem(online, auctionId, price, admin.getInventory().getItemInMainHand());
         if (!result.success()) {
-            admin.sendMessage(messageService.component(result.failure().messageKey()));
+            messageService.send(admin, result.failure().messageKey());
             return true;
         }
         admin.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
-        admin.sendMessage(messageService.component(
+        messageService.send(admin, 
                 "success-admin-sellfor",
                 Map.of("player", online.getName(), "id", String.valueOf(result.listing().listingId()))
-        ));
+        );
         auctionService.audit(admin.getUniqueId(), admin.getName(), "ADMIN_SELLFOR", "target=" + online.getUniqueId());
         return true;
     }
 
     private boolean migrate(CommandSender sender, String[] args) {
-        sender.sendMessage(messageService.component("admin-migrate-stub", Map.of("source", args.length > 0 ? args[0] : "unknown")));
+        messageService.send(sender, "admin-migrate-stub", Map.of("source", args.length > 0 ? args[0] : "unknown"));
         return true;
     }
 
     private boolean parse(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(messageService.component("error-only-player"));
+            messageService.send(sender, "error-only-player");
             return true;
         }
         if (args.length < 1) {
-            sender.sendMessage(messageService.component("error-admin-parse-usage"));
+            messageService.send(sender, "error-admin-parse-usage");
             return true;
         }
         ItemStack item = player.getInventory().getItemInMainHand();
         if (item == null || item.isEmpty()) {
-            sender.sendMessage(messageService.component("error-main-hand-empty"));
+            messageService.send(sender, "error-main-hand-empty");
             return true;
         }
         String mode = args[0].toLowerCase();
@@ -288,16 +288,16 @@ public final class AuctionAdminCommand {
             default -> List.of();
         };
         if (lines.isEmpty()) {
-            sender.sendMessage(messageService.component("error-admin-parse-usage"));
+            messageService.send(sender, "error-admin-parse-usage");
             return true;
         }
-        sender.sendMessage(messageService.component("admin-parse-header", Map.of("mode", mode)));
+        messageService.send(sender, "admin-parse-header", Map.of("mode", mode));
         int limit = Math.min(lines.size(), 40);
         for (int i = 0; i < limit; i++) {
-            sender.sendMessage(messageService.component("admin-parse-line", Map.of("line", lines.get(i))));
+            messageService.send(sender, "admin-parse-line", Map.of("line", lines.get(i)));
         }
         if (lines.size() > limit) {
-            sender.sendMessage(messageService.component("admin-parse-truncated", Map.of("count", String.valueOf(lines.size() - limit))));
+            messageService.send(sender, "admin-parse-truncated", Map.of("count", String.valueOf(lines.size() - limit)));
         }
         auctionService.audit(player.getUniqueId(), player.getName(), "ADMIN_PARSE_" + mode.toUpperCase(Locale.ROOT), ItemStackCodec.encode(item));
         return true;
@@ -309,12 +309,12 @@ public final class AuctionAdminCommand {
             try {
                 limit = Math.min(100, Math.max(1, Integer.parseInt(args[0])));
             } catch (NumberFormatException exception) {
-                sender.sendMessage(messageService.component("error-admin-audit-usage"));
+                messageService.send(sender, "error-admin-audit-usage");
                 return true;
             }
         }
         for (var entry : auctionService.recentAudit(limit)) {
-            sender.sendMessage(messageService.component(
+            messageService.send(sender, 
                     "admin-audit-line",
                     Map.of(
                             "id", String.valueOf(entry.auditId()),
@@ -322,7 +322,7 @@ public final class AuctionAdminCommand {
                             "action", entry.action(),
                             "details", entry.details()
                     )
-            ));
+            );
         }
         return true;
     }

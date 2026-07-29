@@ -5,6 +5,7 @@ import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
 import bm.b0b0b0.soulAuction.model.LimitOverrideEntry;
+import bm.b0b0b0.soulAuction.model.PendingExpiredListingNotification;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -42,6 +43,7 @@ public final class AuctionRuntimeStorage {
     private final List<DealHistoryEntry> history;
     private final List<LimitOverrideEntry> limitOverrides;
     private final List<PendingSaleNotification> notifications;
+    private final List<PendingExpiredListingNotification> expiredListingNotifications;
     private final Map<UUID, List<UUID>> favoriteSellersByViewer;
     private final Map<UUID, List<Long>> favoriteListingsByViewer;
     private final Map<UUID, Long> lastSellEpochMillis;
@@ -69,6 +71,7 @@ public final class AuctionRuntimeStorage {
         this.history = new ArrayList<>();
         this.limitOverrides = new ArrayList<>();
         this.notifications = new ArrayList<>();
+        this.expiredListingNotifications = new ArrayList<>();
         this.favoriteSellersByViewer = new HashMap<>();
         this.favoriteListingsByViewer = new HashMap<>();
         this.lastSellEpochMillis = new HashMap<>();
@@ -499,6 +502,30 @@ public final class AuctionRuntimeStorage {
         scheduleDebouncedFlush();
     }
 
+    public void addPendingExpiredListingNotification(PendingExpiredListingNotification notification) {
+        synchronized (notifications) {
+            expiredListingNotifications.add(notification);
+        }
+        scheduleDebouncedFlush();
+    }
+
+    public List<PendingExpiredListingNotification> takePendingExpiredListingNotifications(UUID playerId) {
+        List<PendingExpiredListingNotification> output = new ArrayList<>();
+        synchronized (notifications) {
+            expiredListingNotifications.removeIf(notification -> {
+                if (notification.playerId().equals(playerId)) {
+                    output.add(notification);
+                    return true;
+                }
+                return false;
+            });
+        }
+        if (!output.isEmpty()) {
+            scheduleDebouncedFlush();
+        }
+        return output;
+    }
+
     public List<PendingSaleNotification> takePendingSaleNotifications(UUID playerId) {
         List<PendingSaleNotification> output = new ArrayList<>();
         synchronized (notifications) {
@@ -580,6 +607,7 @@ public final class AuctionRuntimeStorage {
     private void loadNotificationsSync() throws Exception {
         synchronized (notifications) {
             notifications.clear();
+            expiredListingNotifications.clear();
             if (!Files.exists(notificationsFile)) {
                 return;
             }
@@ -587,6 +615,9 @@ public final class AuctionRuntimeStorage {
                 NotificationsPayload payload = gson.fromJson(reader, NotificationsPayload.class);
                 if (payload != null && payload.entries != null) {
                     notifications.addAll(payload.entries);
+                }
+                if (payload != null && payload.expiredEntries != null) {
+                    expiredListingNotifications.addAll(payload.expiredEntries);
                 }
             }
         }
@@ -691,6 +722,7 @@ public final class AuctionRuntimeStorage {
         synchronized (notifications) {
             NotificationsPayload notificationsPayload = new NotificationsPayload();
             notificationsPayload.entries = new ArrayList<>(notifications);
+            notificationsPayload.expiredEntries = new ArrayList<>(expiredListingNotifications);
             try (Writer writer = Files.newBufferedWriter(notificationsFile)) {
                 gson.toJson(notificationsPayload, writer);
             }
@@ -758,6 +790,7 @@ public final class AuctionRuntimeStorage {
 
     private static final class NotificationsPayload {
         private List<PendingSaleNotification> entries;
+        private List<PendingExpiredListingNotification> expiredEntries;
     }
 
     private static final class FavoriteEntry {

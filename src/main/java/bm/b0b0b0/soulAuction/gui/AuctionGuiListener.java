@@ -14,7 +14,10 @@ import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.block.Container;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -33,6 +36,7 @@ public final class AuctionGuiListener implements Listener {
     private final Supplier<PluginConfig> configSupplier;
     private final AuctionService auctionService;
     private final MessageService messageService;
+    private final ConcurrentHashMap<UUID, BukkitTask> browserExpiryRefreshTasks = new ConcurrentHashMap<>();
 
     public AuctionGuiListener(
             JavaPlugin plugin,
@@ -53,7 +57,7 @@ public final class AuctionGuiListener implements Listener {
         }
         if (!auctionService.isLoaded()) {
             event.setCancelled(true);
-            player.sendMessage(messageService.component("error-still-loading"));
+            messageService.send(player, "error-still-loading");
             player.closeInventory();
             return;
         }
@@ -147,6 +151,9 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         if (!(event.getInventory().getHolder(false) instanceof AuctionSellMenu sellMenu)) {
+            if (event.getInventory().getHolder(false) instanceof AuctionBrowserMenu) {
+                stopBrowserExpiryRefresh(player.getUniqueId());
+            }
             return;
         }
         if (!sellMenu.shouldReturnOnClose()) {
@@ -192,7 +199,7 @@ public final class AuctionGuiListener implements Listener {
         setupMenu.syncAmountFromItem();
         ItemStack stack = setupMenu.reservedItem();
         if (stack == null || stack.isEmpty()) {
-            player.sendMessage(messageService.component("error-sell-menu-no-item"));
+            messageService.send(player, "error-sell-menu-no-item");
             return;
         }
         stack = setupMenu.takeReservedItem();
@@ -228,25 +235,25 @@ public final class AuctionGuiListener implements Listener {
         if (listingId != null) {
             var listing = auctionService.listingById(listingId);
             if (listing == null) {
-                player.sendMessage(messageService.component("error-listing-unavailable"));
+                messageService.send(player, "error-listing-unavailable");
                 menu.refresh();
                 return;
             }
             if (event.isShiftClick() && event.isRightClick()) {
                 boolean added = auctionService.toggleFavoriteSeller(player.getUniqueId(), listing.sellerId());
-                player.sendMessage(messageService.component(
+                messageService.send(player, 
                         added ? "favorite-added" : "favorite-removed",
                         Map.of("seller", listing.sellerName())
-                ));
+                );
                 menu.refresh();
                 return;
             }
             if (event.isShiftClick() && event.isLeftClick()) {
                 boolean added = auctionService.toggleFavoriteListing(player.getUniqueId(), listing.listingId());
-                player.sendMessage(messageService.component(
+                messageService.send(player, 
                         added ? "favorite-listing-added" : "favorite-listing-removed",
                         Map.of("id", String.valueOf(listing.listingId()))
-                ));
+                );
                 menu.refresh();
                 return;
             }
@@ -308,16 +315,16 @@ public final class AuctionGuiListener implements Listener {
             openBrowser(player, menu.auctionId());
             return;
         }
-        player.sendMessage(messageService.component(
+        messageService.send(player, 
                 "success-bought",
                 Map.of("price", auctionService.formatPrice(result.buyerCharge(), result.listing().auctionId(), player))
-        ));
+        );
         Player seller = result.seller();
         if (seller != null) {
-            seller.sendMessage(messageService.component(
+            messageService.send(seller, 
                     "success-sold",
                     Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().auctionId(), player))
-            ));
+            );
         }
         openBrowser(player, menu.auctionId());
     }
@@ -335,14 +342,14 @@ public final class AuctionGuiListener implements Listener {
         if (menu.isRemove(slot)) {
             CancelResult result = auctionService.cancelListing(player, menu.listingId(), false);
             if (!result.success()) {
-                player.sendMessage(messageService.component("error-listing-unavailable"));
+                messageService.send(player, "error-listing-unavailable");
                 openBrowser(player, menu.auctionId());
                 return;
             }
             if (result.movedToClaim()) {
-                player.sendMessage(messageService.component("cancelled-to-claim"));
+                messageService.send(player, "cancelled-to-claim");
             } else {
-                player.sendMessage(messageService.component("cancelled-and-returned"));
+                messageService.send(player, "cancelled-and-returned");
             }
             openBrowser(player, menu.auctionId());
             return;
@@ -350,20 +357,20 @@ public final class AuctionGuiListener implements Listener {
         if (menu.isApply(slot)) {
             EditPriceResult result = auctionService.editListingPrice(player, menu.listingId(), menu.editedPrice());
             if (result == EditPriceResult.SUCCESS) {
-                player.sendMessage(messageService.component("owner-price-updated"));
+                messageService.send(player, "owner-price-updated");
                 menu.refresh();
                 return;
             }
             if (result == EditPriceResult.INVALID_PRICE) {
-                player.sendMessage(messageService.component("error-invalid-price"));
+                messageService.send(player, "error-invalid-price");
                 return;
             }
             if (result == EditPriceResult.NOT_OWNER) {
-                player.sendMessage(messageService.component("error-cancel-not-owner"));
+                messageService.send(player, "error-cancel-not-owner");
                 openBrowser(player, menu.auctionId());
                 return;
             }
-            player.sendMessage(messageService.component("error-listing-unavailable"));
+            messageService.send(player, "error-listing-unavailable");
             openBrowser(player, menu.auctionId());
             return;
         }
@@ -470,7 +477,39 @@ public final class AuctionGuiListener implements Listener {
                 page,
                 search
         );
-        PluginSchedulers.run(plugin, player, () -> player.openInventory(browserMenu.getInventory()));
+        PluginSchedulers.run(plugin, player, () -> {
+            player.openInventory(browserMenu.getInventory());
+            startBrowserExpiryRefresh(player, browserMenu);
+        });
+    }
+
+    private void startBrowserExpiryRefresh(Player player, AuctionBrowserMenu menu) {
+        stopBrowserExpiryRefresh(player.getUniqueId());
+        if (!auctionService.listingExpiryEnabled(menu.auctionId())) {
+            return;
+        }
+        BukkitTask task = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            if (!player.isOnline()) {
+                stopBrowserExpiryRefresh(player.getUniqueId());
+                return;
+            }
+            if (!(player.getOpenInventory().getTopInventory().getHolder(false) instanceof AuctionBrowserMenu open)) {
+                stopBrowserExpiryRefresh(player.getUniqueId());
+                return;
+            }
+            if (!open.viewerId().equals(menu.viewerId()) || !open.auctionId().equalsIgnoreCase(menu.auctionId())) {
+                return;
+            }
+            open.refresh();
+        }, 20L, 20L);
+        browserExpiryRefreshTasks.put(player.getUniqueId(), task);
+    }
+
+    private void stopBrowserExpiryRefresh(UUID playerId) {
+        BukkitTask task = browserExpiryRefreshTasks.remove(playerId);
+        if (task != null) {
+            task.cancel();
+        }
     }
 
     private void handleSellClick(InventoryClickEvent event, Player player, AuctionSellMenu menu) {
@@ -484,6 +523,15 @@ public final class AuctionGuiListener implements Listener {
         int slot = event.getSlot();
         AuctionSellMenu.MenuAction action = menu.clickTop(slot);
         if (action == AuctionSellMenu.MenuAction.ITEM_SLOT) {
+            if (event.getClickedInventory() == event.getView().getTopInventory() && menu.hasBackingStack()) {
+                ItemStack cursor = event.getCursor();
+                boolean taking = cursor == null || cursor.isEmpty();
+                if (taking) {
+                    event.setCancelled(true);
+                    menu.refresh();
+                    return;
+                }
+            }
             PluginSchedulers.run(plugin, player, menu::syncAmountFromItem);
             return;
         }
@@ -529,7 +577,7 @@ public final class AuctionGuiListener implements Listener {
         }
         ItemStack stack = menu.takeHeldStack();
         if (stack == null || stack.isEmpty()) {
-            player.sendMessage(messageService.component("error-sell-menu-no-item"));
+            messageService.send(player, "error-sell-menu-no-item");
             openBrowser(player, menu.auctionId());
             return;
         }
@@ -550,10 +598,7 @@ public final class AuctionGuiListener implements Listener {
             openSellSetup(player, menu.auctionId(), stack, menu.price(), menu.sellAmount());
             return;
         }
-        player.sendMessage(messageService.component(
-                "success-listed",
-                Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().auctionId(), player))
-        ));
+        auctionService.sendListingCreatedMessage(player, result.listing());
         int left = stack.getAmount() - sellAmount;
         if (left > 0) {
             ItemStack remainder = stack.clone();
@@ -564,10 +609,10 @@ public final class AuctionGuiListener implements Listener {
     }
 
     private void sendPurchaseError(Player player, PurchaseFailure failure) {
-        player.sendMessage(messageService.component(failure.messageKey()));
+        messageService.send(player, failure.messageKey());
     }
 
     private void sendSellError(Player player, SellFailure failure) {
-        player.sendMessage(messageService.component(failure.messageKey()));
+        messageService.send(player, failure.messageKey());
     }
 }

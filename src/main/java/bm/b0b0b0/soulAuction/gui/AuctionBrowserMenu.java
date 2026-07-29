@@ -86,17 +86,17 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         return searchQuery;
     }
 
-    @Override
-    public Inventory getInventory() {
-        return inventory;
+    public String auctionId() {
+        return auctionId;
     }
 
     public UUID viewerId() {
         return viewerId;
     }
 
-    public String auctionId() {
-        return auctionId;
+    @Override
+    public Inventory getInventory() {
+        return inventory;
     }
 
     public void click(int slot) {
@@ -131,7 +131,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             if (player != null) {
                 auctionService.beginPendingChatSearch(viewerId, auctionId);
                 player.closeInventory();
-                player.sendMessage(messageService.component("search-chat-prompt"));
+                messageService.send(player, "search-chat-prompt");
             }
             return;
         }
@@ -204,16 +204,17 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             if (itemMeta != null) {
                 java.util.ArrayList<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>(messageService.components(
                         "listing-lore",
-                        Map.of("seller", listing.sellerName(), "price", auctionService.formatPrice(listing.price(), listing.auctionId(), viewerId))
+                        auctionService.listingLorePlaceholders(listing, viewerId)
                 ));
+                if (auctionService.listingExpiryEnabled(auctionId)) {
+                    lore.addAll(messageService.components(
+                            "listing-lore-expires",
+                            auctionService.listingLorePlaceholders(listing, viewerId)
+                    ));
+                }
                 lore.addAll(messageService.componentsFromTemplates(
                         auctionService.listingLoreTemplate(auctionId),
-                        Map.of(
-                                "seller", listing.sellerName(),
-                                "price", auctionService.formatPrice(listing.price(), listing.auctionId(), viewerId),
-                                "id", String.valueOf(listing.listingId()),
-                                "auction", listing.auctionId()
-                        )
+                        auctionService.listingLorePlaceholders(listing, viewerId)
                 ));
                 if (auctionService.isFavoriteSeller(viewerId, listing.sellerId())) {
                     lore.add(messageService.component("listing-lore-favorite"));

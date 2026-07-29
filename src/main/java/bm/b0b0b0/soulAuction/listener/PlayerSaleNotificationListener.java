@@ -1,6 +1,7 @@
 package bm.b0b0b0.soulAuction.listener;
 
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.model.PendingExpiredListingNotification;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import java.util.List;
@@ -24,7 +25,7 @@ public final class PlayerSaleNotificationListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         if (auctionService.claimPendingSalePayments(player)) {
-            player.sendMessage(messageService.component("success-claim-money-auto"));
+            messageService.send(player, "success-claim-money-auto");
         }
         List<PendingSaleNotification> notifications = auctionService.takePendingSaleNotifications(player.getUniqueId());
         for (PendingSaleNotification notification : notifications) {
@@ -34,10 +35,14 @@ public final class PlayerSaleNotificationListener implements Listener {
                     player
             );
             String tax = auctionService.formatPrice(notification.tax(), notification.auctionId(), player);
-            player.sendMessage(messageService.component(
+            messageService.send(player,
                     "offline-sale-notification",
                     Map.of("payout", payout, "tax", tax, "auction", notification.auctionId())
-            ));
+            );
+        }
+        List<PendingExpiredListingNotification> expired = auctionService.takePendingExpiredListingNotifications(player.getUniqueId());
+        for (PendingExpiredListingNotification notification : expired) {
+            auctionService.deliverExpiredListingNotification(player, notification);
         }
     }
 }

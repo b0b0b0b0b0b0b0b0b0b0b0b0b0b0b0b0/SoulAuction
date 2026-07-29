@@ -113,10 +113,12 @@ public final class PlayerRecordsMenu implements InventoryHolder {
             ItemStack item = ItemStackCodec.decode(listing.itemBase64());
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
-                meta.lore(messageService.components("record-selling-lore", Map.of(
-                        "id", String.valueOf(listing.listingId()),
-                        "price", auctionService.formatPrice(listing.price(), listing.auctionId(), viewerId)
-                )));
+                java.util.Map<String, String> lorePlaceholders = auctionService.listingLorePlaceholders(listing, viewerId);
+                java.util.ArrayList<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>(messageService.components("record-selling-lore", lorePlaceholders));
+                if (auctionService.listingExpiryEnabled(listing.auctionId())) {
+                    lore.addAll(messageService.components("record-selling-expires", lorePlaceholders));
+                }
+                meta.lore(lore);
                 item.setItemMeta(meta);
             }
             inventory.setItem(i, item);

@@ -3,9 +3,12 @@ package bm.b0b0b0.soulAuction.listener;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.gui.AuctionBrowserMenu;
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterState;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import io.papermc.paper.event.player.AsyncChatEvent;
+import java.util.Map;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
@@ -36,7 +39,7 @@ public final class AuctionSearchChatListener implements Listener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onChat(AsyncChatEvent event) {
         Player player = event.getPlayer();
-        var pending = auctionService.consumePendingChatSearch(player.getUniqueId());
+        var pending = auctionService.peekPendingChatSearch(player.getUniqueId());
         if (pending.isEmpty()) {
             return;
         }
@@ -44,28 +47,65 @@ public final class AuctionSearchChatListener implements Listener {
         String query = PlainTextComponentSerializer.plainText().serialize(event.message()).trim();
         AuctionService.PendingChatSearch context = pending.get();
         PluginSchedulers.run(plugin, player, () -> {
+            auctionService.consumePendingChatSearch(player.getUniqueId());
+            BrowseFilterState previous = auctionService.browseFilterState(player.getUniqueId());
+            String appliedQuery;
             if (query.equalsIgnoreCase("-") || query.isBlank()) {
-                auctionService.setBrowseFilterState(
-                        player.getUniqueId(),
-                        auctionService.browseFilterState(player.getUniqueId()).withSearch(null)
-                );
+                appliedQuery = null;
+                auctionService.setBrowseFilterState(player.getUniqueId(), previous.withSearch(null));
             } else {
-                auctionService.setBrowseFilterState(
-                        player.getUniqueId(),
-                        auctionService.browseFilterState(player.getUniqueId()).withSearch(query)
-                );
+                appliedQuery = query;
+                auctionService.setBrowseFilterState(player.getUniqueId(), previous.withSearch(query));
             }
-            AuctionBrowserMenu menu = new AuctionBrowserMenu(
-                    player.getUniqueId(),
-                    context.auctionId(),
-                    auctionService,
-                    messageService,
-                    configSupplier.get().guiGeneralSettings(),
-                    0,
-                    auctionService.browseFilterState(player.getUniqueId()).searchQuery()
-            );
-            player.openInventory(menu.getInventory());
-            player.sendMessage(messageService.component("search-chat-applied"));
+            openBrowser(player, context.auctionId());
+            sendSearchResultMessage(player, context.auctionId(), appliedQuery);
         });
+    }
+
+    private void openBrowser(Player player, String auctionId) {
+        AuctionBrowserMenu menu = new AuctionBrowserMenu(
+                player.getUniqueId(),
+                auctionId,
+                auctionService,
+                messageService,
+                configSupplier.get().guiGeneralSettings(),
+                0,
+                auctionService.browseFilterState(player.getUniqueId()).searchQuery()
+        );
+        player.openInventory(menu.getInventory());
+    }
+
+    private void sendSearchResultMessage(Player player, String auctionId, String appliedQuery) {
+        BrowseFilterState state = auctionService.browseFilterState(player.getUniqueId());
+        BrowseFilterState withoutSearch = state.withSearch(null);
+        int total = auctionService.count(
+                auctionId,
+                AuctionCategory.ALL,
+                null,
+                player.getUniqueId(),
+                withoutSearch
+        );
+        int found = auctionService.count(
+                auctionId,
+                AuctionCategory.ALL,
+                appliedQuery,
+                player.getUniqueId(),
+                state
+        );
+        if (appliedQuery == null || appliedQuery.isBlank()) {
+            messageService.send(player, 
+                    "search-chat-cleared",
+                    Map.of("found", String.valueOf(total), "total", String.valueOf(total))
+            );
+            return;
+        }
+        messageService.send(player, 
+                "search-chat-applied",
+                Map.of(
+                        "query", appliedQuery,
+                        "found", String.valueOf(found),
+                        "total", String.valueOf(total)
+                )
+        );
     }
 }

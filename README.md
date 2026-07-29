@@ -37,7 +37,7 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 - Мульти-аукционы, раздельные `open` / `buy` / `sell` permissions.
 - Валюты: `VAULT`, `PLAYER_POINTS`, `EXPERIENCE`, `COINS_ENGINE`, `ITEM`.
 - Хранилище: `JSON`, `YAML`, `SQLITE`, `MYSQL`.
-- TTL лотов, claim, комиссии per-auction, история sold/cancelled/expired.
+- TTL лотов (срок или «без срока»), claim, уведомление продавцу при истечении, комиссии per-auction, история sold/cancelled/expired.
 - Лимиты лотов: `soulauction.<auctionId>.<N>`, `soulauction.all.<N>`.
 - Приоритет в выдаче: `soulauction.priority.<N>`.
 - Broadcast крупных продаж, внешние уведомления (Discord/Telegram).
@@ -52,6 +52,15 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 | `currencySymbol` | Знак или иконка в GUI и чате. Пусто — формат экономики (Vault `$`, PlayerPoints `PP`, предметы `Nx MATERIAL`). |
 | `currencySymbolPosition` | `BEFORE` или `AFTER` числа (`$100` или `100 ₽`). |
 | `currencySymbolPlaceholderApi` | `true` — подставить `%...%` из PlaceholderAPI **для игрока, который видит цену** (нужен PlaceholderAPI). |
+| `listingTtlSeconds` | Срок лота в секундах; **0 или меньше — без срока** (не истекает). |
+
+### Срок лотов (TTL) и claim
+
+- Пока лот **ACTIVE**, в витрине и в «Мои лоты» (если срок включён) в lore: **осталось / до какого времени**; в открытой витрине таймер обновляется раз в секунду.
+- **Истёк срок, никто не купил:** лот снимается (`EXPIRED`), предмет один раз попадает в **claim** (`claims.json`), не в void.
+- **Продавец:** в чат (онлайн сразу, оффлайн при входе) — что истекло и **[Забрать в меню]** → `/ah expired [auctionId]`; выдача предметов — **`/ah claim`** (меню просроченных только показывает, слоты не редактируются).
+- **Выставление:** в чат несколько строк — товар, кол-во, цена, аукцион; отдельно блок про срок или «без срока» (`success-listed`, `success-listed-expiry-timed` / `success-listed-expiry-unlimited` в `messages.yml`).
+- На одном процессе: lock на `listingId` + при SQL переход `ACTIVE` → `EXPIRED`/`SOLD`/`CANCELLED` атомарный; claim снимается из буфера до выдачи в инвентарь.
 
 Примеры `currencySymbol`:
 
@@ -64,7 +73,9 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 ## Сообщения (`messages.yml`)
 
 - `prefix` — префикс всех строк с `{prefix}` (дефолт: **Аукцион**, не имя плагина).
-- Остальные ключи — MiniMessage; `{price}` уже с форматом аукциона, в который смотрит игрок.
+- Ключи — MiniMessage; `{price}` уже с форматом аукциона, в который смотрит игрок.
+- **Несколько строк в чате:** ключ как **YAML-список** строк — плагин шлёт каждую строку отдельным сообщением (`MessageService.send`). Одна строка — как раньше. Поиск в чате, успех продажи, истечение лота, usage-команды — в этом формате.
+- Плейсхолдеры lore лота в GUI: `{seller}`, `{price}`, `{id}`, `{auction}`, `{expires_in}`, `{expires_at}` (последние два — если TTL включён); опционально `listingLoreTemplate` в `auctions/*.yml`.
 
 ## Команды
 
@@ -79,8 +90,9 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 - `/ah expired [auctionId]` — GUI просроченных предметов (claim).
 - `/ah purchased [auctionId]` — GUI истории покупок.
 - `/ah history [auctionId]` — GUI истории продаж.
-- `/ah search <текст>` — поиск по продавцу/названию/материалу в аукционе по умолчанию.
-- `/ah search <auctionId> <текст>` — поиск в выбранном аукционе.
+- `/ah search <текст>` — поиск: закрытие GUI, запрос **в чате** (кнопка отмены в сообщении); после ввода — обновлённая витрина и итог в чат.
+- `/ah search <auctionId> <текст>` — то же в выбранном аукционе.
+- `/ah search cancel` — отмена поиска и возврат в аукцион.
 - `/ah page <номер> [auctionId]` — открыть нужную страницу аукциона.
 - `/ah claim [all]` — забрать просроченные/снятые предметы.
 - `/ah cancel <id>` — снять свой лот и вернуть предмет.

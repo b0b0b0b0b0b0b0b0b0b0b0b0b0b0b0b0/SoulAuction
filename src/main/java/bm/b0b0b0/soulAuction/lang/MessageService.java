@@ -7,9 +7,12 @@ import java.util.List;
 import java.util.Map;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import java.util.function.Supplier;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class MessageService {
@@ -55,8 +58,15 @@ public final class MessageService {
         return miniMessage.deserialize(value);
     }
 
+    public List<Component> components(String key) {
+        return components(key, Collections.emptyMap());
+    }
+
     public List<Component> components(String key, Map<String, String> placeholders) {
         List<String> lines = messages.getStringList(key);
+        if (lines == null || lines.isEmpty()) {
+            return List.of();
+        }
         List<Component> output = new ArrayList<>(lines.size());
         for (String line : lines) {
             String formatted = line.replace("{prefix}", template("prefix"));
@@ -66,6 +76,53 @@ public final class MessageService {
             output.add(miniMessage.deserialize(formatted));
         }
         return output;
+    }
+
+    public void send(CommandSender sender, String key) {
+        send(sender, key, Collections.emptyMap());
+    }
+
+    public void send(CommandSender sender, String key, Map<String, String> placeholders) {
+        if (!(sender instanceof Audience audience)) {
+            return;
+        }
+        send(audience, key, placeholders);
+    }
+
+    public void send(Player player, String key) {
+        send((Audience) player, key, Collections.emptyMap());
+    }
+
+    public void send(Player player, String key, Map<String, String> placeholders) {
+        send((Audience) player, key, placeholders);
+    }
+
+    public void send(Audience audience, String key, Map<String, String> placeholders) {
+        if (isDisabled(key)) {
+            return;
+        }
+        List<Component> lines = components(key, placeholders);
+        if (!lines.isEmpty()) {
+            for (Component line : lines) {
+                audience.sendMessage(line);
+            }
+            return;
+        }
+        audience.sendMessage(component(key, placeholders));
+    }
+
+    public void broadcast(String key, Map<String, String> placeholders) {
+        if (isDisabled(key)) {
+            return;
+        }
+        List<Component> lines = components(key, placeholders);
+        if (!lines.isEmpty()) {
+            for (Component line : lines) {
+                plugin.getServer().broadcast(line);
+            }
+            return;
+        }
+        plugin.getServer().broadcast(component(key, placeholders));
     }
 
     public List<Component> componentsFromTemplates(List<String> templates, Map<String, String> placeholders) {
