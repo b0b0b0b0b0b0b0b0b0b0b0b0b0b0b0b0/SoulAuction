@@ -8,10 +8,18 @@ import net.elytrium.serializer.language.object.YamlSerializable;
 
 public final class GuiGeneralSettings extends YamlSerializable {
 
-    @Comment({@CommentValue("Inventory size, multiple of 9")})
+    @Comment({
+            @CommentValue("Main auction browser inventory size (rows × 9). Must be a multiple of 9."),
+            @CommentValue("54 = six rows (slots 0–53). Slot index 0 is top-left, +1 goes right, +9 next row."),
+            @CommentValue("Default layout: slots 0–44 show listings; 45–53 are control buttons (see below)."),
+    })
     public int size = 54;
 
-    @Comment({@CommentValue("Slots used for listing items")})
+    @Comment({
+            @CommentValue("Chest slots where active listings are drawn (page size = this list length)."),
+            @CommentValue("Do not reuse the same slot for controls — keep control slots out of this list."),
+            @CommentValue("Example smaller GUI (45 slots): use 0–35 here and move controls to row 5."),
+    })
     public List<Integer> listingSlots = List.of(
             0, 1, 2, 3, 4, 5, 6, 7, 8,
             9, 10, 11, 12, 13, 14, 15, 16, 17,
@@ -21,7 +29,20 @@ public final class GuiGeneralSettings extends YamlSerializable {
     );
 
     @NewLine
-    @Comment({@CommentValue("Control button slots")})
+    @Comment({
+            @CommentValue("Bottom-bar control buttons in the main /ah browser (slot index in this inventory)."),
+            @CommentValue("Each slot must be unique and between 0 and size − 1."),
+            @CommentValue(""),
+            @CommentValue("previous-page-slot — older listings page"),
+            @CommentValue("next-page-slot     — newer listings page"),
+            @CommentValue("history-slot       — your buy/sell history menu"),
+            @CommentValue("category-slot      — filter by item category"),
+            @CommentValue("search-slot        — search by name (chat prompt)"),
+            @CommentValue("refresh-slot       — reload listings from storage"),
+            @CommentValue("favorites-slot     — favorite sellers menu"),
+            @CommentValue("sort-slot          — change sort order (price, date, …)"),
+            @CommentValue("price-filter-slot  — min/max price filter menu"),
+    })
     public int previousPageSlot = 45;
     public int historySlot = 46;
     public int categorySlot = 47;
@@ -33,8 +54,23 @@ public final class GuiGeneralSettings extends YamlSerializable {
     public int nextPageSlot = 53;
 
     @NewLine
-    @Comment({@CommentValue("Control button materials, Bukkit Material names")})
-    @Comment({@CommentValue("Pagination: prev page = LIGHT_GRAY_DYE (back), next page = GRAY_DYE (forward)")})
+    @Comment({
+            @CommentValue("Vanilla item type for each control (Bukkit Material name)."),
+            @CommentValue("Button labels and lore come from lang/messages_*.yml — not from this file."),
+            @CommentValue(""),
+            @CommentValue("previous-page-material — icon for previous page (default light gray dye = «back»)"),
+            @CommentValue("next-page-material     — icon for next page (default gray dye = «forward»)"),
+            @CommentValue("history-material       — purchase / sale history"),
+            @CommentValue("category-material      — category picker"),
+            @CommentValue("search-material        — search"),
+            @CommentValue("refresh-material       — refresh list"),
+            @CommentValue("favorites-material     — favorite sellers"),
+            @CommentValue("sort-material          — sorting"),
+            @CommentValue("price-filter-material  — price filter"),
+            @CommentValue("back-button-material   — «Back» in sub-menus (category, sort, favorites, …)"),
+            @CommentValue(""),
+            @CommentValue("ItemsAdder / Oraxen: use a vanilla material here and set custom-model-data below."),
+    })
     public String previousPageMaterial = "LIGHT_GRAY_DYE";
     public String historyMaterial = "BOOK";
     public String categoryMaterial = "CHEST";
@@ -45,11 +81,25 @@ public final class GuiGeneralSettings extends YamlSerializable {
     public String priceFilterMaterial = "GOLD_NUGGET";
     public String nextPageMaterial = "GRAY_DYE";
 
-    @Comment({@CommentValue("Sub-menu «Back» — light gray dye only")})
     public String backButtonMaterial = "LIGHT_GRAY_DYE";
 
     @NewLine
-    @Comment({@CommentValue("Custom model data for control buttons, -1 disables")})
+    @Comment({
+            @CommentValue("Custom Model Data on control items (1.14+ resource packs, ItemsAdder, Oraxen, Nexo, …)."),
+            @CommentValue("-1 = do not set CMD (plain vanilla material texture)."),
+            @CommentValue("Must match the CMD on your resource pack / custom item for that button."),
+            @CommentValue("Pairs with *-material above (same order as slot list). back-button has no CMD field."),
+            @CommentValue(""),
+            @CommentValue("previous-page-custom-model-data"),
+            @CommentValue("next-page-custom-model-data"),
+            @CommentValue("history-custom-model-data"),
+            @CommentValue("category-custom-model-data"),
+            @CommentValue("sort-custom-model-data"),
+            @CommentValue("refresh-custom-model-data"),
+            @CommentValue("search-custom-model-data"),
+            @CommentValue("favorites-custom-model-data"),
+            @CommentValue("price-filter-custom-model-data"),
+    })
     public int previousPageCustomModelData = -1;
     public int nextPageCustomModelData = -1;
     public int historyCustomModelData = -1;

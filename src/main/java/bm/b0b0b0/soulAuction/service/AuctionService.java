@@ -13,6 +13,7 @@ import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.PendingExpiredListingNotification;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
+import bm.b0b0b0.soulAuction.model.StorageMode;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
 import bm.b0b0b0.soulAuction.model.result.CancelResult;
 import bm.b0b0b0.soulAuction.model.result.ClaimResult;
@@ -30,6 +31,7 @@ import bm.b0b0b0.soulAuction.service.customitem.CustomItemRuleEngine;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
 import bm.b0b0b0.soulAuction.service.economy.ItemCurrencyService;
 import com.google.gson.Gson;
+import bm.b0b0b0.soulAuction.service.migration.AuctionStorageMigrator;
 import bm.b0b0b0.soulAuction.service.listing.AuctionListingCreator;
 import bm.b0b0b0.soulAuction.service.listing.AuctionPurchaseService;
 import bm.b0b0b0.soulAuction.service.listing.ListingLockRunner;
@@ -37,8 +39,11 @@ import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
 import bm.b0b0b0.soulAuction.util.ItemDisplayNames;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
+import bm.b0b0b0.soulAuction.util.SimilarItemInventory;
 import bm.b0b0b0.soulAuction.util.ListingDurationFormat;
 import java.util.HashMap;
+import java.util.HashSet;
+import net.kyori.adventure.text.Component;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -52,6 +57,7 @@ import java.util.function.Supplier;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.inventory.ItemStack;
 
 public final class AuctionService {
@@ -200,6 +206,10 @@ public final class AuctionService {
         return runtimeStorage.isFavoriteSeller(viewerId, sellerId);
     }
 
+    public List<UUID> favoriteSellers(UUID viewerId) {
+        return runtimeStorage.favoriteSellers(viewerId);
+    }
+
     public boolean toggleFavoriteListing(UUID viewerId, long listingId) {
         return runtimeStorage.toggleFavoriteListing(viewerId, listingId);
     }
@@ -222,7 +232,7 @@ public final class AuctionService {
 
     private void publishListingNetworkChange(String action, AuctionListing listing) {
         AuctionSettings settings = settings();
-        if (settings.network == null || !settings.network.redisFullListingSync) {
+        if (settings.storage == null || settings.storage.redis == null || !settings.storage.redis.redisFullListingSync) {
             return;
         }
         if (listing == null) {
@@ -367,7 +377,36 @@ public final class AuctionService {
         if (sellAmount < 1 || sellAmount > item.getAmount()) {
             return SellResult.failure(SellFailure.INVALID_AMOUNT);
         }
+        ItemStack template = item.clone();
+        template.setAmount(1);
+        int removed = SimilarItemInventory.removeSimilar(
+                seller.getInventory(),
+                template,
+                sellAmount
+        );
+        if (removed < sellAmount) {
+            return SellResult.failure(SellFailure.INVALID_AMOUNT);
+        }
         ItemStack soldItem = item.clone();
+        soldItem.setAmount(sellAmount);
+        return createListingFromEscrow(seller, auctionId, price, soldItem);
+    }
+
+    public SellResult createListingFromEscrow(Player seller, String auctionId, int price, ItemStack escrowItem) {
+        return createListingFromEscrow(seller, auctionId, price, escrowItem, escrowItem == null ? 0 : escrowItem.getAmount());
+    }
+
+    public SellResult createListingFromEscrow(Player seller, String auctionId, int price, ItemStack escrowItem, int sellAmount) {
+        if (!loaded) {
+            return SellResult.failure(SellFailure.STORAGE_NOT_READY);
+        }
+        if (escrowItem == null || escrowItem.isEmpty()) {
+            return SellResult.failure(SellFailure.EMPTY_HAND);
+        }
+        if (sellAmount < 1 || sellAmount > escrowItem.getAmount()) {
+            return SellResult.failure(SellFailure.INVALID_AMOUNT);
+        }
+        ItemStack soldItem = escrowItem.clone();
         soldItem.setAmount(sellAmount);
         if (soldItem.getAmount() != sellAmount) {
             return SellResult.failure(SellFailure.INVALID_AMOUNT);
@@ -649,6 +688,35 @@ public final class AuctionService {
         return repository.listAll().size();
     }
 
+    public AuctionStorageMigrator.Result migrateFromStorage(
+            JavaPlugin plugin,
+            StorageMode sourceMode,
+            boolean dryRun,
+            boolean archiveSource
+    ) {
+        AuctionStorageMigrator migrator = new AuctionStorageMigrator();
+        AuctionStorageMigrator.Result result = migrator.migrate(
+                plugin,
+                settings(),
+                repository,
+                sourceMode,
+                dryRun,
+                archiveSource
+        );
+        if (!dryRun && result.imported() > 0) {
+            HashSet<String> auctionIds = new HashSet<>();
+            for (AuctionListing listing : repository.listAll()) {
+                if (listing.auctionId() != null) {
+                    auctionIds.add(listing.auctionId().toLowerCase(Locale.ROOT));
+                }
+            }
+            for (String auctionId : auctionIds) {
+                invalidateListingCache(auctionId);
+            }
+        }
+        return result;
+    }
+
     public List<DealHistoryEntry> recentSales(String auctionId, int limit) {
         List<DealHistoryEntry> sales = new ArrayList<>();
         for (DealHistoryEntry entry : runtimeStorage.recentHistory(Math.max(50, limit * 3))) {
@@ -923,10 +991,11 @@ public final class AuctionService {
         placeholders.put("seller", listing.sellerName());
         placeholders.put("price", formatPrice(listing.price(), listing.auctionId(), viewerId));
         placeholders.put("id", String.valueOf(listing.listingId()));
-        placeholders.put("auction", listing.auctionId());
+        placeholders.put("auction", auctionDisplayName(listing.auctionId()));
+        java.util.Locale locale = messageService.javaLocale(viewerId);
         if (listingExpiryEnabled(listing.auctionId())) {
-            placeholders.put("expires_in", ListingDurationFormat.formatRemainingMillis(listingRemainingMillis(listing)));
-            placeholders.put("expires_at", ListingDurationFormat.formatExpiresAtEpochMillis(listingExpiresAtEpochMillis(listing)));
+            placeholders.put("expires_in", ListingDurationFormat.formatRemainingMillis(listingRemainingMillis(listing), locale));
+            placeholders.put("expires_at", ListingDurationFormat.formatExpiresAtEpochMillis(listingExpiresAtEpochMillis(listing), locale));
         } else {
             placeholders.put("expires_in", "");
             placeholders.put("expires_at", "");
@@ -937,12 +1006,12 @@ public final class AuctionService {
     public Map<String, String> listingCreatedMessagePlaceholders(Player player, AuctionListing listing) {
         ItemStack item = ItemStackCodec.decode(listing.itemBase64());
         Map<String, String> placeholders = listingLorePlaceholders(listing, player.getUniqueId());
-        placeholders.put("item", ItemDisplayNames.plain(item));
+        java.util.Locale locale = messageService.javaLocale(player.getUniqueId());
         placeholders.put("amount", String.valueOf(Math.max(1, item.getAmount())));
         int ttlSeconds = listingTtlSeconds(listing.auctionId());
-        placeholders.put("duration", ListingDurationFormat.formatSeconds(ttlSeconds));
+        placeholders.put("duration", ListingDurationFormat.formatSeconds(ttlSeconds, locale));
         if (ttlSeconds > 0) {
-            placeholders.put("expires_at", ListingDurationFormat.formatExpiresAtEpochMillis(listingExpiresAtEpochMillis(listing)));
+            placeholders.put("expires_at", ListingDurationFormat.formatExpiresAtEpochMillis(listingExpiresAtEpochMillis(listing), locale));
         } else {
             placeholders.put("expires_at", "");
         }
@@ -950,8 +1019,10 @@ public final class AuctionService {
     }
 
     public void sendListingCreatedMessage(Player player, AuctionListing listing) {
+        ItemStack item = ItemStackCodec.decode(listing.itemBase64());
         Map<String, String> placeholders = listingCreatedMessagePlaceholders(player, listing);
-        messageService.send(player, "success-listed", placeholders);
+        Map<String, Component> itemLine = Map.of("item", ItemDisplayNames.chatItem(item));
+        messageService.send(player, "success-listed", placeholders, itemLine);
         if (listingExpiryEnabled(listing.auctionId())) {
             messageService.send(player, "success-listed-expiry-timed", placeholders);
         } else {
@@ -964,14 +1035,21 @@ public final class AuctionService {
     }
 
     public void deliverExpiredListingNotification(Player player, PendingExpiredListingNotification notification) {
+        ItemStack stack = ItemStack.empty();
+        for (ClaimEntry claim : runtimeStorage.listClaims(player.getUniqueId())) {
+            if (claim.claimId() == notification.claimId()) {
+                stack = ItemStackCodec.decode(claim.itemBase64());
+                break;
+            }
+        }
         Map<String, String> placeholders = Map.of(
                 "auction", auctionDisplayName(notification.auctionId()),
                 "auction_id", notification.auctionId(),
                 "id", String.valueOf(notification.sourceListingId()),
-                "item", notification.itemLabel(),
                 "claim_id", String.valueOf(notification.claimId())
         );
-        messageService.send(player, "listing-expired-notification", placeholders);
+        Map<String, Component> itemLine = Map.of("item", ItemDisplayNames.chatItem(stack));
+        messageService.send(player, "listing-expired-notification", placeholders, itemLine);
         messageService.send(player, "listing-expired-open-hint", placeholders);
     }
 
@@ -985,7 +1063,7 @@ public final class AuctionService {
                 listing.auctionId(),
                 listing.listingId(),
                 claim.claimId(),
-                ItemDisplayNames.plain(item)
+                ItemDisplayNames.plain(item, messageService.javaLocale(listing.sellerId()))
         );
         Player online = Bukkit.getPlayer(listing.sellerId());
         if (online != null && online.isOnline()) {

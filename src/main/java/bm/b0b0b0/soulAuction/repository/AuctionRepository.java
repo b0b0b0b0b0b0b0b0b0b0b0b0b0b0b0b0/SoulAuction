@@ -55,4 +55,12 @@ public interface AuctionRepository {
     default List<PendingSaleNotification> drainPendingPayouts(UUID sellerId) {
         return Collections.emptyList();
     }
+
+    default boolean importListing(AuctionListing listing) {
+        if (listing == null || findById(listing.listingId()) != null) {
+            return false;
+        }
+        putBack(listing);
+        return true;
+    }
 }

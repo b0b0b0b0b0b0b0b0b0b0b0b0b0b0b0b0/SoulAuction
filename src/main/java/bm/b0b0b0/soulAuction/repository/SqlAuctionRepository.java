@@ -284,6 +284,26 @@ public final class SqlAuctionRepository implements AuctionRepository {
     }
 
     @Override
+    public boolean importListing(AuctionListing listing) {
+        if (listing == null || findById(listing.listingId()) != null) {
+            return false;
+        }
+        try {
+            Boolean ok = CompletableFuture.supplyAsync(() -> {
+                insertListing(listing);
+                bumpSequenceAtLeast(listing.listingId() + 1L);
+                return true;
+            }, ioExecutor).get(15L, TimeUnit.SECONDS);
+            if (Boolean.TRUE.equals(ok)) {
+                listingsById.put(listing.listingId(), listing);
+                return true;
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    @Override
     public AuctionListing findById(long listingId) {
         return listingsById.get(listingId);
     }

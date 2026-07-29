@@ -7,19 +7,33 @@ import net.elytrium.serializer.language.object.YamlSerializable;
 
 public final class AuctionDefinitionSettings extends YamlSerializable {
 
-    @Comment({@CommentValue("Unique auction id used in commands and permissions")})
+    @Comment({
+            @CommentValue("New auction house: copy this file to auctions/<id>.yml, then set id, display-name,"),
+            @CommentValue("open/buy/sell-permission (soulauction.*.<id>), economy if needed, grant perms — /ah reload."),
+            @CommentValue("id must be unique. Optional: config.yml default-auction-id for /ah without args."),
+    })
     public String id = "global";
 
-    @Comment({@CommentValue("Display name shown in GUI title")})
-    public String displayName = "Глобальный";
+    @Comment({@CommentValue("Display name in GUI title ({auction} in lang strings)")})
+    public String displayName = "Global";
 
     @Comment({
-            @CommentValue("Economy mode for this auction"),
-            @CommentValue("VAULT - server money via Vault"),
-            @CommentValue("PLAYER_POINTS - points via PlayerPoints"),
-            @CommentValue("EXPERIENCE - player levels (online payout only)"),
-            @CommentValue("COINS_ENGINE - CoinsEngine currency"),
-            @CommentValue("ITEM - pay with itemCurrencyMaterial stack units")
+            @CommentValue("How buyers pay and sellers get paid for listings in THIS auction file."),
+            @CommentValue("Requires the matching plugin on the server before you change the value."),
+            @CommentValue(""),
+            @CommentValue("VAULT — server money through Vault (EssentialsX, CMI, …). Default."),
+            @CommentValue("PLAYER_POINTS — PlayerPoints plugin."),
+            @CommentValue("EXPERIENCE — Minecraft levels as currency (online payout limitations apply)."),
+            @CommentValue("ITEM — price is count of item-currency-material (e.g. emeralds)."),
+            @CommentValue("COINS_ENGINE — balance from CoinsEngine plugin:"),
+            @CommentValue("  config.yml → coins-engine-currency (default id)"),
+            @CommentValue("  this file → coins-engine-currency (override, optional)"),
+            @CommentValue("  id must exist in CoinsEngine configuration"),
+            @CommentValue(""),
+            @CommentValue("Examples:"),
+            @CommentValue("  economy: VAULT"),
+            @CommentValue("  economy: ITEM  +  item-currency-material: DIAMOND"),
+            @CommentValue("  economy: COINS_ENGINE  +  coins-engine-currency: gold"),
     })
     public String economy = "VAULT";
 
@@ -50,16 +64,28 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
     public String taxMode = "FLAT";
     @Comment({@CommentValue("For CAPITALISM mode: extra tax percent when price exceeds threshold")})
     public double capitalismThreshold = 10000.0D;
+    @Comment({@CommentValue("For CAPITALISM tax mode: extra seller tax % when price is above capitalism-threshold")})
     public double capitalismSurchargePercent = 5.0D;
-    @Comment({@CommentValue("Per-material tax and price overrides")})
+    @Comment({
+            @CommentValue("Per-material price/tax overrides for this auction only (same fields as config.yml material-rules)."),
+            @CommentValue("Merged with global material-rules from config.yml."),
+    })
     public List<MaterialRuleSettings> materialRules = List.of();
-    @Comment({@CommentValue("Custom item plugin sell rules for this auction")})
+    @Comment({
+            @CommentValue("Custom item plugin rules for this auction."),
+            @CommentValue("Same structure as custom-item-rules in config.yml (plugin-namespace, sell-allowed, keys, …)."),
+            @CommentValue("Merged with global rules. Leave [] to use only config.yml entries."),
+    })
     public List<CustomItemPluginRuleSettings> customItemRules = List.of();
     @Comment({@CommentValue("Enable bid listings (experimental)")})
     public boolean bidsEnabled = false;
     @Comment({@CommentValue("Enable rent listings (experimental)")})
     public boolean rentEnabled = false;
-    @Comment({@CommentValue("CoinsEngine currency for this auction when economy is COINS_ENGINE")})
+    @Comment({
+            @CommentValue("CoinsEngine currency id for this auction (only when economy: COINS_ENGINE)."),
+            @CommentValue("Leave empty to use coins-engine-currency from main config.yml."),
+            @CommentValue("Must match an id from CoinsEngine — not a material name and not Vault."),
+    })
     public String coinsEngineCurrency = "";
 
     @Comment({@CommentValue("Allow buying in this auction")})

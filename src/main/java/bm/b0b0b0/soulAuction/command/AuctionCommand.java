@@ -141,7 +141,7 @@ public final class AuctionCommand implements CommandExecutor {
             messageService.send(player, "error-auction-not-found");
             return true;
         }
-        PlayerRecordsMenu menu = new PlayerRecordsMenu(player.getUniqueId(), auctionId, view, auctionService, messageService);
+        PlayerRecordsMenu menu = new PlayerRecordsMenu(player, auctionId, view, auctionService, messageService);
         PluginSchedulers.run(plugin, player, () -> player.openInventory(menu.getInventory()));
         return true;
     }
@@ -337,7 +337,7 @@ public final class AuctionCommand implements CommandExecutor {
                     "my-listing-line",
                     Map.of(
                             "id", String.valueOf(listing.listingId()),
-                            "auction", listing.auctionId(),
+                            "auction", auctionService.auctionDisplayName(listing.auctionId()),
                             "price", auctionService.formatPrice(listing.price(), listing.auctionId(), player)
                     )
             );

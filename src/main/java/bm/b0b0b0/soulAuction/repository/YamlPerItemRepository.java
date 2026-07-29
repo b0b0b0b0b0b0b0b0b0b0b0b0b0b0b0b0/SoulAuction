@@ -130,6 +130,17 @@ public final class YamlPerItemRepository implements AuctionRepository {
     }
 
     @Override
+    public boolean importListing(AuctionListing listing) {
+        if (listing == null || findById(listing.listingId()) != null) {
+            return false;
+        }
+        AuctionListing normalized = normalize(listing);
+        nextId.updateAndGet(current -> Math.max(current, normalized.listingId() + 1L));
+        putBack(normalized);
+        return true;
+    }
+
+    @Override
     public AuctionListing findById(long listingId) {
         return listingsById.get(listingId);
     }

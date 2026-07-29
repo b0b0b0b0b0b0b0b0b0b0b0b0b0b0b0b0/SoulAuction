@@ -2,6 +2,7 @@ package bm.b0b0b0.soulAuction.gui;
 
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.util.ListingItemEquality;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
 import bm.b0b0b0.soulAuction.model.result.CancelResult;
 import bm.b0b0b0.soulAuction.model.result.ClaimResult;
@@ -20,9 +21,11 @@ import java.util.function.Supplier;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.block.Container;
 import org.bukkit.entity.Player;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
@@ -67,6 +70,10 @@ public final class AuctionGuiListener implements Listener {
         }
         if (event.getView().getTopInventory().getHolder(false) instanceof AuctionBrowserMenu browserMenu) {
             handleBrowserClick(event, player, browserMenu);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder(false) instanceof FavoriteSellersMenu favoriteSellersMenu) {
+            handleFavoriteSellersClick(event, player, favoriteSellersMenu);
             return;
         }
         if (event.getView().getTopInventory().getHolder(false) instanceof AuctionPriceFilterMenu priceFilterMenu) {
@@ -114,6 +121,10 @@ public final class AuctionGuiListener implements Listener {
     @EventHandler
     public void onDrag(InventoryDragEvent event) {
         if (event.getView().getTopInventory().getHolder(false) instanceof AuctionBrowserMenu) {
+            event.setCancelled(true);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder(false) instanceof FavoriteSellersMenu) {
             event.setCancelled(true);
             return;
         }
@@ -269,15 +280,24 @@ public final class AuctionGuiListener implements Listener {
     }
 
     private void handleBrowserClick(InventoryClickEvent event, Player player, AuctionBrowserMenu menu) {
-        if (event.isShiftClick()) {
-            event.setCancelled(true);
-            return;
-        }
         if (event.getClickedInventory() instanceof PlayerInventory) {
             return;
         }
         event.setCancelled(true);
         int slot = event.getSlot();
+        int favoritesSlot = configSupplier.get().guiGeneralSettings().favoritesSlot;
+        if (slot == favoritesSlot && event.isRightClick()) {
+            FavoriteSellersMenu favoriteMenu = new FavoriteSellersMenu(
+                    player.getUniqueId(),
+                    menu.auctionId(),
+                    0,
+                    auctionService,
+                    messageService,
+                    configSupplier.get().guiGeneralSettings()
+            );
+            PluginSchedulers.run(plugin, player, () -> player.openInventory(favoriteMenu.getInventory()));
+            return;
+        }
         if (slot == configSupplier.get().guiGeneralSettings().historySlot) {
             PlayerHubMenu hubMenu = new PlayerHubMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
             PluginSchedulers.run(plugin, player, () -> player.openInventory(hubMenu.getInventory()));
@@ -291,9 +311,9 @@ public final class AuctionGuiListener implements Listener {
                 menu.refresh();
                 return;
             }
-            if (event.isShiftClick() && event.isRightClick()) {
+            if (event.getClick() == ClickType.MIDDLE && !listing.sellerId().equals(player.getUniqueId())) {
                 boolean added = auctionService.toggleFavoriteSeller(player.getUniqueId(), listing.sellerId());
-                messageService.send(player, 
+                messageService.send(player,
                         added ? "favorite-added" : "favorite-removed",
                         Map.of("seller", listing.sellerName())
                 );
@@ -311,7 +331,7 @@ public final class AuctionGuiListener implements Listener {
             }
             if (event.isRightClick()) {
                 ItemStack clicked = event.getView().getTopInventory().getItem(slot);
-                if (openContainerPreviewIfPossible(player, menu, clicked)) {
+                if (openContainerPreviewIfPossible(player, menu.auctionId(), clicked)) {
                     return;
                 }
             }
@@ -346,6 +366,37 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         menu.click(slot);
+    }
+
+    private void handleFavoriteSellersClick(InventoryClickEvent event, Player player, FavoriteSellersMenu menu) {
+        if (event.getClickedInventory() instanceof PlayerInventory) {
+            return;
+        }
+        event.setCancelled(true);
+        int slot = event.getSlot();
+        if (menu.isBack(slot)) {
+            openBrowser(player, menu.auctionId());
+            return;
+        }
+        if (menu.isPrev(slot)) {
+            menu.previousPage();
+            return;
+        }
+        if (menu.isNext(slot)) {
+            menu.nextPage();
+            return;
+        }
+        UUID sellerId = menu.sellerIdAt(slot);
+        if (sellerId == null) {
+            return;
+        }
+        if (auctionService.isFavoriteSeller(player.getUniqueId(), sellerId)) {
+            auctionService.toggleFavoriteSeller(player.getUniqueId(), sellerId);
+            OfflinePlayer offline = org.bukkit.Bukkit.getOfflinePlayer(sellerId);
+            String name = offline.getName() == null ? sellerId.toString() : offline.getName();
+            messageService.send(player, "favorite-removed", Map.of("seller", name));
+        }
+        menu.refresh();
     }
 
     private void handlePurchaseConfirmClick(InventoryClickEvent event, Player player, PurchaseConfirmMenu menu) {
@@ -460,12 +511,12 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         if (view == PlayerHistoryView.RECENT_AUCTION) {
-            RecentSalesMenu salesMenu = new RecentSalesMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
+            RecentSalesMenu salesMenu = new RecentSalesMenu(player, menu.auctionId(), auctionService, messageService);
             PluginSchedulers.run(plugin, player, () -> player.openInventory(salesMenu.getInventory()));
             return;
         }
         PlayerRecordsMenu recordsMenu = new PlayerRecordsMenu(
-                player.getUniqueId(),
+                player,
                 menu.auctionId(),
                 view,
                 auctionService,
@@ -479,10 +530,42 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         event.setCancelled(true);
-        if (menu.isBack(event.getSlot())) {
+        int slot = event.getSlot();
+        if (menu.isBack(slot)) {
             PlayerHubMenu hubMenu = new PlayerHubMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
             PluginSchedulers.run(plugin, player, () -> player.openInventory(hubMenu.getInventory()));
+            return;
         }
+        if (menu.view() != PlayerHistoryView.SELLING) {
+            return;
+        }
+        Long listingId = menu.listingIdAt(slot);
+        if (listingId == null) {
+            return;
+        }
+        var listing = auctionService.listingById(listingId);
+        if (listing == null) {
+            messageService.send(player, "error-listing-unavailable");
+            menu.refresh();
+            return;
+        }
+        if (!listing.sellerId().equals(player.getUniqueId())) {
+            return;
+        }
+        if (event.isRightClick()) {
+            ItemStack clicked = event.getView().getTopInventory().getItem(slot);
+            if (openContainerPreviewIfPossible(player, listing.auctionId(), clicked)) {
+                return;
+            }
+        }
+        OwnerListingMenu ownerMenu = new OwnerListingMenu(
+                player.getUniqueId(),
+                listing.auctionId(),
+                listingId,
+                auctionService,
+                messageService
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(ownerMenu.getInventory()));
     }
 
     private void handleSalesMenuClick(InventoryClickEvent event, Player player, RecentSalesMenu menu) {
@@ -491,11 +574,12 @@ public final class AuctionGuiListener implements Listener {
         }
         event.setCancelled(true);
         if (menu.isBack(event.getSlot())) {
-            openBrowser(player, menu.auctionId());
+            PlayerHubMenu hubMenu = new PlayerHubMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
+            PluginSchedulers.run(plugin, player, () -> player.openInventory(hubMenu.getInventory()));
         }
     }
 
-    private boolean openContainerPreviewIfPossible(Player player, AuctionBrowserMenu menu, ItemStack item) {
+    private boolean openContainerPreviewIfPossible(Player player, String auctionId, ItemStack item) {
         if (item == null || item.isEmpty()) {
             return false;
         }
@@ -507,9 +591,9 @@ public final class AuctionGuiListener implements Listener {
         }
         ContainerPreviewMenu previewMenu = new ContainerPreviewMenu(
                 player.getUniqueId(),
-                menu.auctionId(),
+                auctionId,
                 container.getInventory().getSize(),
-                messageService.component("container-preview-title")
+                messageService.component(player.getUniqueId(), "container-preview-title")
         );
         previewMenu.fillFrom(container);
         PluginSchedulers.run(plugin, player, () -> player.openInventory(previewMenu.getInventory()));
@@ -584,13 +668,22 @@ public final class AuctionGuiListener implements Listener {
         int slot = event.getSlot();
         AuctionSellMenu.MenuAction action = menu.clickTop(slot);
         if (action == AuctionSellMenu.MenuAction.ITEM_SLOT) {
-            if (event.getClickedInventory() == event.getView().getTopInventory() && menu.hasBackingStack()) {
+            if (event.getClickedInventory() == event.getView().getTopInventory()) {
                 ItemStack cursor = event.getCursor();
-                boolean taking = cursor == null || cursor.isEmpty();
-                if (taking) {
-                    event.setCancelled(true);
-                    menu.refresh();
-                    return;
+                if (menu.hasBackingStack() && cursor != null && !cursor.isEmpty()) {
+                    ItemStack reserved = menu.reservedItem();
+                    if (reserved != null && !ListingItemEquality.matches(reserved, cursor)) {
+                        event.setCancelled(true);
+                        return;
+                    }
+                }
+                if (menu.hasBackingStack()) {
+                    boolean taking = cursor == null || cursor.isEmpty();
+                    if (taking) {
+                        event.setCancelled(true);
+                        menu.refresh();
+                        return;
+                    }
                 }
             }
             PluginSchedulers.runLater(plugin, player, 1L, menu::syncAmountFromItem);
@@ -654,11 +747,17 @@ public final class AuctionGuiListener implements Listener {
         int sellAmount = Math.min(menu.sellAmount(), stack.getAmount());
         ItemStack sold = stack.clone();
         sold.setAmount(sellAmount);
-        SellResult result = auctionService.createListingFromItem(
+        if (!ListingItemEquality.matches(stack, sold)) {
+            returnHeldStack(player, stack);
+            messageService.send(player, "error-sell-menu-no-item");
+            openBrowser(player, menu.auctionId());
+            return;
+        }
+        SellResult result = auctionService.createListingFromEscrow(
                 player,
                 menu.auctionId(),
                 menu.price(),
-                sold,
+                stack,
                 sellAmount
         );
         if (!result.success()) {

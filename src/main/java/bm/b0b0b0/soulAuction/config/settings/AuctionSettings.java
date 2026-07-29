@@ -11,10 +11,16 @@ public final class AuctionSettings extends YamlSerializable {
     @Comment({@CommentValue("Global limits and safety options")})
     public LimitsSettings limits = new LimitsSettings();
 
-    @Comment({@CommentValue("Default auction used by /ah and /ah sell <price>")})
+    @Comment({
+            @CommentValue("Default auction id for /ah and /ah sell <price> when no auction is specified."),
+            @CommentValue("Must match id: in a file under auctions-directory (default auctions/global.yml)."),
+    })
     public String defaultAuctionId = "global";
 
-    @Comment({@CommentValue("Folder with per-auction files, example: auctions/global.yml")})
+    @Comment({
+            @CommentValue("Subfolder (under plugins/SoulAuction/) with one YAML per auction house."),
+            @CommentValue("Example file: auctions/global.yml defines auction id global."),
+    })
     public String auctionsDirectory = "auctions";
 
     @NewLine
@@ -22,7 +28,10 @@ public final class AuctionSettings extends YamlSerializable {
     public StorageSettings storage = new StorageSettings();
 
     @NewLine
-    @Comment({@CommentValue("Command aliases redirected to /ah")})
+    @Comment({
+            @CommentValue("Extra commands that run the same as /ah (register in plugin.yml + here)."),
+            @CommentValue("Example: players can type /auction or /ax instead of /ah."),
+    })
     public List<String> commandAliases = List.of("ax", "auction");
 
     @NewLine
@@ -30,7 +39,10 @@ public final class AuctionSettings extends YamlSerializable {
     public NotificationsSettings notifications = new NotificationsSettings();
 
     @NewLine
-    @Comment({@CommentValue("Sell restrictions, cooldowns and player blacklist")})
+    @Comment({
+            @CommentValue("Cooldowns, blocked worlds, sell material policy, sell blacklist."),
+            @CommentValue("Material lists per auction: auctions/*.yml → blocked-materials / allowed-materials."),
+    })
     public SecuritySettings security = new SecuritySettings();
 
     @NewLine
@@ -38,11 +50,29 @@ public final class AuctionSettings extends YamlSerializable {
     public AnnouncementSettings announcements = new AnnouncementSettings();
 
     @NewLine
-    @Comment({@CommentValue("CoinsEngine default currency id when economy is COINS_ENGINE")})
+    @Comment({
+            @CommentValue("=== CoinsEngine (optional third-party plugin) ==="),
+            @CommentValue("Only applies when an auction uses economy: COINS_ENGINE (see auctions/*.yml)."),
+            @CommentValue(""),
+            @CommentValue("CoinsEngine adds extra player balances (coins, tokens, etc.). Each balance"),
+            @CommentValue("has an id configured inside CoinsEngine — SoulAuction does not create currencies."),
+            @CommentValue("On buy/sell SoulAuction adds/removes that balance by id."),
+            @CommentValue(""),
+            @CommentValue("This field = server-wide DEFAULT currency id when an auction leaves"),
+            @CommentValue("coins-engine-currency empty in its YAML. Override per auction there."),
+            @CommentValue(""),
+            @CommentValue("Setup: install CoinsEngine → create currency → copy its id here →"),
+            @CommentValue("in auctions/global.yml set economy: COINS_ENGINE (and optional coins-engine-currency)."),
+            @CommentValue(""),
+            @CommentValue("Vault-only server? Value is ignored; leave coins or any placeholder."),
+    })
     public String coinsEngineCurrency = "coins";
 
     @NewLine
-    @Comment({@CommentValue("Multi-server and redis listing sync")})
+    @Comment({
+            @CommentValue("Multi-server identity (BungeeCord / Velocity network with shared MYSQL)."),
+            @CommentValue("Redis listing sync options: storage → redis in config.yml."),
+    })
     public NetworkSettings network = new NetworkSettings();
 
     @NewLine
@@ -50,11 +80,57 @@ public final class AuctionSettings extends YamlSerializable {
     public FeatureSettings features = new FeatureSettings();
 
     @NewLine
-    @Comment({@CommentValue("Global custom item plugin rules (merged with per-auction)")})
+    public MessagesSettings messages = new MessagesSettings();
+
+    @NewLine
+    @Comment({
+            @CommentValue("Custom item plugins (ItemsAdder, Oraxen, MMOItems, ExecutableItems, …)."),
+            @CommentValue("Merged with custom-item-rules in each auctions/*.yml file."),
+            @CommentValue("Items are detected via PersistentDataContainer namespace on the stack."),
+            @CommentValue(""),
+            @CommentValue("Fields per list entry (see defaults below):"),
+            @CommentValue("  plugin-namespace — namespace id, e.g. itemsadder, oraxen, executableitems"),
+            @CommentValue("  sell-allowed — false blocks all items from that plugin (unless keys override)"),
+            @CommentValue("  blocked-keys — item keys still forbidden when sell-allowed is true"),
+            @CommentValue("  category — WEAPONS, TOOLS, ARMOR, OTHER, … for browse category filter"),
+            @CommentValue("  search-aliases — extra tokens for search"),
+            @CommentValue("  keys — optional nested list (per item id inside that namespace):"),
+            @CommentValue("    item-key — plugin item id"),
+            @CommentValue("    category — WEAPONS, TOOLS, ARMOR, OTHER, …"),
+            @CommentValue("    search-aliases — extra search tokens for that item"),
+            @CommentValue("    sell-allowed — \"true\", \"false\", or empty to inherit namespace sell-allowed"),
+            @CommentValue(""),
+            @CommentValue("Example namespace + keys:"),
+            @CommentValue("  - plugin-namespace: itemsadder"),
+            @CommentValue("    sell-allowed: true"),
+            @CommentValue("    keys:"),
+            @CommentValue("      - item-key: my_custom_sword"),
+            @CommentValue("        category: WEAPONS"),
+            @CommentValue("        sell-allowed: \"true\""),
+            @CommentValue(""),
+            @CommentValue("Example second plugin (no keys):"),
+            @CommentValue("  - plugin-namespace: oraxen"),
+            @CommentValue("    sell-allowed: true"),
+            @CommentValue("    category: WEAPONS"),
+    })
     public List<CustomItemPluginRuleSettings> customItemRules = defaultCustomItemRules();
 
     @NewLine
-    @Comment({@CommentValue("Global per-material rules (merged with per-auction)")})
+    @Comment({
+            @CommentValue("Per-material price and tax overrides (merged with material-rules in auctions/*.yml)."),
+            @CommentValue("First matching rule wins when a player lists that material."),
+            @CommentValue(""),
+            @CommentValue("Fields per entry:"),
+            @CommentValue("  material — Bukkit Material name (DIAMOND_SWORD, …)"),
+            @CommentValue("  custom-item-id — optional ItemsAdder-style id instead of vanilla material"),
+            @CommentValue("  min-price / max-price — listing price bounds for this match (0 max = ignore)"),
+            @CommentValue("  sale-tax-percent / buy-tax-percent — override auction tax; -1 = use auction default"),
+            @CommentValue(""),
+            @CommentValue("Example:"),
+            @CommentValue("  - material: DIAMOND"),
+            @CommentValue("    min-price: 100"),
+            @CommentValue("    sale-tax-percent: 2.5"),
+    })
     public List<MaterialRuleSettings> materialRules = List.of();
 
     public AuctionSettings() {
@@ -71,9 +147,16 @@ public final class AuctionSettings extends YamlSerializable {
 
     public static final class LimitsSettings {
 
-        @Comment({@CommentValue("Default per-auction listing limit if dynamic permission is missing")})
+        @Comment({
+                @CommentValue("Max active listings per player in ONE auction if no permission override."),
+                @CommentValue("Higher limit via permission soulauction.<auctionId>.<number>"),
+                @CommentValue("Example: soulauction.global.10 allows 10 lots on auction global."),
+        })
         public int defaultMaxActiveListingsPerAuction = 3;
-        @Comment({@CommentValue("Default global listing limit if dynamic permission is missing")})
+        @Comment({
+                @CommentValue("Max active listings per player ACROSS ALL auctions combined."),
+                @CommentValue("Override via permission soulauction.all.<number> (e.g. soulauction.all.20)."),
+        })
         public int defaultMaxActiveListingsGlobal = 6;
         @Comment({@CommentValue("Minimum allowed price for one listing")})
         public int minPrice = 1;
@@ -91,10 +174,58 @@ public final class AuctionSettings extends YamlSerializable {
 
     public static final class NetworkSettings {
 
-        @Comment({@CommentValue("Unique id of this server in a network")})
+        @Comment({
+                @CommentValue("Unique name of THIS backend server in a proxy network."),
+                @CommentValue("Stored on new listings (server-origin) so you can tell which shard listed an item."),
+                @CommentValue("Example: lobby, survival, skyblock — pick any stable id per machine."),
+        })
         public String serverId = "server-1";
-        @Comment({@CommentValue("Publish full listing JSON on redis (requires redis enabled)")})
-        public boolean redisFullListingSync = true;
+    }
+
+    public static final class MessagesSettings {
+
+        @Comment({
+                @CommentValue("=== Plugin language (GUI, button lore, chat, command errors) ==="),
+                @CommentValue("Strings live in plugins/SoulAuction/lang/messages_<code>.yml"),
+                @CommentValue("The plugin does not translate for you — it picks the matching file."),
+                @CommentValue("Edit YAML or copy messages_en.yml to your own messages_xx.yml."),
+                @CommentValue("After lang changes: /ah reload (or restart the server)."),
+                @CommentValue(""),
+                @CommentValue("How to pick the language for players (locale-mode):"),
+                @CommentValue(""),
+                @CommentValue("CLIENT — default. Uses each player's Minecraft language setting:"),
+                @CommentValue("  • lang/messages_<code>.yml exists for the client language → that file"),
+                @CommentValue("  • ru / ru_ru → messages_ru.yml (when present)"),
+                @CommentValue("  • otherwise → messages_en.yml"),
+                @CommentValue("  Good when the server has mixed RU and EN players."),
+                @CommentValue(""),
+                @CommentValue("SERVER — one language for everyone:"),
+                @CommentValue("  • set server-locale below (e.g. ru)"),
+                @CommentValue("  • player client language is ignored"),
+                @CommentValue("  • everyone sees the same strings from one YAML"),
+                @CommentValue(""),
+                @CommentValue("Allowed locale-mode: CLIENT or SERVER (case-insensitive)."),
+                @CommentValue(""),
+                @CommentValue("Server-wide locale (server-locale). Only used when locale-mode: SERVER."),
+                @CommentValue("Code = file suffix: plugins/SoulAuction/lang/messages_<code>.yml"),
+                @CommentValue("Bundled in JAR: en, ru. Any messages_*.yml in lang/ is loaded on startup and /ah reload."),
+                @CommentValue(""),
+                @CommentValue("Example — Russian for everyone:"),
+                @CommentValue("  locale-mode: SERVER"),
+                @CommentValue("  server-locale: ru"),
+                @CommentValue(""),
+                @CommentValue("Example — English for everyone:"),
+                @CommentValue("  locale-mode: SERVER"),
+                @CommentValue("  server-locale: en"),
+                @CommentValue(""),
+                @CommentValue("Custom locale: add messages_de.yml to lang/ and set server-locale: de"),
+                @CommentValue("(server-locale is ignored when locale-mode is CLIENT)."),
+                @CommentValue(""),
+                @CommentValue("If the locale file is missing, fallback is en."),
+        })
+        public String localeMode = "CLIENT";
+
+        public String serverLocale = "en";
     }
 
     public static final class FeatureSettings {
@@ -103,7 +234,7 @@ public final class AuctionSettings extends YamlSerializable {
         public boolean luckPermsOfflinePermissions = true;
         @Comment({@CommentValue("Advanced search regex (ProtocolLib not required)")})
         public boolean advancedSearchRegex = false;
-        @Comment({@CommentValue("Enable message keys disable list in messages.yml under disabled-messages")})
+        @Comment({@CommentValue("Enable message keys disable list in lang/messages_*.yml under disabled-messages")})
         public boolean respectDisabledMessages = true;
         @Comment({@CommentValue("Cache pre-sorted listing lists per auction (recommended for 10k+ lots)")})
         public boolean preSortedBrowseCache = true;
@@ -112,14 +243,25 @@ public final class AuctionSettings extends YamlSerializable {
     public static final class StorageSettings {
 
         @Comment({
-                @CommentValue("Storage mode"),
-                @CommentValue("JSON - one .json per listing"),
-                @CommentValue("YAML - one .yml per listing"),
-                @CommentValue("SQLITE - sqlite database file"),
-                @CommentValue("MYSQL - mysql database")
+                @CommentValue("!!! THE SERVER MUST BE COMPLETELY STOPPED BEFORE CHANGING storage.mode !!!"),
+                @CommentValue("!!! DO NOT USE /ah reload — SHUT DOWN THE SERVER, EDIT CONFIG, START AGAIN !!!"),
+                @CommentValue(""),
+                @CommentValue("Where listings are stored on disk / database."),
+                @CommentValue("JSON — one .json file per listing (simple, good for small servers)"),
+                @CommentValue("YAML — one .yml file per listing"),
+                @CommentValue("SQLITE — single sqlite file (medium traffic)"),
+                @CommentValue("MYSQL — shared database (networks, large catalogs); pair with redis sell lock"),
+                @CommentValue(""),
+                @CommentValue("Changing mode does NOT auto-move data. After switch: start server, then"),
+                @CommentValue("/ah admin migrate from JSON|YAML|SQLITE (target = mode above)."),
+                @CommentValue("Optional flags: dry-run, archive (renames old flat folder / sqlite file after success)."),
         })
         public String mode = "JSON";
-        @Comment({@CommentValue("Folder for flat-file modes")})
+        @Comment({
+                @CommentValue("Directory for JSON/YAML flat storage, relative to plugin folder."),
+                @CommentValue("Ignored when mode is SQLITE or MYSQL."),
+                @CommentValue("Same rule as storage.mode: server MUST be fully stopped before changing this path."),
+        })
         public String flatDirectory = "data/listings";
         @NewLine
         @Comment({@CommentValue("Database settings for SQLITE and MYSQL")})
@@ -164,24 +306,50 @@ public final class AuctionSettings extends YamlSerializable {
         @Comment({@CommentValue("Sell lock TTL in ms")})
         public long sellLockMillis = 2500L;
         @NewLine
-        @Comment({@CommentValue("Pub/sub channel for cache invalidation across servers (MYSQL + redis)")})
+        @Comment({
+                @CommentValue("Cross-server pub/sub (needs redis.enabled + storage mode MYSQL)."),
+                @CommentValue("Keeps browse caches in sync when another backend changes listings."),
+        })
         public boolean pubSubEnabled = false;
-        @Comment({@CommentValue("Redis channel name")})
+        @Comment({@CommentValue("Redis channel for cache invalidation and listing sync messages")})
         public String pubSubChannel = "soulauction:cache";
+        @Comment({
+                @CommentValue("Publish full listing JSON on pub/sub when a lot is created, sold, or removed."),
+                @CommentValue("Other servers apply it to browse cache without reloading all rows from MYSQL."),
+                @CommentValue("Requires redis.enabled and pub-sub-enabled above."),
+        })
+        public boolean redisFullListingSync = true;
     }
 
     public static final class SecuritySettings {
 
-        @Comment({@CommentValue("Seconds between listing creations per player, 0 disables")})
+        @Comment({
+                @CommentValue("Seconds between listing creations per player, 0 disables"),
+                @CommentValue("Example: 30"),
+        })
         public int sellCooldownSeconds = 0;
-        @Comment({@CommentValue("World names where selling is forbidden")})
+        @Comment({
+                @CommentValue("World names where selling is forbidden (exact Bukkit world name)"),
+                @CommentValue("Example:"),
+                @CommentValue("  blocked-sell-worlds:"),
+                @CommentValue("    - world_nether"),
+                @CommentValue("    - spawn"),
+        })
         public List<String> blockedSellWorlds = List.of();
         @Comment({
-                @CommentValue("If true, only materials listed in auction allowedMaterials may be sold"),
-                @CommentValue("When false, blacklist mode uses blockedMaterials per auction")
+                @CommentValue("true = sell only materials listed in allowed-materials on each auction file."),
+                @CommentValue("false = blacklist mode: blocked-materials on each auction file (default)."),
+                @CommentValue("See security section in config.yml and blocked-materials in auctions/global.yml."),
         })
         public boolean materialWhitelistMode = false;
-        @Comment({@CommentValue("UUIDs blocked from selling (config); admins can extend at runtime")})
+        @Comment({
+                @CommentValue("UUIDs blocked from selling (config); admins can extend at runtime"),
+                @CommentValue("Player names are not accepted — use UUID (mcuuid.io, server logs, etc.)"),
+                @CommentValue("Example (block seller b0bob0):"),
+                @CommentValue("  player-blacklist:"),
+                @CommentValue("    - \"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\""),
+                @CommentValue("Or in game: /ah admin blacklist add b0bob0"),
+        })
         public List<String> playerBlacklist = List.of();
     }
 

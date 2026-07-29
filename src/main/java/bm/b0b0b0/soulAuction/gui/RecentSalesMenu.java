@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -29,16 +30,35 @@ public final class RecentSalesMenu implements InventoryHolder {
     private final Inventory inventory;
 
     public RecentSalesMenu(
+            Player viewer,
+            String auctionId,
+            AuctionService auctionService,
+            MessageService messageService
+    ) {
+        this(viewer.getUniqueId(), auctionId, auctionService, messageService, messageService.component(viewer, "history-title"));
+    }
+
+    public RecentSalesMenu(
             UUID viewerId,
             String auctionId,
             AuctionService auctionService,
             MessageService messageService
     ) {
+        this(viewerId, auctionId, auctionService, messageService, messageService.component(viewerId, "history-title"));
+    }
+
+    private RecentSalesMenu(
+            UUID viewerId,
+            String auctionId,
+            AuctionService auctionService,
+            MessageService messageService,
+            net.kyori.adventure.text.Component inventoryTitle
+    ) {
         this.viewerId = viewerId;
         this.auctionId = auctionId;
         this.auctionService = auctionService;
         this.messageService = messageService;
-        this.inventory = Bukkit.createInventory(this, 54, messageService.component("history-title"));
+        this.inventory = Bukkit.createInventory(this, 54, inventoryTitle);
         refresh();
     }
 
@@ -70,8 +90,8 @@ public final class RecentSalesMenu implements InventoryHolder {
             String tax = auctionService.formatPrice(sale.tax(), sale.auctionId(), viewerId);
             String time = TIME_FORMAT.format(Instant.ofEpochMilli(sale.createdAtEpochMillis()).atZone(ZoneId.systemDefault()));
             inventory.setItem(i, historyItem(
-                    messageService.component("history-item-title", Map.of("id", String.valueOf(sale.historyId()))),
-                    messageService.components("history-item-lore", Map.of(
+                    messageService.component(viewerId, "history-item-title", Map.of("id", String.valueOf(sale.historyId()))),
+                    messageService.components(viewerId, "history-item-lore", Map.of(
                             "seller", sellerName,
                             "buyer", buyerName,
                             "price", price,
@@ -80,14 +100,20 @@ public final class RecentSalesMenu implements InventoryHolder {
                     ))
             ));
         }
-        inventory.setItem(BACK_SLOT, backButton(messageService.component("history-back")));
+        inventory.setItem(BACK_SLOT, backButton(
+                messageService.component(viewerId, "hub-submenu-back"),
+                messageService.components(viewerId, "hub-submenu-back-lore")
+        ));
     }
 
-    private ItemStack backButton(net.kyori.adventure.text.Component title) {
+    private ItemStack backButton(net.kyori.adventure.text.Component title, List<net.kyori.adventure.text.Component> lore) {
         ItemStack item = new ItemStack(Material.LIGHT_GRAY_DYE);
         ItemMeta itemMeta = item.getItemMeta();
         if (itemMeta != null) {
             itemMeta.displayName(title);
+            if (lore != null && !lore.isEmpty()) {
+                itemMeta.lore(lore);
+            }
             item.setItemMeta(itemMeta);
         }
         return item;

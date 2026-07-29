@@ -37,7 +37,7 @@ public final class PlayerSaleNotificationListener implements Listener {
             String tax = auctionService.formatPrice(notification.tax(), notification.auctionId(), player);
             messageService.send(player,
                     "offline-sale-notification",
-                    Map.of("payout", payout, "tax", tax, "auction", notification.auctionId())
+                    Map.of("payout", payout, "tax", tax, "auction", auctionService.auctionDisplayName(notification.auctionId()))
             );
         }
         List<PendingExpiredListingNotification> expired = auctionService.takePendingExpiredListingNotifications(player.getUniqueId());

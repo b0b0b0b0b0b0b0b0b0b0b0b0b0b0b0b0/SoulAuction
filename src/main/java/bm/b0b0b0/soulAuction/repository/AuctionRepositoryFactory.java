@@ -11,7 +11,10 @@ public final class AuctionRepositoryFactory {
     }
 
     public static AuctionRepository create(JavaPlugin plugin, AuctionSettings settings) {
-        StorageMode mode = StorageMode.fromString(settings.storage.mode);
+        return create(plugin, settings, StorageMode.fromString(settings.storage.mode));
+    }
+
+    public static AuctionRepository create(JavaPlugin plugin, AuctionSettings settings, StorageMode mode) {
         Path dataFolder = plugin.getDataFolder().toPath();
         Path flatDirectory = dataFolder.resolve(settings.storage.flatDirectory);
         return switch (mode) {

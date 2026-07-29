@@ -37,7 +37,7 @@ public final class PurchaseConfirmMenu implements InventoryHolder {
         this.listingId = listingId;
         this.auctionService = auctionService;
         this.messageService = messageService;
-        this.inventory = Bukkit.createInventory(this, 27, messageService.component("buy-confirm-title"));
+        this.inventory = Bukkit.createInventory(this, 27, messageService.component(viewerId, "buy-confirm-title"));
         refresh();
     }
 
@@ -67,10 +67,10 @@ public final class PurchaseConfirmMenu implements InventoryHolder {
         String buyTax = quote == null ? "0" : String.valueOf(quote.buyTax());
         inventory.setItem(YES_SLOT, button(
                 Material.LIME_WOOL,
-                messageService.component("buy-confirm-yes"),
-                messageService.components("buy-confirm-lore", Map.of("price", price, "base", basePrice, "buytax", buyTax))
+                messageService.component(viewerId, "buy-confirm-yes"),
+                messageService.components(viewerId, "buy-confirm-lore", Map.of("price", price, "base", basePrice, "buytax", buyTax))
         ));
-        inventory.setItem(NO_SLOT, button(Material.RED_WOOL, messageService.component("buy-confirm-no"), null));
+        inventory.setItem(NO_SLOT, button(Material.RED_WOOL, messageService.component(viewerId, "buy-confirm-no"), null));
     }
 
     public boolean isYes(int slot) {

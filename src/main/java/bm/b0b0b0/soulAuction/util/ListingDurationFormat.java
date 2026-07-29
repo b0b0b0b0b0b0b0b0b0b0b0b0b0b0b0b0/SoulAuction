@@ -7,47 +7,51 @@ import java.util.Locale;
 
 public final class ListingDurationFormat {
 
-    private static final DateTimeFormatter EXPIRES_AT = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
-            .withLocale(Locale.forLanguageTag("ru"))
-            .withZone(ZoneId.systemDefault());
-
     private ListingDurationFormat() {
     }
 
-    public static String formatSeconds(int totalSeconds) {
+    public static String formatSeconds(int totalSeconds, Locale locale) {
+        Locale effective = locale == null ? Locale.ENGLISH : locale;
+        boolean ru = "ru".equalsIgnoreCase(effective.getLanguage());
         if (totalSeconds <= 0) {
-            return "без срока";
+            return ru ? "без срока" : "no expiry";
         }
         int days = totalSeconds / 86400;
         int hours = (totalSeconds % 86400) / 3600;
         int minutes = (totalSeconds % 3600) / 60;
         if (days > 0) {
             if (hours > 0) {
-                return days + " д " + hours + " ч";
+                return ru ? days + " д " + hours + " ч" : days + "d " + hours + "h";
             }
-            return days + " д";
+            return ru ? days + " д" : days + "d";
         }
         if (hours > 0) {
             if (minutes > 0) {
-                return hours + " ч " + minutes + " мин";
+                return ru ? hours + " ч " + minutes + " мин" : hours + "h " + minutes + "m";
             }
-            return hours + " ч";
+            return ru ? hours + " ч" : hours + "h";
         }
         if (minutes > 0) {
-            return minutes + " мин";
+            return ru ? minutes + " мин" : minutes + "m";
         }
-        return totalSeconds + " сек";
+        return ru ? totalSeconds + " сек" : totalSeconds + "s";
     }
 
-    public static String formatRemainingMillis(long millis) {
+    public static String formatRemainingMillis(long millis, Locale locale) {
         if (millis <= 0L) {
-            return "скоро";
+            Locale effective = locale == null ? Locale.ENGLISH : locale;
+            return "ru".equalsIgnoreCase(effective.getLanguage()) ? "скоро" : "soon";
         }
         long totalSeconds = millis / 1000L;
-        return formatSeconds((int) Math.min(Integer.MAX_VALUE, totalSeconds));
+        return formatSeconds((int) Math.min(Integer.MAX_VALUE, totalSeconds), locale);
     }
 
-    public static String formatExpiresAtEpochMillis(long epochMillis) {
-        return EXPIRES_AT.format(Instant.ofEpochMilli(epochMillis));
+    public static String formatExpiresAtEpochMillis(long epochMillis, Locale locale) {
+        Locale effective = locale == null ? Locale.ENGLISH : locale;
+        String pattern = "ru".equalsIgnoreCase(effective.getLanguage()) ? "dd.MM.yyyy HH:mm" : "yyyy-MM-dd HH:mm";
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(pattern)
+                .withLocale(effective)
+                .withZone(ZoneId.systemDefault());
+        return formatter.format(Instant.ofEpochMilli(epochMillis));
     }
 }

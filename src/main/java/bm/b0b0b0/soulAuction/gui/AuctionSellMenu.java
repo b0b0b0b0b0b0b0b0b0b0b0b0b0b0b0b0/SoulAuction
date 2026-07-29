@@ -2,6 +2,9 @@ package bm.b0b0b0.soulAuction.gui;
 
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.util.ListingItemEquality;
+import bm.b0b0b0.soulAuction.util.ListingItemPresentation;
+import bm.b0b0b0.soulAuction.util.SimilarItemInventory;
 import java.util.Map;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
@@ -54,7 +57,7 @@ public final class AuctionSellMenu implements InventoryHolder {
         this.auctionId = auctionId;
         this.auctionService = auctionService;
         this.messageService = messageService;
-        this.inventory = Bukkit.createInventory(this, 54, messageService.component("sell-menu-title", Map.of("auction", auctionService.auctionDisplayName(auctionId))));
+        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, "sell-menu-title", Map.of("auction", auctionService.auctionDisplayName(auctionId))));
         this.price = Math.max(1, initialPrice);
         this.sellAmount = Math.max(0, initialSellAmount);
         refresh();
@@ -69,13 +72,19 @@ public final class AuctionSellMenu implements InventoryHolder {
     private void reconcileBackingFromSlot() {
         ItemStack inSlot = inventory.getItem(ITEM_SLOT);
         if (inSlot == null || inSlot.isEmpty()) {
+            if (backingStack != null && !backingStack.isEmpty()) {
+                if (sellAmount < 1) {
+                    sellAmount = 1;
+                }
+                return;
+            }
             backingStack = null;
             if (sellAmount < 1) {
                 sellAmount = 1;
             }
             return;
         }
-        if (backingStack == null || !backingStack.isSimilar(inSlot)) {
+        if (backingStack == null || !ListingItemEquality.matches(backingStack, inSlot)) {
             backingStack = inSlot.clone();
             sellAmount = backingStack.getAmount();
             return;
@@ -83,12 +92,21 @@ public final class AuctionSellMenu implements InventoryHolder {
         int inAmount = inSlot.getAmount();
         int reservedAmount = backingStack.getAmount();
         if (inAmount > reservedAmount) {
+            if (!ListingItemEquality.matches(backingStack, inSlot)) {
+                backingStack = inSlot.clone();
+                sellAmount = inAmount;
+                return;
+            }
             backingStack = inSlot.clone();
             sellAmount = inAmount;
             return;
         }
         if (inAmount < sellAmount) {
+            if (sellAmount <= reservedAmount && inAmount >= sellAmount - 1) {
+                return;
+            }
             sellAmount = inAmount;
+            backingStack = inSlot.clone();
         }
     }
 
@@ -208,42 +226,43 @@ public final class AuctionSellMenu implements InventoryHolder {
         Map<String, String> placeholders = Map.of("price", formattedPrice);
         inventory.setItem(MINUS_SMALL_SLOT, actionItem(
                 Material.RED_DYE,
-                messageService.component("sell-price-minus-small", Map.of("step", auctionService.formatPrice(100, auctionId, viewerId))),
-                messageService.components("sell-price-button-lore", placeholders)
+                messageService.component(viewerId, "sell-price-minus-small", Map.of("step", auctionService.formatPrice(100, auctionId, viewerId))),
+                messageService.components(viewerId, "sell-price-button-lore", placeholders)
         ));
         inventory.setItem(MINUS_BIG_SLOT, actionItem(
                 Material.REDSTONE,
-                messageService.component("sell-price-minus-big", Map.of("step", auctionService.formatPrice(1000, auctionId, viewerId))),
-                messageService.components("sell-price-button-lore", placeholders)
+                messageService.component(viewerId, "sell-price-minus-big", Map.of("step", auctionService.formatPrice(1000, auctionId, viewerId))),
+                messageService.components(viewerId, "sell-price-button-lore", placeholders)
         ));
         inventory.setItem(PLUS_SMALL_SLOT, actionItem(
                 Material.LIME_DYE,
-                messageService.component("sell-price-plus-small", Map.of("step", auctionService.formatPrice(100, auctionId, viewerId))),
-                messageService.components("sell-price-button-lore", placeholders)
+                messageService.component(viewerId, "sell-price-plus-small", Map.of("step", auctionService.formatPrice(100, auctionId, viewerId))),
+                messageService.components(viewerId, "sell-price-button-lore", placeholders)
         ));
         inventory.setItem(PLUS_BIG_SLOT, actionItem(
                 Material.EMERALD,
-                messageService.component("sell-price-plus-big", Map.of("step", auctionService.formatPrice(1000, auctionId, viewerId))),
-                messageService.components("sell-price-button-lore", placeholders)
+                messageService.component(viewerId, "sell-price-plus-big", Map.of("step", auctionService.formatPrice(1000, auctionId, viewerId))),
+                messageService.components(viewerId, "sell-price-button-lore", placeholders)
         ));
         inventory.setItem(QTY_MINUS_SLOT, actionItem(
                 Material.REDSTONE_BLOCK,
-                messageService.component("sell-amount-minus", Map.of("step", "1")),
-                messageService.components("sell-amount-minus-lore", amountPlaceholders())
+                messageService.component(viewerId, "sell-amount-minus", Map.of("step", "1")),
+                messageService.components(viewerId, "sell-amount-minus-lore", amountPlaceholders())
         ));
         inventory.setItem(QTY_PLUS_SLOT, actionItem(
                 Material.EMERALD_BLOCK,
-                messageService.component("sell-amount-plus", Map.of("step", "1")),
-                messageService.components("sell-amount-plus-lore", amountPlaceholders())
+                messageService.component(viewerId, "sell-amount-plus", Map.of("step", "1")),
+                messageService.components(viewerId, "sell-amount-plus-lore", amountPlaceholders())
         ));
         inventory.setItem(AMOUNT_INFO_SLOT, actionItem(
                 Material.CHEST,
-                messageService.component("sell-amount-info-title", amountPlaceholders()),
-                messageService.components("sell-amount-info-lore", amountPlaceholders())
+                messageService.component(viewerId, "sell-amount-info-title", amountPlaceholders()),
+                messageService.components(viewerId, "sell-amount-info-lore", amountPlaceholders())
         ));
-        inventory.setItem(BACK_SLOT, actionItem(Material.LIGHT_GRAY_DYE, messageService.component("sell-button-back")));
-        inventory.setItem(CONFIRM_SLOT, actionItem(Material.LIME_DYE, messageService.component("sell-button-next")));
+        inventory.setItem(BACK_SLOT, actionItem(Material.LIGHT_GRAY_DYE, messageService.component(viewerId, "sell-button-back")));
+        inventory.setItem(CONFIRM_SLOT, actionItem(Material.LIME_DYE, messageService.component(viewerId, "sell-button-next")));
         inventory.setItem(PRICE_SLOT, actionItem(Material.NAME_TAG, messageService.component(
+                viewerId,
                 "sell-price-current",
                 Map.of("price", formattedPrice)
         )));
@@ -268,7 +287,9 @@ public final class AuctionSellMenu implements InventoryHolder {
             return;
         }
         ItemStack display = backingStack.clone();
-        display.setAmount(Math.min(sellAmount, backingStack.getAmount()));
+        int showAmount = Math.min(sellAmount, backingStack.getMaxStackSize());
+        display.setAmount(Math.max(1, showAmount));
+        ListingItemPresentation.applyAuctionGuiName(display);
         inventory.setItem(ITEM_SLOT, display);
     }
 
@@ -316,10 +337,45 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     private void changeAmount(int delta) {
-        reconcileBackingFromSlot();
-        sellAmount += delta;
+        if (backingStack == null || backingStack.isEmpty()) {
+            return;
+        }
+        if (delta < 0) {
+            sellAmount = Math.max(1, sellAmount + delta);
+            clampSellAmount();
+            refresh();
+            return;
+        }
+        Player player = Bukkit.getPlayer(viewerId);
+        int steps = delta;
+        while (steps > 0) {
+            if (sellAmount < backingStack.getAmount()) {
+                sellAmount++;
+                steps--;
+                continue;
+            }
+            int cap = maxSellableAmount(player);
+            if (sellAmount >= cap) {
+                break;
+            }
+            if (player == null) {
+                break;
+            }
+            int want = Math.min(steps, cap - sellAmount);
+            int pulled = pullFromPlayerInventory(player, want);
+            if (pulled <= 0) {
+                break;
+            }
+            backingStack.setAmount(backingStack.getAmount() + pulled);
+            sellAmount += pulled;
+            steps -= pulled;
+        }
         clampSellAmount();
         refresh();
+    }
+
+    private int pullFromPlayerInventory(Player player, int amount) {
+        return SimilarItemInventory.removeSimilar(player.getInventory(), backingStack, amount);
     }
 
     private void clampSellAmount() {
@@ -333,16 +389,20 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     private int maxStackAmount() {
-        ItemStack inSlot = inventory.getItem(ITEM_SLOT);
-        int inSlotAmount = inSlot == null || inSlot.isEmpty() ? 0 : inSlot.getAmount();
-        int backingAmount = backingStack == null || backingStack.isEmpty() ? 0 : backingStack.getAmount();
-        if (inSlotAmount <= 0 && backingAmount <= 0) {
+        return maxSellableAmount(Bukkit.getPlayer(viewerId));
+    }
+
+    private int maxSellableAmount(Player player) {
+        if (backingStack == null || backingStack.isEmpty()) {
             return 1;
         }
-        if (inSlotAmount > 0 && backingAmount > 0 && !backingStack.isSimilar(inSlot)) {
-            return inSlotAmount;
+        int maxStack = backingStack.getMaxStackSize();
+        int reserved = backingStack.getAmount();
+        if (player == null) {
+            return Math.max(1, Math.min(maxStack, reserved));
         }
-        return Math.max(inSlotAmount, backingAmount);
+        int inInventory = SimilarItemInventory.countSimilar(player.getInventory(), backingStack);
+        return Math.max(1, Math.min(maxStack, reserved + inInventory));
     }
 
     private Map<String, String> amountPlaceholders() {

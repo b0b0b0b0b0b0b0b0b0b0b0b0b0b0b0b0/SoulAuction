@@ -9,7 +9,7 @@ import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterSta
 import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowsePage;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
-import java.util.EnumMap;
+import bm.b0b0b0.soulAuction.util.ListingItemPresentation;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +31,6 @@ public final class AuctionBrowserMenu implements InventoryHolder {
     private final GuiGeneralSettings guiSettings;
     private final Inventory inventory;
     private final Map<Integer, Long> listingBySlot;
-    private final Map<AuctionCategory, String> categoryNameByType;
     private int page;
     private AuctionSort sort;
     private AuctionCategory category;
@@ -65,10 +64,9 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         this.inventory = Bukkit.createInventory(
                 this,
                 guiSettings.size,
-                messageService.component("auction-title", Map.of("auction", auctionService.auctionDisplayName(auctionId)))
+                messageService.component(viewerId, "auction-title", Map.of("auction", auctionService.auctionDisplayName(auctionId)))
         );
         this.listingBySlot = new HashMap<>();
-        this.categoryNameByType = createCategoryNames(messageService);
         this.page = Math.max(0, initialPage);
         this.sort = AuctionSort.NEWEST;
         this.category = AuctionCategory.ALL;
@@ -200,27 +198,37 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             AuctionListing listing = listings.get(i);
             int slot = listingSlots.get(i);
             ItemStack item = ItemStackCodec.decode(listing.itemBase64());
+            ListingItemPresentation.applyAuctionGuiName(item);
             ItemMeta itemMeta = item.getItemMeta();
             if (itemMeta != null) {
                 java.util.ArrayList<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>(messageService.components(
+                        viewerId,
                         "listing-lore",
                         auctionService.listingLorePlaceholders(listing, viewerId)
                 ));
                 if (auctionService.listingExpiryEnabled(auctionId)) {
                     lore.addAll(messageService.components(
+                            viewerId,
                             "listing-lore-expires",
                             auctionService.listingLorePlaceholders(listing, viewerId)
                     ));
                 }
                 lore.addAll(messageService.componentsFromTemplates(
+                        viewerId,
                         auctionService.listingLoreTemplate(auctionId),
                         auctionService.listingLorePlaceholders(listing, viewerId)
                 ));
-                if (auctionService.isFavoriteSeller(viewerId, listing.sellerId())) {
-                    lore.add(messageService.component("listing-lore-favorite"));
+                if (!listing.sellerId().equals(viewerId)) {
+                    if (auctionService.isFavoriteSeller(viewerId, listing.sellerId())) {
+                        lore.addAll(messageService.components(viewerId, "listing-lore-favorite-seller-active"));
+                    } else {
+                        lore.addAll(messageService.components(viewerId, "listing-lore-favorite-seller-inactive"));
+                    }
                 }
                 if (auctionService.isFavoriteListing(viewerId, listing.listingId())) {
-                    lore.add(messageService.component("listing-lore-favorite-listing"));
+                    lore.addAll(messageService.components(viewerId, "listing-lore-favorite-listing"));
+                } else {
+                    lore.addAll(messageService.components(viewerId, "listing-lore-favorite-listing-inactive"));
                 }
                 itemMeta.lore(lore);
                 item.setItemMeta(itemMeta);
@@ -231,18 +239,33 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         if (page > 0) {
             inventory.setItem(
                     guiSettings.previousPageSlot,
-                    actionItem(guiSettings.previousPageMaterial, guiSettings.previousPageCustomModelData, messageService.component("button-prev-page"))
+                    actionItem(
+                            guiSettings.previousPageMaterial,
+                            guiSettings.previousPageCustomModelData,
+                            messageService.component(viewerId, "button-prev-page"),
+                            messageService.components(viewerId, "button-prev-page-lore")
+                    )
             );
         }
         if (page < maxPage) {
             inventory.setItem(
                     guiSettings.nextPageSlot,
-                    actionItem(guiSettings.nextPageMaterial, guiSettings.nextPageCustomModelData, messageService.component("button-next-page"))
+                    actionItem(
+                            guiSettings.nextPageMaterial,
+                            guiSettings.nextPageCustomModelData,
+                            messageService.component(viewerId, "button-next-page"),
+                            messageService.components(viewerId, "button-next-page-lore")
+                    )
             );
         }
         inventory.setItem(
                 guiSettings.historySlot,
-                actionItem(guiSettings.historyMaterial, guiSettings.historyCustomModelData, messageService.component("button-history"))
+                actionItem(
+                        guiSettings.historyMaterial,
+                        guiSettings.historyCustomModelData,
+                        messageService.component(viewerId, "button-history"),
+                        messageService.components(viewerId, "button-history-lore")
+                )
         );
         inventory.setItem(
                 guiSettings.refreshSlot,
@@ -250,8 +273,11 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                         guiSettings.refreshMaterial,
                         guiSettings.refreshCustomModelData,
                         searchQuery == null
-                                ? messageService.component("button-refresh")
-                                : messageService.component("button-refresh-search", Map.of("query", searchQuery))
+                                ? messageService.component(viewerId, "button-refresh")
+                                : messageService.component(viewerId, "button-refresh-search", Map.of("query", searchQuery)),
+                        searchQuery == null
+                                ? messageService.components(viewerId, "button-refresh-lore")
+                                : messageService.components(viewerId, "button-refresh-search-lore", Map.of("query", searchQuery))
                 )
         );
         inventory.setItem(
@@ -259,7 +285,8 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                 actionItem(
                         guiSettings.sortMaterial,
                         guiSettings.sortCustomModelData,
-                        messageService.component("button-sort", Map.of("sort", sortName(sort)))
+                        messageService.component(viewerId, "button-sort"),
+                        messageService.components(viewerId, "button-sort-lore", Map.of("sort", sortName(sort)))
                 )
         );
         inventory.setItem(
@@ -267,7 +294,8 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                 actionItem(
                         guiSettings.categoryMaterial,
                         guiSettings.categoryCustomModelData,
-                        messageService.component("button-category", Map.of("category", categoryName(category)))
+                        messageService.component(viewerId, "button-category"),
+                        messageService.components(viewerId, "button-category-lore", Map.of("category", categoryName(category)))
                 )
         );
         inventory.setItem(
@@ -275,7 +303,8 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                 actionItem(
                         guiSettings.searchMaterial,
                         guiSettings.searchCustomModelData,
-                        messageService.component("button-search")
+                        messageService.component(viewerId, "button-search"),
+                        messageService.components(viewerId, "button-search-lore")
                 )
         );
         inventory.setItem(
@@ -284,8 +313,11 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                         guiSettings.favoritesMaterial,
                         guiSettings.favoritesCustomModelData,
                         favoritesOnly
-                                ? messageService.component("button-favorites-on")
-                                : messageService.component("button-favorites-off")
+                                ? messageService.component(viewerId, "button-favorites-on")
+                                : messageService.component(viewerId, "button-favorites-off"),
+                        favoritesOnly
+                                ? messageService.components(viewerId, "button-favorites-on-lore")
+                                : messageService.components(viewerId, "button-favorites-off-lore")
                 )
         );
         inventory.setItem(
@@ -293,7 +325,8 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                 actionItem(
                         guiSettings.priceFilterMaterial,
                         guiSettings.priceFilterCustomModelData,
-                        messageService.component("button-price-filter")
+                        messageService.component(viewerId, "button-price-filter"),
+                        messageService.components(viewerId, "button-price-filter-lore")
                 )
         );
     }
@@ -320,6 +353,15 @@ public final class AuctionBrowserMenu implements InventoryHolder {
     }
 
     private ItemStack actionItem(String materialName, int customModelData, Component title) {
+        return actionItem(materialName, customModelData, title, null);
+    }
+
+    private ItemStack actionItem(
+            String materialName,
+            int customModelData,
+            Component title,
+            java.util.List<Component> lore
+    ) {
         Material material = Material.matchMaterial(materialName);
         if (material == null) {
             material = Material.PAPER;
@@ -328,6 +370,9 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         ItemMeta itemMeta = item.getItemMeta();
         if (itemMeta != null) {
             itemMeta.displayName(title);
+            if (lore != null && !lore.isEmpty()) {
+                itemMeta.lore(lore);
+            }
             if (customModelData >= 0) {
                 itemMeta.setCustomModelData(customModelData);
             }
@@ -347,38 +392,34 @@ public final class AuctionBrowserMenu implements InventoryHolder {
 
     private String sortName(AuctionSort value) {
         return switch (value) {
-            case NEWEST -> messageService.raw("sort-newest");
-            case OLDEST -> messageService.raw("sort-oldest");
-            case PRICE_ASC -> messageService.raw("sort-price-asc");
-            case PRICE_DESC -> messageService.raw("sort-price-desc");
-            case SELLER_ASC -> messageService.raw("sort-seller-asc");
-            case SELLER_DESC -> messageService.raw("sort-seller-desc");
-            case AMOUNT_ASC -> messageService.raw("sort-amount-asc");
-            case AMOUNT_DESC -> messageService.raw("sort-amount-desc");
-            case MATERIAL_ASC -> messageService.raw("sort-material-asc");
-            case MATERIAL_DESC -> messageService.raw("sort-material-desc");
-            case CATEGORY_ASC -> messageService.raw("sort-category-asc");
-            case LISTING_ID_ASC -> messageService.raw("sort-id-asc");
-            case LISTING_ID_DESC -> messageService.raw("sort-id-desc");
-            case UNIT_PRICE_ASC -> messageService.raw("sort-unit-price-asc");
-            case UNIT_PRICE_DESC -> messageService.raw("sort-unit-price-desc");
+            case NEWEST -> messageService.raw(viewerId, "sort-newest");
+            case OLDEST -> messageService.raw(viewerId, "sort-oldest");
+            case PRICE_ASC -> messageService.raw(viewerId, "sort-price-asc");
+            case PRICE_DESC -> messageService.raw(viewerId, "sort-price-desc");
+            case SELLER_ASC -> messageService.raw(viewerId, "sort-seller-asc");
+            case SELLER_DESC -> messageService.raw(viewerId, "sort-seller-desc");
+            case AMOUNT_ASC -> messageService.raw(viewerId, "sort-amount-asc");
+            case AMOUNT_DESC -> messageService.raw(viewerId, "sort-amount-desc");
+            case MATERIAL_ASC -> messageService.raw(viewerId, "sort-material-asc");
+            case MATERIAL_DESC -> messageService.raw(viewerId, "sort-material-desc");
+            case CATEGORY_ASC -> messageService.raw(viewerId, "sort-category-asc");
+            case LISTING_ID_ASC -> messageService.raw(viewerId, "sort-id-asc");
+            case LISTING_ID_DESC -> messageService.raw(viewerId, "sort-id-desc");
+            case UNIT_PRICE_ASC -> messageService.raw(viewerId, "sort-unit-price-asc");
+            case UNIT_PRICE_DESC -> messageService.raw(viewerId, "sort-unit-price-desc");
         };
     }
 
     private String categoryName(AuctionCategory value) {
-        return categoryNameByType.getOrDefault(value, value.name());
-    }
-
-    private Map<AuctionCategory, String> createCategoryNames(MessageService service) {
-        Map<AuctionCategory, String> names = new EnumMap<>(AuctionCategory.class);
-        names.put(AuctionCategory.ALL, service.raw("category-all"));
-        names.put(AuctionCategory.BLOCKS, service.raw("category-blocks"));
-        names.put(AuctionCategory.WEAPONS, service.raw("category-weapons"));
-        names.put(AuctionCategory.TOOLS, service.raw("category-tools"));
-        names.put(AuctionCategory.ARMOR, service.raw("category-armor"));
-        names.put(AuctionCategory.FOOD, service.raw("category-food"));
-        names.put(AuctionCategory.REDSTONE, service.raw("category-redstone"));
-        names.put(AuctionCategory.OTHER, service.raw("category-other"));
-        return names;
+        return switch (value) {
+            case ALL -> messageService.raw(viewerId, "category-all");
+            case BLOCKS -> messageService.raw(viewerId, "category-blocks");
+            case WEAPONS -> messageService.raw(viewerId, "category-weapons");
+            case TOOLS -> messageService.raw(viewerId, "category-tools");
+            case ARMOR -> messageService.raw(viewerId, "category-armor");
+            case FOOD -> messageService.raw(viewerId, "category-food");
+            case REDSTONE -> messageService.raw(viewerId, "category-redstone");
+            case OTHER -> messageService.raw(viewerId, "category-other");
+        };
     }
 }

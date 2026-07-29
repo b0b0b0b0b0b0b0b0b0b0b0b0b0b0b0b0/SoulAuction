@@ -36,7 +36,7 @@ public final class PlayerHubMenu implements InventoryHolder {
         this.auctionId = auctionId;
         this.auctionService = auctionService;
         this.messageService = messageService;
-        this.inventory = Bukkit.createInventory(this, 54, messageService.component("hub-title"));
+        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, "hub-title"));
         refresh();
     }
 
@@ -78,12 +78,12 @@ public final class PlayerHubMenu implements InventoryHolder {
 
     private void refresh() {
         inventory.clear();
-        inventory.setItem(SELLING_SLOT, button(Material.LIME_DYE, "hub-selling"));
-        inventory.setItem(EXPIRED_SLOT, button(Material.ORANGE_DYE, "hub-expired"));
-        inventory.setItem(PURCHASED_SLOT, button(Material.DIAMOND, "hub-purchased"));
-        inventory.setItem(MY_SALES_SLOT, button(Material.GOLD_INGOT, "hub-my-sales"));
-        inventory.setItem(RECENT_SLOT, button(Material.BOOK, "hub-recent-sales"));
-        inventory.setItem(BACK_SLOT, button(Material.LIGHT_GRAY_DYE, "hub-back"));
+        inventory.setItem(SELLING_SLOT, button(Material.LIME_DYE, "hub-selling", "hub-selling-lore"));
+        inventory.setItem(EXPIRED_SLOT, button(Material.ORANGE_DYE, "hub-expired", "hub-expired-lore"));
+        inventory.setItem(PURCHASED_SLOT, button(Material.DIAMOND, "hub-purchased", "hub-purchased-lore"));
+        inventory.setItem(MY_SALES_SLOT, button(Material.GOLD_INGOT, "hub-my-sales", "hub-my-sales-lore"));
+        inventory.setItem(RECENT_SLOT, button(Material.BOOK, "hub-recent-sales", "hub-recent-sales-lore"));
+        inventory.setItem(BACK_SLOT, button(Material.LIGHT_GRAY_DYE, "hub-back", "hub-back-lore"));
         ItemStack decor = new ItemStack(Material.PURPLE_STAINED_GLASS_PANE);
         ItemMeta decorMeta = decor.getItemMeta();
         if (decorMeta != null) {
@@ -97,11 +97,12 @@ public final class PlayerHubMenu implements InventoryHolder {
         }
     }
 
-    private ItemStack button(Material material, String messageKey) {
+    private ItemStack button(Material material, String titleKey, String loreKey) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.displayName(messageService.component(messageKey));
+            meta.displayName(messageService.component(viewerId, titleKey));
+            meta.lore(messageService.components(viewerId, loreKey));
             item.setItemMeta(meta);
         }
         return item;

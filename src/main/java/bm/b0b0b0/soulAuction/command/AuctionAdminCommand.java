@@ -5,7 +5,9 @@ import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
+import bm.b0b0b0.soulAuction.model.StorageMode;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.migration.AuctionStorageMigrator;
 import bm.b0b0b0.soulAuction.util.ItemInspectionFormatter;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
@@ -248,12 +250,22 @@ public final class AuctionAdminCommand {
             messageService.send(sender, "error-admin-sellfor-usage");
             return true;
         }
-        var result = auctionService.createListingFromItem(online, auctionId, price, admin.getInventory().getItemInMainHand());
+        ItemStack source = admin.getInventory().getItemInMainHand();
+        if (source == null || source.isEmpty()) {
+            messageService.send(sender, "error-main-hand-empty");
+            return true;
+        }
+        ItemStack escrow = source.clone();
+        admin.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
+        var result = auctionService.createListingFromEscrow(online, auctionId, price, escrow);
         if (!result.success()) {
+            Map<Integer, ItemStack> leftover = admin.getInventory().addItem(escrow);
+            if (!leftover.isEmpty()) {
+                leftover.values().forEach(stack -> admin.getWorld().dropItemNaturally(admin.getLocation(), stack));
+            }
             messageService.send(admin, result.failure().messageKey());
             return true;
         }
-        admin.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
         messageService.send(admin, 
                 "success-admin-sellfor",
                 Map.of("player", online.getName(), "id", String.valueOf(result.listing().listingId()))
@@ -263,8 +275,73 @@ public final class AuctionAdminCommand {
     }
 
     private boolean migrate(CommandSender sender, String[] args) {
-        messageService.send(sender, "admin-migrate-stub", Map.of("source", args.length > 0 ? args[0] : "unknown"));
+        if (args.length < 2 || !args[0].equalsIgnoreCase("from")) {
+            messageService.send(sender, "error-admin-migrate-usage");
+            return true;
+        }
+        StorageMode sourceMode;
+        try {
+            sourceMode = StorageMode.fromString(args[1]);
+        } catch (Exception exception) {
+            messageService.send(sender, "error-admin-migrate-usage");
+            return true;
+        }
+        boolean dryRun = false;
+        boolean archive = false;
+        for (int i = 2; i < args.length; i++) {
+            String flag = args[i].toLowerCase(Locale.ROOT);
+            if (flag.equals("dry-run")) {
+                dryRun = true;
+            } else if (flag.equals("archive")) {
+                archive = true;
+            }
+        }
+        StorageMode source = sourceMode;
+        boolean runDry = dryRun;
+        boolean runArchive = archive;
+        messageService.send(sender, "admin-migrate-started", Map.of("source", source.name()));
+        PluginSchedulers.runAsync(plugin, () -> {
+            try {
+                AuctionStorageMigrator.Result result = auctionService.migrateFromStorage(plugin, source, runDry, runArchive);
+                PluginSchedulers.runGlobal(plugin, () -> sendMigrateResult(sender, result));
+            } catch (IllegalArgumentException exception) {
+                String key = switch (exception.getMessage()) {
+                    case "source-equals-target" -> "error-admin-migrate-same-mode";
+                    case "source-empty" -> "error-admin-migrate-source-empty";
+                    default -> "error-admin-migrate-failed";
+                };
+                PluginSchedulers.runGlobal(plugin, () -> messageService.send(sender, key));
+            } catch (Exception exception) {
+                PluginSchedulers.runGlobal(plugin, () -> messageService.send(
+                        sender,
+                        "error-admin-migrate-failed",
+                        Map.of("reason", exception.getMessage() == null ? "unknown" : exception.getMessage())
+                ));
+            }
+        });
         return true;
+    }
+
+    private void sendMigrateResult(CommandSender sender, AuctionStorageMigrator.Result result) {
+        if (result.dryRun()) {
+            messageService.send(sender, "success-admin-migrate-dry-run", Map.of(
+                    "source", result.sourceMode().name(),
+                    "target", result.targetMode().name(),
+                    "import", String.valueOf(result.imported()),
+                    "skip", String.valueOf(result.skipped()),
+                    "total", String.valueOf(result.sourceTotal())
+            ));
+            return;
+        }
+        messageService.send(sender, "success-admin-migrate", Map.of(
+                "source", result.sourceMode().name(),
+                "target", result.targetMode().name(),
+                "import", String.valueOf(result.imported()),
+                "skip", String.valueOf(result.skipped()),
+                "fail", String.valueOf(result.failed()),
+                "total", String.valueOf(result.sourceTotal()),
+                "archived", result.archived() ? "yes" : "no"
+        ));
     }
 
     private boolean parse(CommandSender sender, String[] args) {

@@ -9,6 +9,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+import bm.b0b0b0.soulAuction.util.ListingItemPresentation;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
@@ -50,7 +51,7 @@ public final class AuctionSellConfirmMenu implements InventoryHolder {
         this.inventory = Bukkit.createInventory(
                 this,
                 54,
-                messageService.component("sell-confirm-title", Map.of("auction", auctionService.auctionDisplayName(auctionId)))
+                messageService.component(viewerId, "sell-confirm-title", Map.of("auction", auctionService.auctionDisplayName(auctionId)))
         );
         refresh();
     }
@@ -124,23 +125,24 @@ public final class AuctionSellConfirmMenu implements InventoryHolder {
         if (heldStack != null && !heldStack.isEmpty()) {
             ItemStack preview = heldStack.clone();
             preview.setAmount(Math.min(sellAmount, preview.getAmount()));
+            ListingItemPresentation.applyAuctionGuiName(preview);
             inventory.setItem(ITEM_SLOT, preview);
         }
         String formattedPrice = auctionService.formatPrice(price, auctionId, viewerId);
         int inCell = heldStack == null ? 0 : heldStack.getAmount();
         inventory.setItem(SUMMARY_SLOT, button(
                 Material.BOOK,
-                messageService.component("sell-confirm-summary-title"),
-                messageService.components("sell-confirm-summary-lore", Map.of(
+                messageService.component(viewerId, "sell-confirm-summary-title"),
+                messageService.components(viewerId, "sell-confirm-summary-lore", Map.of(
                         "price", formattedPrice,
                         "amount", String.valueOf(sellAmount),
                         "in_cell", String.valueOf(inCell),
                         "auction", auctionService.auctionDisplayName(auctionId)
                 ))
         ));
-        inventory.setItem(YES_SLOT, button(Material.LIME_DYE, messageService.component("sell-confirm-yes"), null));
-        inventory.setItem(NO_SLOT, button(Material.RED_DYE, messageService.component("sell-confirm-no"), null));
-        inventory.setItem(EXIT_SLOT, button(Material.LIGHT_GRAY_DYE, messageService.component("sell-confirm-exit"), null));
+        inventory.setItem(YES_SLOT, button(Material.LIME_DYE, messageService.component(viewerId, "sell-confirm-yes"), null));
+        inventory.setItem(NO_SLOT, button(Material.RED_DYE, messageService.component(viewerId, "sell-confirm-no"), null));
+        inventory.setItem(EXIT_SLOT, button(Material.LIGHT_GRAY_DYE, messageService.component(viewerId, "sell-confirm-exit"), null));
     }
 
     private void fillDecor() {

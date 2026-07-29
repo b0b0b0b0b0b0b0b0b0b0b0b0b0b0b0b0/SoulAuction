@@ -179,7 +179,7 @@ public final class AuctionPurchaseService {
                         "buyer", buyerName,
                         "seller", listing.sellerName(),
                         "price", economy.format(listing.price(), listing.economyType(), definition),
-                        "auction", listing.auctionId()
+                        "auction", definition.displayName
                 )
         );
     }

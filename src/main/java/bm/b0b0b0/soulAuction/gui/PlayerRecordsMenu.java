@@ -7,15 +7,18 @@ import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
+import bm.b0b0b0.soulAuction.util.ListingItemPresentation;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -33,6 +36,7 @@ public final class PlayerRecordsMenu implements InventoryHolder {
     private final AuctionService auctionService;
     private final MessageService messageService;
     private final Inventory inventory;
+    private final Map<Integer, Long> listingBySlot;
 
     public PlayerRecordsMenu(
             UUID viewerId,
@@ -47,8 +51,73 @@ public final class PlayerRecordsMenu implements InventoryHolder {
         this.view = view;
         this.auctionService = auctionService;
         this.messageService = messageService;
-        this.inventory = Bukkit.createInventory(this, 54, messageService.component(titleKey(view)));
+        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, titleKey(view)));
+        this.listingBySlot = new HashMap<>();
         refresh();
+    }
+
+    public PlayerRecordsMenu(
+            Player viewer,
+            String auctionId,
+            PlayerHistoryView view,
+            AuctionService auctionService,
+            MessageService messageService
+    ) {
+        this(viewer.getUniqueId(), auctionId, view, auctionService, messageService, messageService.component(viewer, titleKey(view)));
+    }
+
+    private PlayerRecordsMenu(
+            UUID viewerId,
+            String auctionId,
+            PlayerHistoryView view,
+            AuctionService auctionService,
+            MessageService messageService,
+            net.kyori.adventure.text.Component inventoryTitle
+    ) {
+        this.viewerId = viewerId;
+        this.subjectId = viewerId;
+        this.auctionId = auctionId;
+        this.view = view;
+        this.auctionService = auctionService;
+        this.messageService = messageService;
+        this.inventory = Bukkit.createInventory(this, 54, inventoryTitle);
+        this.listingBySlot = new HashMap<>();
+        refresh();
+    }
+
+    public PlayerRecordsMenu(
+            Player viewer,
+            UUID subjectId,
+            String auctionId,
+            PlayerHistoryView view,
+            AuctionService auctionService,
+            MessageService messageService
+    ) {
+        this(viewer.getUniqueId(), subjectId, auctionId, view, auctionService, messageService, messageService.component(viewer, titleKey(view)));
+    }
+
+    private PlayerRecordsMenu(
+            UUID viewerId,
+            UUID subjectId,
+            String auctionId,
+            PlayerHistoryView view,
+            AuctionService auctionService,
+            MessageService messageService,
+            net.kyori.adventure.text.Component inventoryTitle
+    ) {
+        this.viewerId = viewerId;
+        this.subjectId = subjectId == null ? viewerId : subjectId;
+        this.auctionId = auctionId;
+        this.view = view;
+        this.auctionService = auctionService;
+        this.messageService = messageService;
+        this.inventory = Bukkit.createInventory(this, 54, inventoryTitle);
+        this.listingBySlot = new HashMap<>();
+        refresh();
+    }
+
+    public Long listingIdAt(int slot) {
+        return listingBySlot.get(slot);
     }
 
     public PlayerRecordsMenu(
@@ -65,7 +134,8 @@ public final class PlayerRecordsMenu implements InventoryHolder {
         this.view = view;
         this.auctionService = auctionService;
         this.messageService = messageService;
-        this.inventory = Bukkit.createInventory(this, 54, messageService.component(titleKey(view)));
+        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, titleKey(view)));
+        this.listingBySlot = new HashMap<>();
         refresh();
     }
 
@@ -103,20 +173,26 @@ public final class PlayerRecordsMenu implements InventoryHolder {
             case MY_SALES -> fillMySales();
             case RECENT_AUCTION -> fillRecentAuction();
         }
-        inventory.setItem(BACK_SLOT, backButton(messageService.component("hub-back")));
+        inventory.setItem(BACK_SLOT, backButton(
+                messageService.component(viewerId, "hub-submenu-back"),
+                messageService.components(viewerId, "hub-submenu-back-lore")
+        ));
     }
 
     private void fillSelling() {
+        listingBySlot.clear();
         List<AuctionListing> listings = auctionService.myListings(subjectId, auctionId);
         for (int i = 0; i < listings.size() && i < 45; i++) {
             AuctionListing listing = listings.get(i);
+            listingBySlot.put(i, listing.listingId());
             ItemStack item = ItemStackCodec.decode(listing.itemBase64());
+            ListingItemPresentation.applyAuctionGuiName(item);
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
                 java.util.Map<String, String> lorePlaceholders = auctionService.listingLorePlaceholders(listing, viewerId);
-                java.util.ArrayList<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>(messageService.components("record-selling-lore", lorePlaceholders));
+                java.util.ArrayList<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>(messageService.components(viewerId, "record-selling-lore", lorePlaceholders));
                 if (auctionService.listingExpiryEnabled(listing.auctionId())) {
-                    lore.addAll(messageService.components("record-selling-expires", lorePlaceholders));
+                    lore.addAll(messageService.components(viewerId, "record-selling-expires", lorePlaceholders));
                 }
                 meta.lore(lore);
                 item.setItemMeta(meta);
@@ -136,12 +212,13 @@ public final class PlayerRecordsMenu implements InventoryHolder {
                 continue;
             }
             ItemStack item = ItemStackCodec.decode(claim.itemBase64());
+            ListingItemPresentation.applyAuctionGuiName(item);
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
-                meta.lore(messageService.components("record-expired-lore", Map.of(
+                meta.lore(messageService.components(viewerId, "record-expired-lore", Map.of(
                         "id", String.valueOf(claim.claimId()),
                         "reason", claim.reason(),
-                        "auction", claim.auctionId()
+                        "auction", auctionService.auctionDisplayName(claim.auctionId())
                 )));
                 item.setItemMeta(meta);
             }
@@ -177,8 +254,8 @@ public final class PlayerRecordsMenu implements InventoryHolder {
         String time = TIME_FORMAT.format(Instant.ofEpochMilli(entry.createdAtEpochMillis()).atZone(ZoneId.systemDefault()));
         String total = auctionService.formatPrice(entry.price() + entry.buyTax(), entry.auctionId(), viewerId);
         return paper(
-                messageService.component("history-item-title", Map.of("id", String.valueOf(entry.historyId()))),
-                messageService.components(asPurchase ? "record-purchased-lore" : "history-item-lore", Map.of(
+                messageService.component(viewerId, "history-item-title", Map.of("id", String.valueOf(entry.historyId()))),
+                messageService.components(viewerId, asPurchase ? "record-purchased-lore" : "history-item-lore", Map.of(
                         "seller", sellerName,
                         "buyer", buyerName,
                         "price", price,
@@ -190,11 +267,14 @@ public final class PlayerRecordsMenu implements InventoryHolder {
         );
     }
 
-    private ItemStack backButton(net.kyori.adventure.text.Component title) {
+    private ItemStack backButton(net.kyori.adventure.text.Component title, List<net.kyori.adventure.text.Component> lore) {
         ItemStack item = new ItemStack(Material.LIGHT_GRAY_DYE);
         ItemMeta itemMeta = item.getItemMeta();
         if (itemMeta != null) {
             itemMeta.displayName(title);
+            if (lore != null && !lore.isEmpty()) {
+                itemMeta.lore(lore);
+            }
             item.setItemMeta(itemMeta);
         }
         return item;

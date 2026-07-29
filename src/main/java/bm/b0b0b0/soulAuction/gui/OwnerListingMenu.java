@@ -3,8 +3,12 @@ package bm.b0b0b0.soulAuction.gui;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.util.ItemStackCodec;
+import bm.b0b0b0.soulAuction.util.ListingItemPresentation;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -15,11 +19,15 @@ import org.bukkit.inventory.meta.ItemMeta;
 
 public final class OwnerListingMenu implements InventoryHolder {
 
-    private static final int MINUS_SLOT = 11;
-    private static final int PLUS_SLOT = 15;
-    private static final int APPLY_SLOT = 13;
-    private static final int REMOVE_SLOT = 22;
-    private static final int BACK_SLOT = 26;
+    private static final int ITEM_SLOT = 22;
+    private static final int PRICE_SLOT = 31;
+    private static final int MINUS_SMALL_SLOT = 28;
+    private static final int MINUS_BIG_SLOT = 29;
+    private static final int PLUS_SMALL_SLOT = 33;
+    private static final int PLUS_BIG_SLOT = 34;
+    private static final int REMOVE_SLOT = 20;
+    private static final int BACK_SLOT = 45;
+    private static final int APPLY_SLOT = 53;
 
     private final UUID viewerId;
     private final String auctionId;
@@ -41,7 +49,7 @@ public final class OwnerListingMenu implements InventoryHolder {
         this.listingId = listingId;
         this.auctionService = auctionService;
         this.messageService = messageService;
-        this.inventory = Bukkit.createInventory(this, 27, messageService.component("owner-menu-title"));
+        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, "owner-menu-title"));
         AuctionListing listing = auctionService.listingById(listingId);
         this.editedPrice = listing == null ? 1 : listing.price();
         refresh();
@@ -69,16 +77,20 @@ public final class OwnerListingMenu implements InventoryHolder {
     }
 
     public void click(int slot) {
-        if (slot == MINUS_SLOT) {
-            editedPrice = Math.max(1, editedPrice - 100);
-            refresh();
+        if (slot == MINUS_SMALL_SLOT) {
+            changePrice(-100);
             return;
         }
-        if (slot == PLUS_SLOT) {
-            Player player = Bukkit.getPlayer(viewerId);
-            int max = player == null ? auctionService.globalMaxPrice() : auctionService.maxPrice(player, auctionId);
-            editedPrice = Math.min(max, editedPrice + 100);
-            refresh();
+        if (slot == MINUS_BIG_SLOT) {
+            changePrice(-1000);
+            return;
+        }
+        if (slot == PLUS_SMALL_SLOT) {
+            changePrice(100);
+            return;
+        }
+        if (slot == PLUS_BIG_SLOT) {
+            changePrice(1000);
         }
     }
 
@@ -98,25 +110,83 @@ public final class OwnerListingMenu implements InventoryHolder {
         inventory.clear();
         AuctionListing listing = auctionService.listingById(listingId);
         String livePrice = listing == null ? "?" : auctionService.formatPrice(listing.price(), listing.auctionId(), viewerId);
-        inventory.setItem(MINUS_SLOT, button(Material.RED_DYE, messageService.component("owner-price-minus")));
-        inventory.setItem(PLUS_SLOT, button(Material.LIME_DYE, messageService.component("owner-price-plus")));
-        inventory.setItem(APPLY_SLOT, button(
+        String formattedEdited = auctionService.formatPrice(editedPrice, auctionId, viewerId);
+        Map<String, String> pricePlaceholders = Map.of("price", formattedEdited);
+        inventory.setItem(MINUS_SMALL_SLOT, actionItem(
+                Material.RED_DYE,
+                messageService.component(viewerId, "sell-price-minus-small", Map.of("step", auctionService.formatPrice(100, auctionId, viewerId))),
+                messageService.components(viewerId, "sell-price-button-lore", pricePlaceholders)
+        ));
+        inventory.setItem(MINUS_BIG_SLOT, actionItem(
+                Material.REDSTONE,
+                messageService.component(viewerId, "sell-price-minus-big", Map.of("step", auctionService.formatPrice(1000, auctionId, viewerId))),
+                messageService.components(viewerId, "sell-price-button-lore", pricePlaceholders)
+        ));
+        inventory.setItem(PLUS_SMALL_SLOT, actionItem(
+                Material.LIME_DYE,
+                messageService.component(viewerId, "sell-price-plus-small", Map.of("step", auctionService.formatPrice(100, auctionId, viewerId))),
+                messageService.components(viewerId, "sell-price-button-lore", pricePlaceholders)
+        ));
+        inventory.setItem(PLUS_BIG_SLOT, actionItem(
+                Material.EMERALD,
+                messageService.component(viewerId, "sell-price-plus-big", Map.of("step", auctionService.formatPrice(1000, auctionId, viewerId))),
+                messageService.components(viewerId, "sell-price-button-lore", pricePlaceholders)
+        ));
+        inventory.setItem(PRICE_SLOT, actionItem(
                 Material.NAME_TAG,
-                messageService.component("owner-price-apply"),
-                messageService.components("owner-price-lore", Map.of(
-                        "edited", auctionService.formatPrice(editedPrice, auctionId, viewerId),
+                messageService.component(viewerId, "sell-price-current", pricePlaceholders)
+        ));
+        inventory.setItem(APPLY_SLOT, actionItem(
+                Material.LIME_DYE,
+                messageService.component(viewerId, "owner-price-apply"),
+                messageService.components(viewerId, "owner-price-lore", Map.of(
+                        "edited", formattedEdited,
                         "current", livePrice
                 ))
         ));
-        inventory.setItem(REMOVE_SLOT, button(Material.BARRIER, messageService.component("owner-remove-listing")));
-        inventory.setItem(BACK_SLOT, button(Material.LIGHT_GRAY_DYE, messageService.component("owner-back")));
+        inventory.setItem(REMOVE_SLOT, actionItem(Material.RED_WOOL, messageService.component(viewerId, "owner-remove-listing")));
+        inventory.setItem(BACK_SLOT, actionItem(Material.LIGHT_GRAY_DYE, messageService.component(viewerId, "owner-back")));
+        if (listing != null) {
+            ItemStack display = ItemStackCodec.decode(listing.itemBase64());
+            if (display != null && !display.isEmpty()) {
+                ListingItemPresentation.applyAuctionGuiName(display);
+                inventory.setItem(ITEM_SLOT, display);
+            }
+        }
+        fillDecor();
     }
 
-    private ItemStack button(Material material, net.kyori.adventure.text.Component title) {
-        return button(material, title, null);
+    private void changePrice(int delta) {
+        Player player = Bukkit.getPlayer(viewerId);
+        int max = player == null ? auctionService.globalMaxPrice() : auctionService.maxPrice(player, auctionId);
+        int next = editedPrice + delta;
+        if (next < 1) {
+            next = 1;
+        }
+        if (next > max) {
+            next = max;
+        }
+        editedPrice = next;
+        refresh();
     }
 
-    private ItemStack button(Material material, net.kyori.adventure.text.Component title, java.util.List<net.kyori.adventure.text.Component> lore) {
+    private void fillDecor() {
+        ItemStack decor = actionItem(Material.GRAY_STAINED_GLASS_PANE, Component.text(" "));
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            if (slot == ITEM_SLOT || slot == PRICE_SLOT || slot == MINUS_SMALL_SLOT || slot == MINUS_BIG_SLOT
+                    || slot == PLUS_SMALL_SLOT || slot == PLUS_BIG_SLOT || slot == REMOVE_SLOT || slot == BACK_SLOT
+                    || slot == APPLY_SLOT) {
+                continue;
+            }
+            inventory.setItem(slot, decor);
+        }
+    }
+
+    private ItemStack actionItem(Material material, Component title) {
+        return actionItem(material, title, null);
+    }
+
+    private ItemStack actionItem(Material material, Component title, List<Component> lore) {
         ItemStack item = new ItemStack(material);
         ItemMeta itemMeta = item.getItemMeta();
         if (itemMeta != null) {

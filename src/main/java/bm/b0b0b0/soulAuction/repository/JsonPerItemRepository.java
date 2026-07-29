@@ -172,6 +172,17 @@ public final class JsonPerItemRepository implements AuctionRepository {
     }
 
     @Override
+    public boolean importListing(AuctionListing listing) {
+        if (listing == null || findById(listing.listingId()) != null) {
+            return false;
+        }
+        AuctionListing normalized = normalize(listing);
+        nextId.updateAndGet(current -> Math.max(current, normalized.listingId() + 1L));
+        putBack(normalized);
+        return true;
+    }
+
+    @Override
     public List<AuctionListing> listByAuction(String auctionId) {
         List<AuctionListing> output = new ArrayList<>();
         for (AuctionListing listing : listingsById.values()) {

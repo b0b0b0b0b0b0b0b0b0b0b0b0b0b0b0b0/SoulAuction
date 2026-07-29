@@ -5,11 +5,13 @@ import bm.b0b0b0.soulAuction.command.AuctionCommand;
 import bm.b0b0b0.soulAuction.command.AuctionAliasListener;
 import bm.b0b0b0.soulAuction.config.ConfigurationLoader;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
+import bm.b0b0b0.soulAuction.config.StorageRuntimeMeta;
 import bm.b0b0b0.soulAuction.gui.AuctionGuiListener;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.listener.AuctionSearchChatListener;
 import bm.b0b0b0.soulAuction.listener.PlayerSaleNotificationListener;
 import bm.b0b0b0.soulAuction.model.StorageMode;
+import bm.b0b0b0.soulAuction.service.migration.AuctionStorageMigrator;
 import bm.b0b0b0.soulAuction.placeholder.SoulAuctionPlaceholderExpansion;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
 import bm.b0b0b0.soulAuction.repository.AuctionRepositoryFactory;
@@ -56,11 +58,10 @@ public final class SoulAuction extends JavaPlugin {
             StorageMode storageMode = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
             startupLog.stepOk("Конфиг — storage=" + storageMode.name()
                     + ", аукционов=" + pluginConfig.auctionDefinitions().size());
+            logStorageConfigChange();
             messageService = new MessageService(this);
-            messageService.setRespectDisabledMessages(
-                    () -> pluginConfig.auctionSettings().features.respectDisabledMessages
-            );
-            startupLog.stepOk("Сообщения — messages.yml");
+            wireMessageServiceConfig();
+            startupLog.stepOk("Сообщения — lang: " + String.join(", ", messageService.loadedLocaleIds()));
             repository = AuctionRepositoryFactory.create(this, pluginConfig.auctionSettings());
             runtimeStorage = new AuctionRuntimeStorage(getDataFolder().toPath());
             EconomyBridge economyBridge = new EconomyBridge(this);
@@ -137,6 +138,17 @@ public final class SoulAuction extends JavaPlugin {
         }
         int listings = auctionService.totalListingsCount();
         startupLog.stepOk("Лоты — активных " + listings);
+        StorageMode activeStorage = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
+        if (listings == 0) {
+            StorageMode legacy = AuctionStorageMigrator.detectLegacyStorage(
+                    getDataFolder().toPath(),
+                    pluginConfig.auctionSettings(),
+                    activeStorage
+            );
+            if (legacy != null) {
+                startupLog.stepSkipped("Хранилище пусто — найдены данные " + legacy + "; /ah admin migrate from " + legacy);
+            }
+        }
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new SoulAuctionPlaceholderExpansion(auctionService).register();
             startupLog.stepOk("PlaceholderAPI — expansion зарегистрирован");
@@ -144,6 +156,24 @@ public final class SoulAuction extends JavaPlugin {
             startupLog.stepSkipped("PlaceholderAPI — не найден");
         }
         startupLog.bannerSuccess();
+        StorageRuntimeMeta.write(getDataFolder().toPath(), pluginConfig.auctionSettings());
+    }
+
+    private void logStorageConfigChange() {
+        StorageRuntimeMeta.ChangeCheck change = StorageRuntimeMeta.compare(
+                getDataFolder().toPath(),
+                pluginConfig.auctionSettings()
+        );
+        if (!change.configChanged() || change.previous() == null) {
+            return;
+        }
+        String message = "Storage изменён с прошлого запуска: было "
+                + change.previous().mode()
+                + ", в config сейчас "
+                + change.current().mode()
+                + " — проверь лоты и /ah admin migrate при необходимости";
+        startupLog.stepFail(message);
+        getLogger().warning(message);
     }
 
     private void logRedis(boolean useRedisSellGuard) {
@@ -202,6 +232,9 @@ public final class SoulAuction extends JavaPlugin {
         if (redisSellGuard != null) {
             redisSellGuard.close();
         }
+        if (pluginConfig != null) {
+            StorageRuntimeMeta.write(getDataFolder().toPath(), pluginConfig.auctionSettings());
+        }
         if (startupLog != null) {
             startupLog.unload();
         }
@@ -213,10 +246,21 @@ public final class SoulAuction extends JavaPlugin {
 
     private void reloadAll() {
         pluginConfig = configurationLoader.load();
+        wireMessageServiceConfig();
+        messageService.reload();
+    }
+
+    private void wireMessageServiceConfig() {
         messageService.setRespectDisabledMessages(
                 () -> pluginConfig.auctionSettings().features.respectDisabledMessages
         );
-        messageService.reload();
+        messageService.setForcedLocaleSupplier(() -> {
+            var messages = pluginConfig.auctionSettings().messages;
+            if (!"SERVER".equalsIgnoreCase(messages.localeMode)) {
+                return null;
+            }
+            return messages.serverLocale;
+        });
     }
 
     public AuctionService auctionService() {
