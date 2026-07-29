@@ -3,6 +3,8 @@ package bm.b0b0b0.soulAuction.repository;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
+import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -42,4 +44,16 @@ public interface AuctionRepository {
     int countBySeller(UUID sellerId);
 
     int countBySellerInAuction(UUID sellerId, String auctionId);
+
+    /** SQL backends persist pending seller payouts for multi-server claim. */
+    default boolean sharedPendingPayouts() {
+        return false;
+    }
+
+    default void storePendingPayout(PendingSaleNotification notification) {
+    }
+
+    default List<PendingSaleNotification> drainPendingPayouts(UUID sellerId) {
+        return Collections.emptyList();
+    }
 }

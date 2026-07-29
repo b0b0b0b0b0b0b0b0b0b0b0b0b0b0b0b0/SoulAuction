@@ -137,6 +137,9 @@ public final class AuctionListingCreator {
                 searchText,
                 metadata.toJson()
         );
+        if (listing == null) {
+            return SellResult.failure(SellFailure.LISTING_ID_ALLOCATION_FAILED);
+        }
         repository.flush();
         runtimeStorage.recordSell(seller.getUniqueId());
         externalNotifier.listingCreated(listing, soldItem);

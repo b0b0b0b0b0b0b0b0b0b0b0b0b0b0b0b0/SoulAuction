@@ -4,6 +4,7 @@ import bm.b0b0b0.soulAuction.config.settings.AuctionSettings.DatabaseSettings;
 import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
+import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
 import bm.b0b0b0.soulAuction.model.StorageMode;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import com.zaxxer.hikari.HikariConfig;
@@ -22,7 +23,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicLong;
 
 public final class SqlAuctionRepository implements AuctionRepository {
 
@@ -30,7 +30,6 @@ public final class SqlAuctionRepository implements AuctionRepository {
     private final DatabaseSettings settings;
     private final Path dataFolder;
     private final ConcurrentMap<Long, AuctionListing> listingsById;
-    private final AtomicLong nextId;
     private final ExecutorService ioExecutor;
     private HikariDataSource dataSource;
 
@@ -39,8 +38,33 @@ public final class SqlAuctionRepository implements AuctionRepository {
         this.settings = settings;
         this.dataFolder = dataFolder;
         this.listingsById = new ConcurrentHashMap<>();
-        this.nextId = new AtomicLong(1L);
         this.ioExecutor = Executors.newSingleThreadExecutor();
+    }
+
+    @Override
+    public boolean sharedPendingPayouts() {
+        return mode == StorageMode.MYSQL;
+    }
+
+    @Override
+    public void storePendingPayout(PendingSaleNotification notification) {
+        if (notification == null || !sharedPendingPayouts()) {
+            return;
+        }
+        CompletableFuture.runAsync(() -> insertPendingPayout(notification), ioExecutor);
+    }
+
+    @Override
+    public List<PendingSaleNotification> drainPendingPayouts(UUID sellerId) {
+        if (sellerId == null || !sharedPendingPayouts()) {
+            return List.of();
+        }
+        try {
+            return CompletableFuture.supplyAsync(() -> drainPendingPayoutsSync(sellerId), ioExecutor)
+                    .get(8L, TimeUnit.SECONDS);
+        } catch (Exception exception) {
+            return List.of();
+        }
     }
 
     @Override
@@ -87,7 +111,10 @@ public final class SqlAuctionRepository implements AuctionRepository {
             String searchText,
             String metadataJson
     ) {
-        long listingId = nextId.getAndIncrement();
+        long listingId = allocateListingIdBlocking();
+        if (listingId <= 0L) {
+            return null;
+        }
         AuctionListing listing = new AuctionListing(
                 listingId,
                 auctionId,
@@ -373,6 +400,65 @@ public final class SqlAuctionRepository implements AuctionRepository {
         }
         ensureColumn("search_text", "TEXT");
         ensureColumn("metadata_json", "TEXT");
+        createSequenceTableIfNeeded();
+        createPendingPayoutsTableIfNeeded();
+    }
+
+    private void createSequenceTableIfNeeded() throws Exception {
+        String sql = """
+                CREATE TABLE IF NOT EXISTS soulauction_sequence (
+                  name VARCHAR(32) PRIMARY KEY,
+                  next_value BIGINT NOT NULL
+                )
+                """;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.execute();
+        }
+        String seed = "INSERT INTO soulauction_sequence (name, next_value) VALUES ('listing', 1)";
+        if (mode == StorageMode.SQLITE) {
+            seed = "INSERT OR IGNORE INTO soulauction_sequence (name, next_value) VALUES ('listing', 1)";
+        } else {
+            seed = """
+                    INSERT INTO soulauction_sequence (name, next_value) VALUES ('listing', 1)
+                    ON DUPLICATE KEY UPDATE name = name
+                    """;
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(seed)) {
+            statement.executeUpdate();
+        }
+    }
+
+    private void createPendingPayoutsTableIfNeeded() throws Exception {
+        String sql = mode == StorageMode.MYSQL
+                ? """
+                CREATE TABLE IF NOT EXISTS soulauction_pending_payouts (
+                  payout_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                  seller_id VARCHAR(36) NOT NULL,
+                  auction_id VARCHAR(64) NOT NULL,
+                  payout INT NOT NULL,
+                  sale_tax INT NOT NULL,
+                  economy_type VARCHAR(32) NOT NULL,
+                  created_at BIGINT NOT NULL,
+                  INDEX idx_pending_seller (seller_id)
+                )
+                """
+                : """
+                CREATE TABLE IF NOT EXISTS soulauction_pending_payouts (
+                  payout_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  seller_id TEXT NOT NULL,
+                  auction_id TEXT NOT NULL,
+                  payout INTEGER NOT NULL,
+                  sale_tax INTEGER NOT NULL,
+                  economy_type TEXT NOT NULL,
+                  created_at INTEGER NOT NULL
+                )
+                """;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.execute();
+        }
     }
 
     private void ensureColumn(String column, String sqlType) {
@@ -416,7 +502,147 @@ public final class SqlAuctionRepository implements AuctionRepository {
                 }
             }
         }
-        nextId.set(Math.max(nextId.get(), maxId + 1L));
+        bumpSequenceAtLeast(maxId + 1L);
+    }
+
+    private long allocateListingIdBlocking() {
+        try {
+            return CompletableFuture.supplyAsync(this::allocateListingIdSync, ioExecutor).get(8L, TimeUnit.SECONDS);
+        } catch (Exception exception) {
+            return -1L;
+        }
+    }
+
+    private long allocateListingIdSync() {
+        if (mode == StorageMode.MYSQL) {
+            try (Connection connection = dataSource.getConnection();
+                 PreparedStatement update = connection.prepareStatement(
+                         "UPDATE soulauction_sequence SET next_value = LAST_INSERT_ID(next_value + 1) WHERE name = ?"
+                 )) {
+                update.setString(1, "listing");
+                if (update.executeUpdate() != 1) {
+                    return -1L;
+                }
+                try (PreparedStatement select = connection.prepareStatement("SELECT LAST_INSERT_ID() AS id");
+                     ResultSet resultSet = select.executeQuery()) {
+                    if (resultSet.next()) {
+                        return resultSet.getLong("id");
+                    }
+                }
+            } catch (Exception exception) {
+                return -1L;
+            }
+            return -1L;
+        }
+        try (Connection connection = dataSource.getConnection()) {
+            long id;
+            try (PreparedStatement select = connection.prepareStatement(
+                    "SELECT next_value FROM soulauction_sequence WHERE name = ?"
+            )) {
+                select.setString(1, "listing");
+                try (ResultSet resultSet = select.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return -1L;
+                    }
+                    id = resultSet.getLong("next_value");
+                }
+            }
+            try (PreparedStatement update = connection.prepareStatement(
+                    "UPDATE soulauction_sequence SET next_value = ? WHERE name = ?"
+            )) {
+                update.setLong(1, id + 1L);
+                update.setString(2, "listing");
+                if (update.executeUpdate() != 1) {
+                    return -1L;
+                }
+            }
+            return id;
+        } catch (Exception exception) {
+            return -1L;
+        }
+    }
+
+    private void bumpSequenceAtLeast(long minimumNext) {
+        if (minimumNext <= 1L) {
+            return;
+        }
+        String sql = mode == StorageMode.MYSQL
+                ? "UPDATE soulauction_sequence SET next_value = GREATEST(next_value, ?) WHERE name = 'listing'"
+                : """
+                UPDATE soulauction_sequence
+                SET next_value = CASE WHEN next_value < ? THEN ? ELSE next_value END
+                WHERE name = 'listing'
+                """;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, minimumNext);
+            if (mode == StorageMode.SQLITE) {
+                statement.setLong(2, minimumNext);
+            }
+            statement.executeUpdate();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void insertPendingPayout(PendingSaleNotification notification) {
+        String sql = """
+                INSERT INTO soulauction_pending_payouts
+                (seller_id, auction_id, payout, sale_tax, economy_type, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, notification.playerId().toString());
+            statement.setString(2, notification.auctionId());
+            statement.setInt(3, notification.payout());
+            statement.setInt(4, notification.tax());
+            statement.setString(5, notification.economyType().name());
+            statement.setLong(6, System.currentTimeMillis());
+            statement.executeUpdate();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private List<PendingSaleNotification> drainPendingPayoutsSync(UUID sellerId) {
+        List<PendingSaleNotification> output = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            String selectSql = """
+                    SELECT payout_id, auction_id, payout, sale_tax, economy_type
+                    FROM soulauction_pending_payouts WHERE seller_id = ? ORDER BY payout_id
+                    """;
+            List<Long> ids = new ArrayList<>();
+            try (PreparedStatement select = connection.prepareStatement(selectSql)) {
+                select.setString(1, sellerId.toString());
+                try (ResultSet resultSet = select.executeQuery()) {
+                    while (resultSet.next()) {
+                        ids.add(resultSet.getLong("payout_id"));
+                        output.add(new PendingSaleNotification(
+                                sellerId,
+                                resultSet.getString("auction_id"),
+                                resultSet.getInt("payout"),
+                                resultSet.getInt("sale_tax"),
+                                AuctionEconomyType.fromString(resultSet.getString("economy_type"))
+                        ));
+                    }
+                }
+            }
+            if (!ids.isEmpty()) {
+                try (PreparedStatement delete = connection.prepareStatement(
+                        "DELETE FROM soulauction_pending_payouts WHERE payout_id = ?"
+                )) {
+                    for (Long id : ids) {
+                        delete.setLong(1, id);
+                        delete.addBatch();
+                    }
+                    delete.executeBatch();
+                }
+            }
+            connection.commit();
+        } catch (Exception exception) {
+            return List.of();
+        }
+        return output;
     }
 
     private void insertListing(AuctionListing listing) {

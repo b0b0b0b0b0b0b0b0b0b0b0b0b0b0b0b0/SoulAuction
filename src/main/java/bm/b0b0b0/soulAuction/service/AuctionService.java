@@ -301,6 +301,10 @@ public final class AuctionService {
     }
 
     public SellResult createListing(Player seller, String auctionId, int price) {
+        return createListing(seller, auctionId, price, 0);
+    }
+
+    public SellResult createListing(Player seller, String auctionId, int price, int amount) {
         if (!loaded) {
             return SellResult.failure(SellFailure.STORAGE_NOT_READY);
         }
@@ -308,13 +312,22 @@ public final class AuctionService {
         if (itemInHand.isEmpty()) {
             return SellResult.failure(SellFailure.EMPTY_HAND);
         }
+        int sellAmount = amount <= 0 ? itemInHand.getAmount() : amount;
+        if (sellAmount > itemInHand.getAmount()) {
+            return SellResult.failure(SellFailure.INVALID_AMOUNT);
+        }
         ItemStack soldItem = itemInHand.clone();
+        soldItem.setAmount(sellAmount);
         Object sellLock = playerSellLocks.computeIfAbsent(seller.getUniqueId(), ignored -> new Object());
         synchronized (sellLock) {
             SellResult result = listingCreator.create(seller, auctionId, price, soldItem, definitionLookup());
             if (result.success()) {
-                seller.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
-                if (result.success() && result.listing() != null) {
+                if (sellAmount >= itemInHand.getAmount()) {
+                    seller.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+                } else {
+                    itemInHand.setAmount(itemInHand.getAmount() - sellAmount);
+                }
+                if (result.listing() != null) {
                     invalidateListingCache(result.listing().auctionId(), result.listing(), false);
                 }
             }
@@ -333,13 +346,20 @@ public final class AuctionService {
         if (item == null || item.isEmpty()) {
             return SellResult.failure(SellFailure.EMPTY_HAND);
         }
-        int sellAmount = Math.min(Math.max(1, amount), item.getAmount());
+        int sellAmount = amount <= 0 ? item.getAmount() : Math.min(amount, item.getAmount());
+        if (amount > 0 && amount > item.getAmount()) {
+            return SellResult.failure(SellFailure.INVALID_AMOUNT);
+        }
         ItemStack soldItem = item.clone();
         soldItem.setAmount(sellAmount);
         Object sellLock = playerSellLocks.computeIfAbsent(seller.getUniqueId(), ignored -> new Object());
         synchronized (sellLock) {
             SellResult result = listingCreator.create(seller, auctionId, price, soldItem, definitionLookup());
             if (result.success() && result.listing() != null) {
+                item.setAmount(item.getAmount() - sellAmount);
+                if (item.getAmount() <= 0) {
+                    item.setType(Material.AIR);
+                }
                 invalidateListingCache(result.listing().auctionId(), result.listing(), false);
             }
             return result;
@@ -376,7 +396,9 @@ public final class AuctionService {
     }
 
     public boolean claimPendingSalePayments(Player player) {
-        List<PendingSaleNotification> pending = runtimeStorage.takePendingSaleNotifications(player.getUniqueId());
+        List<PendingSaleNotification> pending = repository.sharedPendingPayouts()
+                ? repository.drainPendingPayouts(player.getUniqueId())
+                : runtimeStorage.takePendingSaleNotifications(player.getUniqueId());
         if (pending.isEmpty()) {
             return false;
         }
@@ -395,7 +417,11 @@ public final class AuctionService {
             }
         }
         for (PendingSaleNotification notification : failed) {
-            runtimeStorage.addPendingSaleNotification(notification);
+            if (repository.sharedPendingPayouts()) {
+                repository.storePendingPayout(notification);
+            } else {
+                runtimeStorage.addPendingSaleNotification(notification);
+            }
         }
         return anyPaid;
     }
@@ -573,6 +599,9 @@ public final class AuctionService {
     }
 
     public List<PendingSaleNotification> takePendingSaleNotifications(UUID playerId) {
+        if (repository.sharedPendingPayouts()) {
+            return repository.drainPendingPayouts(playerId);
+        }
         return runtimeStorage.takePendingSaleNotifications(playerId);
     }
 

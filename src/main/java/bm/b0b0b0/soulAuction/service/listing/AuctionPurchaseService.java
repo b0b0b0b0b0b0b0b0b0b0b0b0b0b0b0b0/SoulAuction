@@ -141,13 +141,18 @@ public final class AuctionPurchaseService {
                     buyTax
             );
             if (!sellerPaid) {
-                runtimeStorage.addPendingSaleNotification(new PendingSaleNotification(
+                PendingSaleNotification pending = new PendingSaleNotification(
                         listing.sellerId(),
                         listing.auctionId(),
                         payout,
                         saleTax,
                         listing.economyType()
-                ));
+                );
+                if (repository.sharedPendingPayouts()) {
+                    repository.storePendingPayout(pending);
+                } else {
+                    runtimeStorage.addPendingSaleNotification(pending);
+                }
             }
             repository.flush();
             invalidateCacheForAuction.accept(listing.auctionId());

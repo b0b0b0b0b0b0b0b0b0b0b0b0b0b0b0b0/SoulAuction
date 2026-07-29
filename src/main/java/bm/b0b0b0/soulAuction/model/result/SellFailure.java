@@ -19,7 +19,9 @@ public enum SellFailure {
     WORLD_BLOCKED("error-world-blocked"),
     COOLDOWN("error-sell-cooldown"),
     CUSTOM_ITEM_BLOCKED("error-custom-item-blocked"),
-    STORAGE_NOT_READY("error-still-loading");
+    STORAGE_NOT_READY("error-still-loading"),
+    INVALID_AMOUNT("error-invalid-amount"),
+    LISTING_ID_ALLOCATION_FAILED("error-listing-id-failed");
 
     private final String messageKey;
 

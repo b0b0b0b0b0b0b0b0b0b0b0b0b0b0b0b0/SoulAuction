@@ -250,33 +250,15 @@ public final class AuctionCommand implements CommandExecutor {
             return true;
         }
         if (args.length < 2) {
+            player.sendMessage(messageService.component("error-sell-usage"));
+            return true;
+        }
+        SellArgs sellArgs = parseSellArgs(args);
+        if (sellArgs == null) {
             player.sendMessage(messageService.component("error-invalid-price"));
             return true;
         }
-        String auctionId;
-        int price;
-        if (args.length == 2) {
-            auctionId = auctionService.defaultAuctionId();
-            price = parsePrice(args[1]);
-        } else {
-            int maybePriceFirst = parsePrice(args[1]);
-            int maybePriceSecond = parsePrice(args[2]);
-            if (maybePriceFirst > 0) {
-                price = maybePriceFirst;
-                auctionId = args[2];
-            } else if (maybePriceSecond > 0) {
-                auctionId = args[1];
-                price = maybePriceSecond;
-            } else {
-                player.sendMessage(messageService.component("error-invalid-price"));
-                return true;
-            }
-        }
-        if (price <= 0) {
-            player.sendMessage(messageService.component("error-invalid-price"));
-            return true;
-        }
-        SellResult result = auctionService.createListing(player, auctionId, price);
+        SellResult result = auctionService.createListing(player, sellArgs.auctionId(), sellArgs.price(), sellArgs.amount());
         if (!result.success()) {
             sendSellError(player, result.failure());
             return true;
@@ -286,6 +268,46 @@ public final class AuctionCommand implements CommandExecutor {
                 Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().economyType()))
         ));
         return true;
+    }
+
+    private record SellArgs(String auctionId, int price, int amount) {
+    }
+
+    private SellArgs parseSellArgs(String[] args) {
+        if (args.length == 2) {
+            int price = parsePrice(args[1]);
+            return price > 0 ? new SellArgs(auctionService.defaultAuctionId(), price, 0) : null;
+        }
+        if (args.length == 3) {
+            int first = parsePrice(args[1]);
+            int second = parsePrice(args[2]);
+            if (first > 0 && auctionService.auctionExists(args[2])) {
+                return new SellArgs(args[2], first, 0);
+            }
+            if (first > 0 && second > 0) {
+                return new SellArgs(auctionService.defaultAuctionId(), first, second);
+            }
+            if (second > 0 && auctionService.auctionExists(args[1])) {
+                return new SellArgs(args[1], second, 0);
+            }
+            return null;
+        }
+        if (args.length >= 4) {
+            int price = parsePrice(args[1]);
+            int amount = parsePrice(args[2]);
+            String auctionId = args[3];
+            if (price > 0 && amount > 0 && auctionService.auctionExists(auctionId)) {
+                return new SellArgs(auctionId, price, amount);
+            }
+            if (auctionService.auctionExists(args[1])) {
+                price = parsePrice(args[2]);
+                amount = parsePrice(args[3]);
+                if (price > 0 && amount > 0) {
+                    return new SellArgs(args[1], price, amount);
+                }
+            }
+        }
+        return null;
     }
 
     private boolean handleMy(Player player, String[] args) {
@@ -320,15 +342,21 @@ public final class AuctionCommand implements CommandExecutor {
             return true;
         }
         boolean claimAll = args.length > 1 && args[1].equalsIgnoreCase("all");
+        boolean moneyClaimed = auctionService.claimPendingSalePayments(player);
         ClaimResult result = auctionService.claim(player, claimAll);
-        if (result.claimed() == 0 && result.failed() == 0) {
+        if (moneyClaimed) {
+            player.sendMessage(messageService.component("success-claim-money-auto"));
+        }
+        if (result.claimed() == 0 && result.failed() == 0 && !moneyClaimed) {
             player.sendMessage(messageService.component("claim-empty"));
             return true;
         }
-        player.sendMessage(messageService.component(
-                "claim-result",
-                Map.of("claimed", String.valueOf(result.claimed()), "failed", String.valueOf(result.failed()))
-        ));
+        if (result.claimed() > 0 || result.failed() > 0) {
+            player.sendMessage(messageService.component(
+                    "claim-result",
+                    Map.of("claimed", String.valueOf(result.claimed()), "failed", String.valueOf(result.failed()))
+            ));
+        }
         return true;
     }
 
