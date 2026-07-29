@@ -1,5 +1,6 @@
 package bm.b0b0b0.soulAuction;
 
+import bm.b0b0b0.soulAuction.bootstrap.SoulAuctionStartupLog;
 import bm.b0b0b0.soulAuction.command.AuctionCommand;
 import bm.b0b0b0.soulAuction.command.AuctionAliasListener;
 import bm.b0b0b0.soulAuction.config.ConfigurationLoader;
@@ -8,20 +9,20 @@ import bm.b0b0b0.soulAuction.gui.AuctionGuiListener;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.listener.AuctionSearchChatListener;
 import bm.b0b0b0.soulAuction.listener.PlayerSaleNotificationListener;
-import bm.b0b0b0.soulAuction.service.AuctionListingCache;
-import bm.b0b0b0.soulAuction.service.CoinsEngineBridge;
-import bm.b0b0b0.soulAuction.service.ExperienceEconomyBridge;
-import bm.b0b0b0.soulAuction.service.PermissionPriorityResolver;
-import bm.b0b0b0.soulAuction.repository.AuctionRepository;
-import bm.b0b0b0.soulAuction.repository.AuctionRepositoryFactory;
 import bm.b0b0b0.soulAuction.model.StorageMode;
 import bm.b0b0b0.soulAuction.placeholder.SoulAuctionPlaceholderExpansion;
+import bm.b0b0b0.soulAuction.repository.AuctionRepository;
+import bm.b0b0b0.soulAuction.repository.AuctionRepositoryFactory;
 import bm.b0b0b0.soulAuction.service.AuctionExternalNotifier;
-import bm.b0b0b0.soulAuction.service.AuctionService;
-import bm.b0b0b0.soulAuction.service.EconomyBridge;
-import bm.b0b0b0.soulAuction.service.PermissionLimitResolver;
-import bm.b0b0b0.soulAuction.service.PlayerPointsBridge;
+import bm.b0b0b0.soulAuction.service.AuctionListingCache;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
+import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.CoinsEngineBridge;
+import bm.b0b0b0.soulAuction.service.EconomyBridge;
+import bm.b0b0b0.soulAuction.service.ExperienceEconomyBridge;
+import bm.b0b0b0.soulAuction.service.PermissionLimitResolver;
+import bm.b0b0b0.soulAuction.service.PermissionPriorityResolver;
+import bm.b0b0b0.soulAuction.service.PlayerPointsBridge;
 import bm.b0b0b0.soulAuction.service.PriceLimitResolver;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
@@ -31,6 +32,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SoulAuction extends JavaPlugin {
 
+    private SoulAuctionStartupLog startupLog;
     private ConfigurationLoader configurationLoader;
     private PluginConfig pluginConfig;
     private MessageService messageService;
@@ -41,83 +43,149 @@ public final class SoulAuction extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        configurationLoader = new ConfigurationLoader(this);
-        pluginConfig = configurationLoader.load();
-        messageService = new MessageService(this);
-        messageService.setRespectDisabledMessages(
-                () -> pluginConfig.auctionSettings().features.respectDisabledMessages
-        );
-        repository = AuctionRepositoryFactory.create(this, pluginConfig.auctionSettings());
-        runtimeStorage = new AuctionRuntimeStorage(getDataFolder().toPath());
-        EconomyBridge economyBridge = new EconomyBridge(this);
-        PlayerPointsBridge playerPointsBridge = new PlayerPointsBridge(this);
-        StorageMode storageMode = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
-        boolean useRedisSellGuard = storageMode == StorageMode.MYSQL;
-        redisSellGuard = new RedisSellGuard(this, useRedisSellGuard, pluginConfig.auctionSettings().storage.redis);
-        PermissionLimitResolver permissionLimitResolver = new PermissionLimitResolver(getName());
-        PermissionPriorityResolver priorityResolver = new PermissionPriorityResolver();
-        TaxPolicyResolver taxPolicyResolver = new TaxPolicyResolver();
-        PriceLimitResolver priceLimitResolver = new PriceLimitResolver();
-        ExperienceEconomyBridge experienceEconomyBridge = new ExperienceEconomyBridge();
-        CoinsEngineBridge coinsEngineBridge = new CoinsEngineBridge(this, pluginConfig.auctionSettings().coinsEngineCurrency);
-        AuctionListingCache listingCache = new AuctionListingCache();
-        AuctionExternalNotifier externalNotifier = new AuctionExternalNotifier(this, () -> pluginConfig.auctionSettings());
-        auctionService = new AuctionService(
-                repository,
-                this::pluginConfig,
-                economyBridge,
-                playerPointsBridge,
-                experienceEconomyBridge,
-                coinsEngineBridge,
-                permissionLimitResolver,
-                priorityResolver,
-                redisSellGuard,
-                runtimeStorage,
-                taxPolicyResolver,
-                priceLimitResolver,
-                externalNotifier,
-                messageService,
-                listingCache
-        );
-        auctionService.attachCacheSubscriber();
-        getLogger().info("Vault connected: " + auctionService.hasVault());
-        getLogger().info("PlayerPoints connected: " + auctionService.hasPlayerPoints());
-        getLogger().info("Region scheduling: Paper/Folia via PluginSchedulers (Global/Entity/Region/Async)");
-        auctionService.load().whenComplete((unused, exception) -> PluginSchedulers.runGlobal(this, () -> {
-            if (exception != null) {
-                getLogger().severe("Cannot load auctions: " + exception.getMessage());
-                return;
+        startupLog = new SoulAuctionStartupLog();
+        startupLog.bannerStart(getPluginMeta().getVersion());
+        try {
+            if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
+                startupLog.stepFail("Папка данных — не удалось создать");
             }
-            getLogger().info("Auctions loaded");
-        }));
-        getServer().getPluginManager().registerEvents(new AuctionGuiListener(this, this::pluginConfig, auctionService, messageService), this);
-        getServer().getPluginManager().registerEvents(new PlayerSaleNotificationListener(auctionService, messageService), this);
-        getServer().getPluginManager().registerEvents(new AuctionAliasListener(this::pluginConfig), this);
-        getServer().getPluginManager().registerEvents(
-                new AuctionSearchChatListener(this, this::pluginConfig, auctionService, messageService),
-                this
-        );
-        getCommand("ah").setExecutor(new AuctionCommand(
-                this,
-                this::pluginConfig,
-                messageService,
-                auctionService,
-                this::reloadAll
-        ));
-        PluginSchedulers.runGlobalTimer(
-                this,
-                100L,
-                auctionService.expireCheckIntervalSeconds() * 20L,
-                () -> {
-                    int expired = auctionService.expireListings();
-                    if (expired > 0) {
-                        getLogger().info("Expired listings: " + expired);
-                    }
-                }
-        );
+            startupLog.info("Загрузка конфигурации...");
+            configurationLoader = new ConfigurationLoader(this);
+            pluginConfig = configurationLoader.load();
+            startupLog.stepSchedulers();
+            StorageMode storageMode = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
+            startupLog.stepOk("Конфиг — storage=" + storageMode.name()
+                    + ", аукционов=" + pluginConfig.auctionDefinitions().size());
+            messageService = new MessageService(this);
+            messageService.setRespectDisabledMessages(
+                    () -> pluginConfig.auctionSettings().features.respectDisabledMessages
+            );
+            startupLog.stepOk("Сообщения — messages.yml");
+            repository = AuctionRepositoryFactory.create(this, pluginConfig.auctionSettings());
+            runtimeStorage = new AuctionRuntimeStorage(getDataFolder().toPath());
+            EconomyBridge economyBridge = new EconomyBridge(this);
+            PlayerPointsBridge playerPointsBridge = new PlayerPointsBridge(this);
+            boolean useRedisSellGuard = storageMode == StorageMode.MYSQL;
+            redisSellGuard = new RedisSellGuard(this, useRedisSellGuard, pluginConfig.auctionSettings().storage.redis);
+            logRedis(useRedisSellGuard);
+            PermissionLimitResolver permissionLimitResolver = new PermissionLimitResolver(getName());
+            PermissionPriorityResolver priorityResolver = new PermissionPriorityResolver();
+            TaxPolicyResolver taxPolicyResolver = new TaxPolicyResolver();
+            PriceLimitResolver priceLimitResolver = new PriceLimitResolver();
+            ExperienceEconomyBridge experienceEconomyBridge = new ExperienceEconomyBridge();
+            CoinsEngineBridge coinsEngineBridge = new CoinsEngineBridge(this, pluginConfig.auctionSettings().coinsEngineCurrency);
+            AuctionListingCache listingCache = new AuctionListingCache();
+            AuctionExternalNotifier externalNotifier = new AuctionExternalNotifier(this, () -> pluginConfig.auctionSettings());
+            auctionService = new AuctionService(
+                    repository,
+                    this::pluginConfig,
+                    economyBridge,
+                    playerPointsBridge,
+                    experienceEconomyBridge,
+                    coinsEngineBridge,
+                    permissionLimitResolver,
+                    priorityResolver,
+                    redisSellGuard,
+                    runtimeStorage,
+                    taxPolicyResolver,
+                    priceLimitResolver,
+                    externalNotifier,
+                    messageService,
+                    listingCache
+            );
+            auctionService.attachCacheSubscriber();
+            logIntegrations();
+            getServer().getPluginManager().registerEvents(new AuctionGuiListener(this, this::pluginConfig, auctionService, messageService), this);
+            getServer().getPluginManager().registerEvents(new PlayerSaleNotificationListener(auctionService, messageService), this);
+            getServer().getPluginManager().registerEvents(new AuctionAliasListener(this::pluginConfig), this);
+            getServer().getPluginManager().registerEvents(
+                    new AuctionSearchChatListener(this, this::pluginConfig, auctionService, messageService),
+                    this
+            );
+            getCommand("ah").setExecutor(new AuctionCommand(
+                    this,
+                    this::pluginConfig,
+                    messageService,
+                    auctionService,
+                    this::reloadAll
+            ));
+            PluginSchedulers.runGlobalTimer(
+                    this,
+                    100L,
+                    auctionService.expireCheckIntervalSeconds() * 20L,
+                    () -> auctionService.expireListings()
+            );
+            startupLog.info("Загрузка лотов...");
+            auctionService.load().whenComplete((unused, exception) -> PluginSchedulers.runGlobal(this, () -> finishStartup(exception)));
+        } catch (Throwable throwable) {
+            getLogger().severe("SoulAuction enable failed");
+            throwable.printStackTrace();
+            startupLog.stepFail("Ошибка при старте — см. stack trace выше");
+            startupLog.bannerFailure(throwable.getMessage() == null ? "unknown error" : throwable.getMessage());
+            getServer().getPluginManager().disablePlugin(this);
+        }
+    }
+
+    private void finishStartup(Throwable exception) {
+        if (exception != null) {
+            getLogger().severe("Cannot load auctions: " + exception.getMessage());
+            exception.printStackTrace();
+            startupLog.stepFail("Хранилище — ошибка загрузки");
+            startupLog.bannerFailure("load failed");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+        int listings = auctionService.totalListingsCount();
+        startupLog.stepOk("Лоты — активных " + listings);
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new SoulAuctionPlaceholderExpansion(auctionService).register();
-            getLogger().info("PlaceholderAPI expansion registered");
+            startupLog.stepOk("PlaceholderAPI — expansion зарегистрирован");
+        } else {
+            startupLog.stepSkipped("PlaceholderAPI — не найден");
+        }
+        startupLog.bannerSuccess();
+    }
+
+    private void logRedis(boolean useRedisSellGuard) {
+        if (!useRedisSellGuard) {
+            startupLog.stepSkipped("Redis — не используется (storage ≠ MYSQL)");
+            return;
+        }
+        var redis = pluginConfig.auctionSettings().storage.redis;
+        if (!redis.enabled) {
+            startupLog.stepSkipped("Redis — отключён в конфиге");
+            return;
+        }
+        if (redisSellGuard.enabled()) {
+            startupLog.stepOk("Redis — " + redis.host + ":" + redis.port
+                    + (redis.pubSubEnabled ? " · pub/sub" : ""));
+            return;
+        }
+        startupLog.stepFail("Redis — не подключён");
+    }
+
+    private void logIntegrations() {
+        startupLog.info("Интеграции:");
+        if (auctionService.hasVault()) {
+            startupLog.stepOk("Vault — economy");
+        } else if (getServer().getPluginManager().getPlugin("Vault") != null) {
+            startupLog.stepFail("Vault — economy не подключена");
+        } else {
+            startupLog.stepSkipped("Vault — не найден");
+        }
+        if (auctionService.hasPlayerPoints()) {
+            startupLog.stepOk("PlayerPoints — API");
+        } else if (getServer().getPluginManager().getPlugin("PlayerPoints") != null) {
+            startupLog.stepFail("PlayerPoints — API не готов");
+        } else {
+            startupLog.stepSkipped("PlayerPoints — не найден");
+        }
+        if (auctionService.hasCoinsEngine()) {
+            startupLog.stepOk("CoinsEngine — подключён");
+        } else if (getServer().getPluginManager().getPlugin("CoinsEngine") != null) {
+            startupLog.stepSkipped("CoinsEngine — на сервере, валюта не используется");
+        } else {
+            startupLog.stepSkipped("CoinsEngine — не найден");
         }
     }
 
@@ -133,6 +201,9 @@ public final class SoulAuction extends JavaPlugin {
         }
         if (redisSellGuard != null) {
             redisSellGuard.close();
+        }
+        if (startupLog != null) {
+            startupLog.unload();
         }
     }
 

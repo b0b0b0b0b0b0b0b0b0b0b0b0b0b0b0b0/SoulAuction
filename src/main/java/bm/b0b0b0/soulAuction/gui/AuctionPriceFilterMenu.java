@@ -83,7 +83,8 @@ public final class AuctionPriceFilterMenu implements InventoryHolder {
                     current.favoritesOnly(),
                     current.favoriteListingsOnly(),
                     draftMin,
-                    draftMax
+                    draftMax,
+                    current.sellerFilter()
             ));
             openBrowser();
             return;
@@ -115,16 +116,19 @@ public final class AuctionPriceFilterMenu implements InventoryHolder {
 
     private void refresh() {
         inventory.clear();
-        inventory.setItem(MIN_MINUS, labeled(Material.RED_DYE, "price-filter-min-minus"));
-        inventory.setItem(MIN_PLUS, labeled(Material.LIME_DYE, "price-filter-min-plus"));
-        inventory.setItem(MAX_MINUS, labeled(Material.RED_DYE, "price-filter-max-minus"));
-        inventory.setItem(MAX_PLUS, labeled(Material.LIME_DYE, "price-filter-max-plus"));
+        String step = auctionService.formatPrice(100, auctionId, viewerId);
+        String minFormatted = auctionService.formatPrice(draftMin, auctionId, viewerId);
+        String maxFormatted = draftMax <= 0 ? "-" : auctionService.formatPrice(draftMax, auctionId, viewerId);
+        inventory.setItem(MIN_MINUS, labeled(Material.RED_DYE, "price-filter-min-minus", Map.of("step", step)));
+        inventory.setItem(MIN_PLUS, labeled(Material.LIME_DYE, "price-filter-min-plus", Map.of("step", step)));
+        inventory.setItem(MAX_MINUS, labeled(Material.RED_DYE, "price-filter-max-minus", Map.of("step", step)));
+        inventory.setItem(MAX_PLUS, labeled(Material.LIME_DYE, "price-filter-max-plus", Map.of("step", step)));
         inventory.setItem(APPLY, labeled(Material.EMERALD, "price-filter-apply"));
         inventory.setItem(CLEAR, labeled(Material.BARRIER, "price-filter-clear"));
         inventory.setItem(BACK, labeled(Material.ARROW, "price-filter-back"));
         inventory.setItem(4, labeled(Material.GOLD_INGOT, "price-filter-info", Map.of(
-                "min", String.valueOf(draftMin),
-                "max", draftMax <= 0 ? "-" : String.valueOf(draftMax)
+                "min", minFormatted,
+                "max", maxFormatted
         )));
     }
 

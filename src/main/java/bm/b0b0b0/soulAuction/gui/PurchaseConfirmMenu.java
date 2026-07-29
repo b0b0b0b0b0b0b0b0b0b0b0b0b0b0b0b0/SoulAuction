@@ -62,8 +62,8 @@ public final class PurchaseConfirmMenu implements InventoryHolder {
         inventory.clear();
         Player buyer = Bukkit.getPlayer(viewerId);
         PurchaseQuote quote = buyer == null ? null : auctionService.quotePurchase(buyer, listingId);
-        String price = quote == null ? "?" : auctionService.formatPrice(quote.totalCharge(), quote.listing().economyType());
-        String basePrice = quote == null ? "?" : auctionService.formatPrice(quote.listing().price(), quote.listing().economyType());
+        String price = quote == null ? "?" : auctionService.formatPrice(quote.totalCharge(), quote.listing().auctionId(), viewerId);
+        String basePrice = quote == null ? "?" : auctionService.formatPrice(quote.listing().price(), quote.listing().auctionId(), viewerId);
         String buyTax = quote == null ? "0" : String.valueOf(quote.buyTax());
         inventory.setItem(YES_SLOT, button(
                 Material.LIME_WOOL,

@@ -22,6 +22,23 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
             @CommentValue("ITEM - pay with itemCurrencyMaterial stack units")
     })
     public String economy = "VAULT";
+
+    @Comment({
+            @CommentValue("Currency symbol in GUI and chat for this auction"),
+            @CommentValue("Empty = economy plugin format (Vault $ etc.)"),
+            @CommentValue("Supports MiniMessage: unicode, colors, ItemsAdder/Nexo glyphs, e.g. <glyph:coin> or <font:myfont:a>")
+    })
+    public String currencySymbol = "₽";
+
+    @Comment({@CommentValue("Place symbol BEFORE or AFTER the amount")})
+    public String currencySymbolPosition = "AFTER";
+
+    @Comment({
+            @CommentValue("Resolve PlaceholderAPI (%...%) in currencySymbol for the player who sees the price"),
+            @CommentValue("Requires PlaceholderAPI; ignored when viewer is unknown (console, offline)")
+    })
+    public boolean currencySymbolPlaceholderApi = false;
+
     @Comment({
             @CommentValue("Additional payment economies allowed in same auction house browser"),
             @CommentValue("Example: VAULT, PLAYER_POINTS, ITEM")

@@ -37,6 +37,7 @@ public final class AuctionCommand implements CommandExecutor {
     private static final String PERMISSION_LIMIT = "soulauction.command.limit";
     private static final String PERMISSION_RELOAD = "soulauction.command.reload";
     private static final String PERMISSION_ADMIN = "soulauction.command.admin";
+    private static final String PERMISSION_VIEW = "soulauction.command.view";
 
     private final JavaPlugin plugin;
     private final Supplier<PluginConfig> configSupplier;
@@ -123,6 +124,9 @@ public final class AuctionCommand implements CommandExecutor {
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("page")) {
             return handlePage(player, args);
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("view")) {
+            return handleView(player, args);
         }
         String auctionId = args.length > 0 ? args[0] : auctionService.defaultAuctionId();
         return openAuction(player, auctionId);
@@ -265,7 +269,7 @@ public final class AuctionCommand implements CommandExecutor {
         }
         player.sendMessage(messageService.component(
                 "success-listed",
-                Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().economyType()))
+                Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().auctionId(), player))
         ));
         return true;
     }
@@ -326,7 +330,7 @@ public final class AuctionCommand implements CommandExecutor {
                     Map.of(
                             "id", String.valueOf(listing.listingId()),
                             "auction", listing.auctionId(),
-                            "price", auctionService.formatPrice(listing.price(), listing.economyType())
+                            "price", auctionService.formatPrice(listing.price(), listing.auctionId(), player)
                     )
             ));
         }
@@ -390,10 +394,16 @@ public final class AuctionCommand implements CommandExecutor {
     }
 
     private boolean openAuction(Player player, String auctionId) {
-        return openAuctionWithPreferences(player, auctionId);
+        return openAuctionWithPreferences(player, auctionId, false);
     }
 
-    private boolean openAuctionWithPreferences(Player player, String auctionId) {
+    private boolean openAuctionWithPreferences(Player player, String auctionId, boolean keepSellerFilter) {
+        if (!keepSellerFilter) {
+            BrowseFilterState current = auctionService.browseFilterState(player.getUniqueId());
+            if (current.sellerFilter() != null) {
+                auctionService.setBrowseFilterState(player.getUniqueId(), current.withSellerFilter(null));
+            }
+        }
         if (!auctionService.auctionExists(auctionId)) {
             player.sendMessage(messageService.component("error-auction-not-found"));
             return true;
@@ -420,6 +430,29 @@ public final class AuctionCommand implements CommandExecutor {
         );
         PluginSchedulers.run(plugin, player, () -> player.openInventory(menu.getInventory()));
         return true;
+    }
+
+    private boolean handleView(Player player, String[] args) {
+        if (!player.hasPermission(PERMISSION_VIEW)) {
+            player.sendMessage(messageService.component("error-no-permission"));
+            return true;
+        }
+        if (args.length < 2) {
+            player.sendMessage(messageService.component("error-view-usage"));
+            return true;
+        }
+        OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
+        String auctionId = auctionService.defaultAuctionId();
+        if (args.length >= 3 && auctionService.auctionExists(args[2])) {
+            auctionId = args[2];
+        }
+        String displayName = target.getName() == null ? args[1] : target.getName();
+        auctionService.setBrowseFilterState(
+                player.getUniqueId(),
+                BrowseFilterState.empty().withSellerFilter(target.getUniqueId())
+        );
+        player.sendMessage(messageService.component("success-view-seller", Map.of("player", displayName)));
+        return openAuctionWithPreferences(player, auctionId, true);
     }
 
     private int parsePrice(String value) {

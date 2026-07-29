@@ -66,8 +66,8 @@ public final class RecentSalesMenu implements InventoryHolder {
             DealHistoryEntry sale = sales.get(i);
             String sellerName = offlineName(sale.sellerId());
             String buyerName = sale.buyerId() == null ? "-" : offlineName(sale.buyerId());
-            String price = auctionService.formatPrice(sale.price(), sale.economyType());
-            String tax = String.valueOf(sale.tax());
+            String price = auctionService.formatPrice(sale.price(), sale.auctionId(), viewerId);
+            String tax = auctionService.formatPrice(sale.tax(), sale.auctionId(), viewerId);
             String time = TIME_FORMAT.format(Instant.ofEpochMilli(sale.createdAtEpochMillis()).atZone(ZoneId.systemDefault()));
             inventory.setItem(i, historyItem(
                     messageService.component("history-item-title", Map.of("id", String.valueOf(sale.historyId()))),

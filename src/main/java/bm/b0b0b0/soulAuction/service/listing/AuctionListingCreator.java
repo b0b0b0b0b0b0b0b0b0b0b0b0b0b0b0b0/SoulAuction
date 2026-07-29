@@ -122,8 +122,12 @@ public final class AuctionListingCreator {
         if (sellPolicy.isMaterialSellForbidden(soldItem.getType(), definition, settings)) {
             return SellResult.failure(settings.security.materialWhitelistMode ? SellFailure.WHITELIST_ITEM : SellFailure.BLOCKED_ITEM);
         }
-        AuctionCategory category = AuctionCategory.fromMaterial(soldItem.getType());
-        String searchText = ListingSearchText.fromItem(seller.getName(), soldItem);
+        AuctionCategory category = customItemRuleEngine.resolveCategory(
+                soldItem,
+                customRules,
+                AuctionCategory.fromMaterial(soldItem.getType())
+        );
+        String searchText = ListingSearchText.fromItem(seller.getName(), soldItem, customRules);
         ListingMetadata metadata = ListingMetadata.empty();
         metadata.serverOrigin = settings.network == null ? "" : settings.network.serverId;
         AuctionListing listing = repository.create(

@@ -97,14 +97,14 @@ public final class OwnerListingMenu implements InventoryHolder {
     public void refresh() {
         inventory.clear();
         AuctionListing listing = auctionService.listingById(listingId);
-        String livePrice = listing == null ? "?" : auctionService.formatPrice(listing.price(), listing.economyType());
+        String livePrice = listing == null ? "?" : auctionService.formatPrice(listing.price(), listing.auctionId(), viewerId);
         inventory.setItem(MINUS_SLOT, button(Material.RED_DYE, messageService.component("owner-price-minus")));
         inventory.setItem(PLUS_SLOT, button(Material.LIME_DYE, messageService.component("owner-price-plus")));
         inventory.setItem(APPLY_SLOT, button(
                 Material.NAME_TAG,
                 messageService.component("owner-price-apply"),
                 messageService.components("owner-price-lore", Map.of(
-                        "edited", auctionService.formatPrice(editedPrice, auctionService.economyType(auctionId)),
+                        "edited", auctionService.formatPrice(editedPrice, auctionId, viewerId),
                         "current", livePrice
                 ))
         ));

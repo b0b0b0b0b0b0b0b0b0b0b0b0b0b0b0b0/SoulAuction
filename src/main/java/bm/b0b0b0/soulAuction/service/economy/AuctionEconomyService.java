@@ -6,6 +6,7 @@ import bm.b0b0b0.soulAuction.service.CoinsEngineBridge;
 import bm.b0b0b0.soulAuction.service.EconomyBridge;
 import bm.b0b0b0.soulAuction.service.ExperienceEconomyBridge;
 import bm.b0b0b0.soulAuction.service.PlayerPointsBridge;
+import org.bukkit.entity.Player;
 import java.util.UUID;
 
 public final class AuctionEconomyService {
@@ -71,13 +72,18 @@ public final class AuctionEconomyService {
     }
 
     public String format(int price, AuctionEconomyType type, AuctionDefinitionSettings definition) {
-        return switch (type) {
+        return format(price, type, definition, null);
+    }
+
+    public String format(int price, AuctionEconomyType type, AuctionDefinitionSettings definition, Player viewer) {
+        String nativeFormatted = switch (type) {
             case VAULT -> vaultBridge.format(price);
             case PLAYER_POINTS -> playerPointsBridge.format(price);
             case EXPERIENCE -> experienceBridge.format(price);
             case COINS_ENGINE -> coinsEngineBridge.format(price, coinsCurrency(definition));
             case ITEM -> itemCurrencyService.format(price, definition);
         };
+        return AuctionCurrencyDisplay.apply(price, definition, nativeFormatted, viewer);
     }
 
     private String coinsCurrency(AuctionDefinitionSettings definition) {

@@ -115,7 +115,7 @@ public final class PlayerRecordsMenu implements InventoryHolder {
             if (meta != null) {
                 meta.lore(messageService.components("record-selling-lore", Map.of(
                         "id", String.valueOf(listing.listingId()),
-                        "price", auctionService.formatPrice(listing.price(), listing.economyType())
+                        "price", auctionService.formatPrice(listing.price(), listing.auctionId(), viewerId)
                 )));
                 item.setItemMeta(meta);
             }
@@ -171,17 +171,17 @@ public final class PlayerRecordsMenu implements InventoryHolder {
     private ItemStack dealPaper(DealHistoryEntry entry, boolean asPurchase) {
         String sellerName = offlineName(entry.sellerId());
         String buyerName = entry.buyerId() == null ? "-" : offlineName(entry.buyerId());
-        String price = auctionService.formatPrice(entry.price(), entry.economyType());
+        String price = auctionService.formatPrice(entry.price(), entry.auctionId(), viewerId);
         String time = TIME_FORMAT.format(Instant.ofEpochMilli(entry.createdAtEpochMillis()).atZone(ZoneId.systemDefault()));
-        String total = auctionService.formatPrice(entry.price() + entry.buyTax(), entry.economyType());
+        String total = auctionService.formatPrice(entry.price() + entry.buyTax(), entry.auctionId(), viewerId);
         return paper(
                 messageService.component("history-item-title", Map.of("id", String.valueOf(entry.historyId()))),
                 messageService.components(asPurchase ? "record-purchased-lore" : "history-item-lore", Map.of(
                         "seller", sellerName,
                         "buyer", buyerName,
                         "price", price,
-                        "tax", String.valueOf(entry.tax()),
-                        "buytax", String.valueOf(entry.buyTax()),
+                        "tax", auctionService.formatPrice(entry.tax(), entry.auctionId(), viewerId),
+                        "buytax", auctionService.formatPrice(entry.buyTax(), entry.auctionId(), viewerId),
                         "total", total,
                         "time", time
                 ))

@@ -6,11 +6,13 @@ import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.util.ItemInspectionFormatter;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Locale;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
@@ -53,6 +55,7 @@ public final class AuctionAdminCommand {
             case "cache" -> cache(sender, subArgs);
             case "sellfor" -> sellFor(sender, subArgs);
             case "migrate" -> migrate(sender, subArgs);
+            case "parse" -> parse(sender, subArgs);
             default -> {
                 sender.sendMessage(messageService.component("error-admin-usage"));
                 yield true;
@@ -110,7 +113,7 @@ public final class AuctionAdminCommand {
                     Map.of(
                             "action", entry.action(),
                             "id", String.valueOf(entry.listingId()),
-                            "price", auctionService.formatPrice(entry.price(), entry.economyType()),
+                            "price", auctionService.formatPrice(entry.price(), entry.auctionId()),
                             "auction", entry.auctionId()
                     )
             ));
@@ -261,6 +264,42 @@ public final class AuctionAdminCommand {
 
     private boolean migrate(CommandSender sender, String[] args) {
         sender.sendMessage(messageService.component("admin-migrate-stub", Map.of("source", args.length > 0 ? args[0] : "unknown")));
+        return true;
+    }
+
+    private boolean parse(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(messageService.component("error-only-player"));
+            return true;
+        }
+        if (args.length < 1) {
+            sender.sendMessage(messageService.component("error-admin-parse-usage"));
+            return true;
+        }
+        ItemStack item = player.getInventory().getItemInMainHand();
+        if (item == null || item.isEmpty()) {
+            sender.sendMessage(messageService.component("error-main-hand-empty"));
+            return true;
+        }
+        String mode = args[0].toLowerCase();
+        List<String> lines = switch (mode) {
+            case "tags" -> ItemInspectionFormatter.formatTags(item);
+            case "nbt" -> ItemInspectionFormatter.formatNbt(item);
+            default -> List.of();
+        };
+        if (lines.isEmpty()) {
+            sender.sendMessage(messageService.component("error-admin-parse-usage"));
+            return true;
+        }
+        sender.sendMessage(messageService.component("admin-parse-header", Map.of("mode", mode)));
+        int limit = Math.min(lines.size(), 40);
+        for (int i = 0; i < limit; i++) {
+            sender.sendMessage(messageService.component("admin-parse-line", Map.of("line", lines.get(i))));
+        }
+        if (lines.size() > limit) {
+            sender.sendMessage(messageService.component("admin-parse-truncated", Map.of("count", String.valueOf(lines.size() - limit))));
+        }
+        auctionService.audit(player.getUniqueId(), player.getName(), "ADMIN_PARSE_" + mode.toUpperCase(Locale.ROOT), ItemStackCodec.encode(item));
         return true;
     }
 

@@ -245,13 +245,13 @@ public final class AuctionGuiListener implements Listener {
         }
         player.sendMessage(messageService.component(
                 "success-bought",
-                Map.of("price", auctionService.formatPrice(result.buyerCharge(), result.listing().economyType()))
+                Map.of("price", auctionService.formatPrice(result.buyerCharge(), result.listing().auctionId(), player))
         ));
         Player seller = result.seller();
         if (seller != null) {
             seller.sendMessage(messageService.component(
                     "success-sold",
-                    Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().economyType()))
+                    Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().auctionId(), player))
             ));
         }
         openBrowser(player, menu.auctionId());
@@ -456,7 +456,7 @@ public final class AuctionGuiListener implements Listener {
             }
             player.sendMessage(messageService.component(
                     "success-listed",
-                    Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().economyType()))
+                    Map.of("price", auctionService.formatPrice(result.listing().price(), result.listing().auctionId(), player))
             ));
             ItemStack remainder = menu.reservedItem();
             if (remainder != null && !remainder.isEmpty()) {

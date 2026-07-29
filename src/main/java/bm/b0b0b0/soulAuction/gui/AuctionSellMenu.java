@@ -178,42 +178,43 @@ public final class AuctionSellMenu implements InventoryHolder {
 
     public void refresh() {
         fillDecor();
-        Map<String, String> placeholders = Map.of("price", auctionService.formatPrice(price, auctionService.economyType(auctionId)));
+        String formattedPrice = auctionService.formatPrice(price, auctionId, viewerId);
+        Map<String, String> placeholders = Map.of("price", formattedPrice);
         inventory.setItem(MINUS_SMALL_SLOT, actionItem(
                 Material.RED_DYE,
-                messageService.component("sell-price-minus-small"),
+                messageService.component("sell-price-minus-small", Map.of("step", auctionService.formatPrice(100, auctionId, viewerId))),
                 messageService.components("sell-price-button-lore", placeholders)
         ));
         inventory.setItem(MINUS_BIG_SLOT, actionItem(
                 Material.REDSTONE,
-                messageService.component("sell-price-minus-big"),
+                messageService.component("sell-price-minus-big", Map.of("step", auctionService.formatPrice(1000, auctionId, viewerId))),
                 messageService.components("sell-price-button-lore", placeholders)
         ));
         inventory.setItem(PLUS_SMALL_SLOT, actionItem(
                 Material.LIME_DYE,
-                messageService.component("sell-price-plus-small"),
+                messageService.component("sell-price-plus-small", Map.of("step", auctionService.formatPrice(100, auctionId, viewerId))),
                 messageService.components("sell-price-button-lore", placeholders)
         ));
         inventory.setItem(PLUS_BIG_SLOT, actionItem(
                 Material.EMERALD,
-                messageService.component("sell-price-plus-big"),
+                messageService.component("sell-price-plus-big", Map.of("step", auctionService.formatPrice(1000, auctionId, viewerId))),
                 messageService.components("sell-price-button-lore", placeholders)
         ));
         inventory.setItem(QTY_MINUS_SLOT, actionItem(
                 Material.REDSTONE_BLOCK,
-                messageService.component("sell-amount-minus"),
+                messageService.component("sell-amount-minus", Map.of("step", "1")),
                 messageService.components("sell-amount-lore", amountPlaceholders())
         ));
         inventory.setItem(QTY_PLUS_SLOT, actionItem(
                 Material.EMERALD_BLOCK,
-                messageService.component("sell-amount-plus"),
+                messageService.component("sell-amount-plus", Map.of("step", "1")),
                 messageService.components("sell-amount-lore", amountPlaceholders())
         ));
         inventory.setItem(BACK_SLOT, actionItem(Material.GRAY_DYE, messageService.component("sell-button-back")));
-        inventory.setItem(CONFIRM_SLOT, actionItem(Material.GREEN_WOOL, messageService.component("sell-button-confirm")));
+        inventory.setItem(CONFIRM_SLOT, actionItem(Material.LIME_DYE, messageService.component("sell-button-confirm")));
         inventory.setItem(PRICE_SLOT, actionItem(Material.NAME_TAG, messageService.component(
                 "sell-price-current",
-                Map.of("price", auctionService.formatPrice(price, auctionService.economyType(auctionId)))
+                Map.of("price", formattedPrice)
         )));
     }
 
@@ -222,7 +223,7 @@ public final class AuctionSellMenu implements InventoryHolder {
     }
 
     private void fillDecor() {
-        ItemStack decor = actionItem(Material.PURPLE_WOOL, Component.text(" "));
+        ItemStack decor = actionItem(Material.GRAY_STAINED_GLASS_PANE, Component.text(" "));
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             if (slot == ITEM_SLOT || slot == PRICE_SLOT || slot == MINUS_SMALL_SLOT || slot == MINUS_BIG_SLOT
                     || slot == PLUS_SMALL_SLOT || slot == PLUS_BIG_SLOT || slot == QTY_MINUS_SLOT || slot == QTY_PLUS_SLOT

@@ -145,7 +145,8 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                             favoritesOnly,
                             current.favoriteListingsOnly(),
                             current.minPrice(),
-                            current.maxPrice()
+                            current.maxPrice(),
+                            current.sellerFilter()
                     )
             );
             page = 0;
@@ -187,7 +188,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         int visible = listingSlots.size();
         BrowseFilterState state = auctionService.browseFilterState(viewerId);
         BrowseFilterState filter = new BrowseFilterState(
-                searchQuery, favoritesOnly, state.favoriteListingsOnly(), state.minPrice(), state.maxPrice()
+                searchQuery, favoritesOnly, state.favoriteListingsOnly(), state.minPrice(), state.maxPrice(), state.sellerFilter()
         );
         BrowsePage browsePage = auctionService.browsePage(
                 auctionId, sort, category, page, visible, searchQuery, viewerId, filter
@@ -203,13 +204,13 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             if (itemMeta != null) {
                 java.util.ArrayList<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>(messageService.components(
                         "listing-lore",
-                        Map.of("seller", listing.sellerName(), "price", auctionService.formatPrice(listing.price(), listing.economyType(), listing.auctionId()))
+                        Map.of("seller", listing.sellerName(), "price", auctionService.formatPrice(listing.price(), listing.auctionId(), viewerId))
                 ));
                 lore.addAll(messageService.componentsFromTemplates(
                         auctionService.listingLoreTemplate(auctionId),
                         Map.of(
                                 "seller", listing.sellerName(),
-                                "price", auctionService.formatPrice(listing.price(), listing.economyType(), listing.auctionId()),
+                                "price", auctionService.formatPrice(listing.price(), listing.auctionId(), viewerId),
                                 "id", String.valueOf(listing.listingId()),
                                 "auction", listing.auctionId()
                         )
@@ -300,7 +301,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         int visible = guiSettings.listingSlots.size();
         BrowseFilterState state = auctionService.browseFilterState(viewerId);
         BrowseFilterState filter = new BrowseFilterState(
-                searchQuery, favoritesOnly, state.favoriteListingsOnly(), state.minPrice(), state.maxPrice()
+                searchQuery, favoritesOnly, state.favoriteListingsOnly(), state.minPrice(), state.maxPrice(), state.sellerFilter()
         );
         int total = auctionService.count(auctionId, category, searchQuery, viewerId, filter);
         int maxPage = Math.max(0, (total - 1) / visible);

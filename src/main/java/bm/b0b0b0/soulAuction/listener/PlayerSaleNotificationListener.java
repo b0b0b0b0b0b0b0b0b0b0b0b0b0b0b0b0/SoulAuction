@@ -30,10 +30,10 @@ public final class PlayerSaleNotificationListener implements Listener {
         for (PendingSaleNotification notification : notifications) {
             String payout = auctionService.formatPrice(
                     notification.payout(),
-                    notification.economyType(),
-                    notification.auctionId()
+                    notification.auctionId(),
+                    player
             );
-            String tax = String.valueOf(notification.tax());
+            String tax = auctionService.formatPrice(notification.tax(), notification.auctionId(), player);
             player.sendMessage(messageService.component(
                     "offline-sale-notification",
                     Map.of("payout", payout, "tax", tax, "auction", notification.auctionId())

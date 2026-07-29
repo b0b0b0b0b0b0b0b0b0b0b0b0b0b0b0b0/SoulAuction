@@ -735,13 +735,29 @@ public final class AuctionService {
     }
 
     public String formatPrice(int price, AuctionEconomyType type) {
-        AuctionDefinitionSettings definition = findAuction(defaultAuctionId(), configSupplier.get());
-        return economy.format(price, type, definition);
+        return formatPrice(price, type, defaultAuctionId());
     }
 
     public String formatPrice(int price, AuctionEconomyType type, String auctionId) {
+        return formatPrice(price, type, auctionId, (Player) null);
+    }
+
+    public String formatPrice(int price, AuctionEconomyType type, String auctionId, Player viewer) {
         AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
-        return economy.format(price, type, definition);
+        return economy.format(price, type, definition, viewer);
+    }
+
+    public String formatPrice(int price, String auctionId) {
+        return formatPrice(price, auctionId, (UUID) null);
+    }
+
+    public String formatPrice(int price, String auctionId, UUID viewerId) {
+        Player viewer = viewerId == null ? null : org.bukkit.Bukkit.getPlayer(viewerId);
+        return formatPrice(price, economyType(auctionId), auctionId, viewer);
+    }
+
+    public String formatPrice(int price, String auctionId, Player viewer) {
+        return formatPrice(price, economyType(auctionId), auctionId, viewer);
     }
 
     public List<String> listingLoreTemplate(String auctionId) {

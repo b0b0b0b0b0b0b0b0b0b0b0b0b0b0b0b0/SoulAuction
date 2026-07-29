@@ -14,7 +14,7 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 
 **Мультисервер** — общая **MySQL** + **Redis**: один каталог по сети, распределённые локи на покупку/продажу, атомарные переходы лота в БД. Pub/sub обновляет витрину; истина в SQL, не в «кто последний записал файл».
 
-**Игрокам — нормальный AH:** GUI, категории, сортировки, поиск и фильтры, избранные продавцы, hub «мои лоты / claim / история». Сообщения — MiniMessage, HEX, градиенты.
+**Игрокам — нормальный AH:** GUI, категории, сортировки, поиск и фильтры, избранные продавцы, hub «мои лоты / claim / история». Сообщения — MiniMessage, HEX, градиенты; в чате префикс **«Аукцион»** (настраивается в `messages.yml` → `prefix`), без названия плагина.
 
 **Экономика под контролем:** налоги с продавца и покупателя, bypass/discount по пермишенам, лимиты слотов по правам, cooldown, blacklist, запрет миров, whitelist/blacklist предметов, правила под ItemsAdder / Oraxen / MMOItems. TTL лотов; если инвентарь полный — предмет уходит в claim, а не в void.
 
@@ -43,6 +43,30 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 - Лимиты лотов: `soulauction.<auctionId>.<N>`, `soulauction.all.<N>`.
 - Приоритет в выдаче: `soulauction.priority.<N>`.
 - Broadcast крупных продаж, внешние уведомления (Discord/Telegram).
+- **Отображение цены per-auction:** свой знак валюты, до/после числа, MiniMessage и опционально PlaceholderAPI в символе (иконки из ресурспака / ItemsAdder и т.п.).
+
+## Отображение цен (`auctions/*.yml`)
+
+У каждого аукциона свои поля (дефолты в Java, после первого старта — в `plugins/SoulAuction/auctions/global.yml` и др.):
+
+| Поле | Назначение |
+|------|------------|
+| `currencySymbol` | Знак или иконка в GUI и чате. Пусто — формат экономики (Vault `$`, PlayerPoints `PP`, предметы `Nx MATERIAL`). |
+| `currencySymbolPosition` | `BEFORE` или `AFTER` числа (`$100` или `100 ₽`). |
+| `currencySymbolPlaceholderApi` | `true` — подставить `%...%` из PlaceholderAPI **для игрока, который видит цену** (нужен PlaceholderAPI). |
+
+Примеры `currencySymbol`:
+
+- Текст: `₽`, `мон.`, `алм.`
+- MiniMessage / glyph: `<glyph:coin>` (ItemsAdder, Nexo и аналоги — по доке ресурспака)
+- PAPI (с `currencySymbolPlaceholderApi: true`): `%img_economy%`
+
+Цена с кастомным символом показывается везде: лоты в GUI, sell-меню, фильтр цены, покупка, история, чат (`success-bought`, announce и т.д.).
+
+## Сообщения (`messages.yml`)
+
+- `prefix` — префикс всех строк с `{prefix}` (дефолт: **Аукцион**, не имя плагина).
+- Остальные ключи — MiniMessage; `{price}` уже с форматом аукциона, в который смотрит игрок.
 
 ## Команды
 
@@ -73,6 +97,10 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 - `/ah admin blacklist add|remove <player>` — runtime blacklist продажи.
 - `/ah admin recover <claimId>` — выдать claim в инвентарь.
 - `/ah admin audit [limit]` — последние audit-записи.
+- `/ah admin cache stats|rebuild|invalidate` — кэш каталога.
+- `/ah admin sellfor <player> <auctionId> <price>` — выставить лот от имени игрока (предмет в руке).
+- `/ah admin parse tags|nbt` — разбор NBT/тегов предмета в руке (custom items).
+- `/ah view <player> [auctionId]` — GUI лотов игрока.
 
 ## Права
 

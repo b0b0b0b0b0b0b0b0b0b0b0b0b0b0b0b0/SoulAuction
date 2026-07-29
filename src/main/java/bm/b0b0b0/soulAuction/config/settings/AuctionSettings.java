@@ -51,7 +51,7 @@ public final class AuctionSettings extends YamlSerializable {
 
     @NewLine
     @Comment({@CommentValue("Global custom item plugin rules (merged with per-auction)")})
-    public List<CustomItemPluginRuleSettings> customItemRules = List.of();
+    public List<CustomItemPluginRuleSettings> customItemRules = defaultCustomItemRules();
 
     @NewLine
     @Comment({@CommentValue("Global per-material rules (merged with per-auction)")})
@@ -59,6 +59,14 @@ public final class AuctionSettings extends YamlSerializable {
 
     public AuctionSettings() {
         super(SoulAuctionSerializerConfig.INSTANCE);
+    }
+
+    private static List<CustomItemPluginRuleSettings> defaultCustomItemRules() {
+        CustomItemPluginRuleSettings executableItems = new CustomItemPluginRuleSettings();
+        executableItems.pluginNamespace = "executableitems";
+        executableItems.category = "WEAPONS";
+        executableItems.searchAliases = List.of("executableitems", "executable", "ei");
+        return List.of(new CustomItemPluginRuleSettings(), executableItems);
     }
 
     public static final class LimitsSettings {
@@ -97,6 +105,8 @@ public final class AuctionSettings extends YamlSerializable {
         public boolean advancedSearchRegex = false;
         @Comment({@CommentValue("Enable message keys disable list in messages.yml under disabled-messages")})
         public boolean respectDisabledMessages = true;
+        @Comment({@CommentValue("Cache pre-sorted listing lists per auction (recommended for 10k+ lots)")})
+        public boolean preSortedBrowseCache = true;
     }
 
     public static final class StorageSettings {
