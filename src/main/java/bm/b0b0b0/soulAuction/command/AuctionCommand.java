@@ -57,7 +57,7 @@ public final class AuctionCommand implements CommandExecutor {
         this.messageService = messageService;
         this.auctionService = auctionService;
         this.reloadAction = reloadAction;
-        this.adminCommand = new AuctionAdminCommand(plugin, messageService, auctionService);
+        this.adminCommand = new AuctionAdminCommand(plugin, configSupplier, messageService, auctionService);
     }
 
     @Override

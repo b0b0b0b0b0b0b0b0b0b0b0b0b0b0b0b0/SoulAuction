@@ -1,5 +1,8 @@
 package bm.b0b0b0.soulAuction.command;
 
+import bm.b0b0b0.soulAuction.config.PluginConfig;
+import bm.b0b0b0.soulAuction.gui.admin.AdminAuctionsMenu;
+import bm.b0b0b0.soulAuction.gui.admin.AdminGuiAccess;
 import bm.b0b0b0.soulAuction.gui.PlayerRecordsMenu;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.ClaimEntry;
@@ -15,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.Locale;
+import java.util.function.Supplier;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
@@ -27,27 +31,40 @@ public final class AuctionAdminCommand {
     private static final String PERMISSION_ADMIN = "soulauction.command.admin";
 
     private final JavaPlugin plugin;
+    private final Supplier<PluginConfig> configSupplier;
     private final MessageService messageService;
     private final AuctionService auctionService;
 
-    public AuctionAdminCommand(JavaPlugin plugin, MessageService messageService, AuctionService auctionService) {
+    public AuctionAdminCommand(
+            JavaPlugin plugin,
+            Supplier<PluginConfig> configSupplier,
+            MessageService messageService,
+            AuctionService auctionService
+    ) {
         this.plugin = plugin;
+        this.configSupplier = configSupplier;
         this.messageService = messageService;
         this.auctionService = auctionService;
     }
 
     public boolean handle(CommandSender sender, String[] args) {
+        if (args.length < 1) {
+            if (sender instanceof Player player && AdminGuiAccess.canOpenAdminGui(sender)) {
+                return openAdminAuctionsGui(player, 0);
+            }
+            messageService.send(sender, "error-admin-usage");
+            return true;
+        }
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        String[] subArgs = new String[args.length - 1];
+        System.arraycopy(args, 1, subArgs, 0, subArgs.length);
+        if (sub.equals("gui")) {
+            return adminGui(sender, subArgs);
+        }
         if (!sender.hasPermission(PERMISSION_ADMIN)) {
             messageService.send(sender, "error-no-permission");
             return true;
         }
-        if (args.length < 1) {
-            messageService.send(sender, "error-admin-usage");
-            return true;
-        }
-        String sub = args[0].toLowerCase();
-        String[] subArgs = new String[args.length - 1];
-        System.arraycopy(args, 1, subArgs, 0, subArgs.length);
         return switch (sub) {
             case "history" -> history(sender, subArgs);
             case "selling" -> selling(sender, subArgs);
@@ -271,6 +288,43 @@ public final class AuctionAdminCommand {
                 Map.of("player", online.getName(), "id", String.valueOf(result.listing().listingId()))
         );
         auctionService.audit(admin.getUniqueId(), admin.getName(), "ADMIN_SELLFOR", "target=" + online.getUniqueId());
+        return true;
+    }
+
+    private boolean adminGui(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            messageService.send(sender, "error-only-player");
+            return true;
+        }
+        if (!AdminGuiAccess.canOpenAdminGui(sender)) {
+            messageService.send(sender, "error-admin-gui-denied");
+            return true;
+        }
+        int page = 0;
+        if (args.length >= 1) {
+            try {
+                page = Integer.parseInt(args[0]) - 1;
+            } catch (NumberFormatException ignored) {
+                messageService.send(sender, "error-admin-gui-usage");
+                return true;
+            }
+        }
+        return openAdminAuctionsGui(player, Math.max(0, page));
+    }
+
+    private boolean openAdminAuctionsGui(Player player, int page) {
+        if (!auctionService.isLoaded()) {
+            messageService.send(player, "error-still-loading");
+            return true;
+        }
+        AdminAuctionsMenu menu = new AdminAuctionsMenu(
+                player.getUniqueId(),
+                page,
+                auctionService,
+                messageService,
+                configSupplier.get().guiGeneralSettings()
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(menu.getInventory()));
         return true;
     }
 

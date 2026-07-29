@@ -1,6 +1,8 @@
 package bm.b0b0b0.soulAuction.gui;
 
 import bm.b0b0b0.soulAuction.config.PluginConfig;
+import bm.b0b0b0.soulAuction.gui.admin.AdminAuctionsMenu;
+import bm.b0b0b0.soulAuction.gui.admin.AdminGuiAccess;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.util.ListingItemEquality;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
@@ -111,6 +113,10 @@ public final class AuctionGuiListener implements Listener {
             handleRecordsMenuClick(event, player, recordsMenu);
             return;
         }
+        if (event.getView().getTopInventory().getHolder(false) instanceof AdminAuctionsMenu adminAuctionsMenu) {
+            handleAdminAuctionsClick(event, player, adminAuctionsMenu);
+            return;
+        }
         if (event.getView().getTopInventory().getHolder(false) instanceof ContainerPreviewMenu) {
             if (!(event.getClickedInventory() instanceof PlayerInventory)) {
                 event.setCancelled(true);
@@ -125,6 +131,10 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         if (event.getView().getTopInventory().getHolder(false) instanceof FavoriteSellersMenu) {
+            event.setCancelled(true);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder(false) instanceof AdminAuctionsMenu) {
             event.setCancelled(true);
             return;
         }
@@ -566,6 +576,47 @@ public final class AuctionGuiListener implements Listener {
                 messageService
         );
         PluginSchedulers.run(plugin, player, () -> player.openInventory(ownerMenu.getInventory()));
+    }
+
+    private void handleAdminAuctionsClick(InventoryClickEvent event, Player player, AdminAuctionsMenu menu) {
+        if (!player.getUniqueId().equals(menu.viewerId())) {
+            event.setCancelled(true);
+            return;
+        }
+        if (!AdminGuiAccess.canOpenAdminGui(player)) {
+            event.setCancelled(true);
+            player.closeInventory();
+            messageService.send(player, "error-admin-gui-denied");
+            return;
+        }
+        if (event.getClickedInventory() instanceof PlayerInventory) {
+            return;
+        }
+        event.setCancelled(true);
+        int slot = event.getSlot();
+        if (menu.isPrev(slot)) {
+            reopenAdminAuctions(player, menu.page() - 1);
+            return;
+        }
+        if (menu.isNext(slot)) {
+            reopenAdminAuctions(player, menu.page() + 1);
+            return;
+        }
+        String auctionId = menu.auctionIdAt(slot);
+        if (auctionId != null) {
+            messageService.send(player, "admin-auctions-entry-click", Map.of("id", auctionId));
+        }
+    }
+
+    private void reopenAdminAuctions(Player player, int page) {
+        AdminAuctionsMenu next = new AdminAuctionsMenu(
+                player.getUniqueId(),
+                page,
+                auctionService,
+                messageService,
+                configSupplier.get().guiGeneralSettings()
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(next.getInventory()));
     }
 
     private void handleSalesMenuClick(InventoryClickEvent event, Player player, RecentSalesMenu menu) {

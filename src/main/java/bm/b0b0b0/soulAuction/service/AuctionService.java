@@ -688,6 +688,25 @@ public final class AuctionService {
         return repository.listAll().size();
     }
 
+    public List<AuctionDefinitionSettings> sortedAuctionDefinitions() {
+        return configSupplier.get().auctionDefinitions().stream()
+                .sorted(Comparator.comparing(definition -> definition.id.toLowerCase(Locale.ROOT)))
+                .toList();
+    }
+
+    public int countActiveListings(String auctionId) {
+        if (auctionId == null || auctionId.isBlank()) {
+            return 0;
+        }
+        int count = 0;
+        for (AuctionListing listing : repository.listAll()) {
+            if (listing.auctionId().equalsIgnoreCase(auctionId)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     public AuctionStorageMigrator.Result migrateFromStorage(
             JavaPlugin plugin,
             StorageMode sourceMode,

@@ -5,6 +5,43 @@ sell-confirm-title: "<gradient:#8B5CF6:#D946EF><bold>Проверка лота</
 buy-confirm-title: "<gradient:#8B5CF6:#D946EF><bold>Подтверждение покупки</bold></gradient>"
 owner-menu-title: "<gradient:#8B5CF6:#D946EF><bold>Управление лотом</bold></gradient>"
 container-preview-title: "<gradient:#8B5CF6:#D946EF><bold>Просмотр содержимого</bold></gradient>"
+admin-auctions-title: "<gradient:#8B5CF6:#D946EF><bold>Админ · Аукционы</bold></gradient> <color:#6B7280>({page}/{pages})</color>"
+admin-auctions-empty-title: "<color:#9CA3AF>Аукционы не настроены</color>"
+admin-auctions-empty-lore:
+  - " "
+  - "<color:#9CA3AF>Добавьте файлы аукционов в</color>"
+  - "<color:#9CA3AF>config/auctions/*.yml</color>"
+admin-auctions-info-title: "<gradient:#A78BFA:#E879F9><bold>Сводка</bold></gradient>"
+admin-auctions-info-lore:
+  - " "
+  - "<color:#A1A1AA>Аукционов:</color> <color:#F5D0FE>{total}</color>"
+  - "<color:#A1A1AA>Активных лотов:</color> <color:#F5D0FE>{listings}</color>"
+  - "<color:#A1A1AA>Страница:</color> <color:#F5D0FE>{page}</color><color:#6B7280>/</color><color:#F5D0FE>{pages}</color>"
+admin-auctions-prev-lore:
+  - " "
+  - "<color:#9CA3AF>Предыдущая страница аукционов.</color>"
+  - " "
+  - "<gradient:#A78BFA:#E879F9>Нажмите, чтобы листать</gradient>"
+admin-auctions-next-lore:
+  - " "
+  - "<color:#9CA3AF>Следующая страница аукционов.</color>"
+  - " "
+  - "<gradient:#A78BFA:#E879F9>Нажмите, чтобы листать</gradient>"
+admin-auctions-entry-title: "<gradient:#8B5CF6:#D946EF><bold>{auction}</bold></gradient>"
+admin-auctions-entry-lore:
+  - " "
+  - "<color:#A1A1AA>ID:</color> <color:#F5D0FE>{id}</color>"
+  - "<color:#A1A1AA>Экономика:</color> <color:#E879F9>{economy}</color>"
+  - "<color:#A1A1AA>Лотов:</color> <color:#34D399>{listings}</color>"
+  - "<color:#A1A1AA>Покупка:</color> <color:#F5D0FE>{buy}</color>  <color:#A1A1AA>Продажа:</color> <color:#F5D0FE>{sell}</color>"
+  - "<color:#A1A1AA>По умолчанию:</color> <color:#F5D0FE>{default}</color>"
+  - " "
+  - "<color:#6B7280>Скоро — подробности и действия.</color>"
+admin-auctions-entry-click: "{prefix}<color:#C4B5FD>Выбран аукцион</color> <color:#F5D0FE>{id}</color><color:#6B7280> — детали позже.</color>"
+admin-label-yes: "да"
+admin-label-no: "нет"
+error-admin-gui-denied: "{prefix}<color:#FB7185>Админ-GUI доступен с</color> <color:#F5D0FE>soulauction.command.admin</color> <color:#FB7185>или OP.</color>"
+error-admin-gui-usage: "{prefix}<color:#FB7185>Использование:</color> <color:#9CA3AF>/ah admin gui [страница]</color>"
 button-next-page: "<gradient:#A78BFA:#E879F9><bold>Следующая страница</bold></gradient>"
 button-next-page-lore:
   - " "
@@ -487,7 +524,7 @@ error-purge-usage:
   - "<color:#9CA3AF>/ah purge <дней></color>"
 error-admin-usage:
   - "{prefix}<color:#FB7185>Используй:</color>"
-  - "<color:#9CA3AF>/ah admin <history|selling|blacklist|recover|audit|cache|sellfor|parse|migrate> ...</color>"
+  - "<color:#9CA3AF>/ah admin <gui|history|selling|blacklist|recover|audit|cache|sellfor|parse|migrate> ...</color>"
 error-admin-parse-usage:
   - "{prefix}<color:#FB7185>Используй:</color>"
   - "<color:#9CA3AF>/ah admin parse <tags|nbt> (предмет в руке)</color>"
