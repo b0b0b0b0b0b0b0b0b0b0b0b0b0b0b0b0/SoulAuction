@@ -4,7 +4,6 @@ import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
 import java.util.Optional;
 
-/** Removes a listing once; {@link #close()} puts it back unless {@link #commit()} was called. */
 public final class RemovedListing implements AutoCloseable {
 
     private final AuctionRepository repository;

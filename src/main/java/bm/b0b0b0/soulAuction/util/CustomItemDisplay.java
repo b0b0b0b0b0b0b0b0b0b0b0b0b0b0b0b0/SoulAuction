@@ -4,9 +4,6 @@ import java.util.Locale;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
-/**
- * Best-effort labels for ItemsAdder / Oraxen / MMOItems via persistent data and display name.
- */
 public final class CustomItemDisplay {
 
     private CustomItemDisplay() {

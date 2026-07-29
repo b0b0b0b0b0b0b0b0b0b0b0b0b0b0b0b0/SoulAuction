@@ -66,10 +66,6 @@ public final class AuctionSellMenu implements InventoryHolder {
         return !skipCloseReturn;
     }
 
-    /**
-     * Atomically removes {@code amount} items from the sell slot for listing creation.
-     * Returns the stack to list, or null if the slot is empty.
-     */
     public ItemStack consumeForListing(int amount) {
         ItemStack inSlot = inventory.getItem(ITEM_SLOT);
         if (inSlot == null || inSlot.isEmpty()) {

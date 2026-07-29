@@ -6,9 +6,6 @@ import bm.b0b0b0.soulAuction.repository.SqlAuctionRepository;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import java.util.Optional;
 
-/**
- * Single authoritative claim before item/money exchange. SQL uses atomic status flip; file modes use memory remove.
- */
 public final class ListingSaleClaimer {
 
     private final AuctionRepository repository;

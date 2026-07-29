@@ -468,7 +468,6 @@ public final class SqlAuctionRepository implements AuctionRepository {
              )) {
             statement.executeUpdate();
         } catch (Exception ignored) {
-            // column likely exists
         }
     }
 

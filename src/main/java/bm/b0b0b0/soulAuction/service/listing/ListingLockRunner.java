@@ -3,7 +3,6 @@ package bm.b0b0b0.soulAuction.service.listing;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
-/** Per-listing mutex: purchase, cancel and expire must not run concurrently on the same id. */
 public final class ListingLockRunner {
 
     private final ConcurrentHashMap<Long, Object> locks = new ConcurrentHashMap<>();

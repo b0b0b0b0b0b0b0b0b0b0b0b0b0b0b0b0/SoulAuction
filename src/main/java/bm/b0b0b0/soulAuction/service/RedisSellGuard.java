@@ -62,7 +62,7 @@ public final class RedisSellGuard {
         return true;
     }
 
-    /** @deprecated use {@link #tryAcquireListingLockLocal} + claimer for purchases */
+    @Deprecated
     public boolean tryAcquireListingLock(long listingId) {
         return tryAcquireListingLockLocal(listingId);
     }

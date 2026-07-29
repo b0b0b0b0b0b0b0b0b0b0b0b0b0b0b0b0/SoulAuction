@@ -3,9 +3,6 @@ package bm.b0b0b0.soulAuction.service;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * In-process locks for sell/buy hot paths. No I/O — safe on Bukkit main / region thread.
- */
 public final class LocalAuctionLocks {
 
     private final ConcurrentHashMap<UUID, Long> sellUntilEpochMillis = new ConcurrentHashMap<>();

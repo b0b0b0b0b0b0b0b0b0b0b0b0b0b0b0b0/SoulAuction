@@ -39,7 +39,6 @@ public final class AuctionSellPolicy {
                     return true;
                 }
             } catch (IllegalArgumentException ignored) {
-                // skip non-uuid entries
             }
         }
         return false;

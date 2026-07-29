@@ -25,7 +25,6 @@ public final class PermissionPriorityResolver {
             try {
                 max = Math.max(max, Integer.parseInt(suffix));
             } catch (NumberFormatException ignored) {
-                // ignore malformed nodes
             }
         }
         return max;

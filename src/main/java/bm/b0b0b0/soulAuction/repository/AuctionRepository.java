@@ -45,7 +45,6 @@ public interface AuctionRepository {
 
     int countBySellerInAuction(UUID sellerId, String auctionId);
 
-    /** SQL backends persist pending seller payouts for multi-server claim. */
     default boolean sharedPendingPayouts() {
         return false;
     }

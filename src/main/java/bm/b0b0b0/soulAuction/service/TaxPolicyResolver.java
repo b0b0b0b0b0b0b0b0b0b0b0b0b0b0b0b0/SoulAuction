@@ -61,7 +61,6 @@ public final class TaxPolicyResolver {
         return new TaxAmounts(saleTax, buyTax);
     }
 
-    /** Backward-compatible entry when item stack is unavailable. */
     public TaxAmounts resolve(Player buyer, Player seller, AuctionDefinitionSettings definition, int listingPrice) {
         return resolve(buyer, seller, definition, new AuctionSettings(), listingPrice, null);
     }
