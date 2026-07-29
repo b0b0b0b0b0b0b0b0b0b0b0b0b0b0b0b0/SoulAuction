@@ -39,6 +39,7 @@ public final class AuctionService {
     private final AuctionRuntimeStorage runtimeStorage;
     private final TaxPolicyResolver taxPolicyResolver;
     private final PriceLimitResolver priceLimitResolver;
+    private final AuctionExternalNotifier externalNotifier;
     private final ConcurrentHashMap<UUID, BrowsePreferences> browsePreferences;
     private final ConcurrentHashMap<UUID, Object> playerSellLocks;
     private final ConcurrentHashMap<Long, Object> listingPurchaseLocks;
@@ -52,7 +53,8 @@ public final class AuctionService {
             RedisSellGuard redisSellGuard,
             AuctionRuntimeStorage runtimeStorage,
             TaxPolicyResolver taxPolicyResolver,
-            PriceLimitResolver priceLimitResolver
+            PriceLimitResolver priceLimitResolver,
+            AuctionExternalNotifier externalNotifier
     ) {
         this.repository = repository;
         this.configSupplier = configSupplier;
@@ -63,6 +65,7 @@ public final class AuctionService {
         this.runtimeStorage = runtimeStorage;
         this.taxPolicyResolver = taxPolicyResolver;
         this.priceLimitResolver = priceLimitResolver;
+        this.externalNotifier = externalNotifier;
         this.browsePreferences = new ConcurrentHashMap<>();
         this.playerSellLocks = new ConcurrentHashMap<>();
         this.listingPurchaseLocks = new ConcurrentHashMap<>();
@@ -187,6 +190,7 @@ public final class AuctionService {
                 searchText
         );
         repository.flush();
+        externalNotifier.listingCreated(listing, soldItem);
         return SellResult.success(listing);
     }
 
@@ -271,6 +275,7 @@ public final class AuctionService {
             ));
         }
         repository.flush();
+        externalNotifier.sold(listing, buyer.getName(), buyer.getUniqueId(), formatPrice(listing.price(), listing.economyType()));
         return PurchaseResult.success(listing, seller, payout, saleTax, buyTax, charge);
     }
 
@@ -324,6 +329,7 @@ public final class AuctionService {
                     removed.economyType(),
                     0
             );
+            externalNotifier.expired(removed);
             expired++;
         }
         if (expired > 0) {

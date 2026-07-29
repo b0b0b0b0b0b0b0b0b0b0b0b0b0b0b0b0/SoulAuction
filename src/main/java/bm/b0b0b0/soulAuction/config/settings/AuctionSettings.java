@@ -25,6 +25,10 @@ public final class AuctionSettings extends YamlSerializable {
     @Comment({@CommentValue("Command aliases redirected to /ah")})
     public List<String> commandAliases = List.of("ax", "auction");
 
+    @NewLine
+    @Comment({@CommentValue("Discord and Telegram notifications (async HTTP, no extra libraries)")})
+    public NotificationsSettings notifications = new NotificationsSettings();
+
     public AuctionSettings() {
         super(SoulAuctionSerializerConfig.INSTANCE);
     }
@@ -101,5 +105,52 @@ public final class AuctionSettings extends YamlSerializable {
         public int timeoutMs = 1500;
         @Comment({@CommentValue("Sell lock TTL in ms")})
         public long sellLockMillis = 2500L;
+    }
+
+    public static final class NotificationsSettings {
+
+        @Comment({@CommentValue("Send when a listing is sold")})
+        public boolean notifySold = true;
+        @Comment({@CommentValue("Send when a new listing is created")})
+        public boolean notifyListed = false;
+        @Comment({@CommentValue("Send when a listing expires")})
+        public boolean notifyExpired = true;
+        @Comment({@CommentValue("Only notify if price is at least this value, 0 = all")})
+        public int minPrice = 0;
+        @NewLine
+        @Comment({@CommentValue("Discord incoming webhook")})
+        public DiscordNotificationSettings discord = new DiscordNotificationSettings();
+        @NewLine
+        @Comment({@CommentValue("Telegram Bot API (@BotFather token + chat id)")})
+        public TelegramNotificationSettings telegram = new TelegramNotificationSettings();
+    }
+
+    public static final class DiscordNotificationSettings {
+
+        @Comment({@CommentValue("Enable Discord webhook notifications")})
+        public boolean enabled = false;
+        @Comment({@CommentValue("Full webhook URL from Discord channel integrations")})
+        public String webhookUrl = "";
+        @Comment({
+                @CommentValue("Show Minecraft player heads in embed (author + thumbnail)"),
+                @CommentValue("Uses public avatar CDN (Crafatar / Minotar), server needs outbound HTTPS")
+        })
+        public boolean showPlayerAvatars = true;
+        @Comment({
+                @CommentValue("Avatar CDN"),
+                @CommentValue("MINOTAR - minotar.net (default)"),
+                @CommentValue("CRAFATAR - crafatar.com by UUID")
+        })
+        public String avatarProvider = "MINOTAR";
+    }
+
+    public static final class TelegramNotificationSettings {
+
+        @Comment({@CommentValue("Enable Telegram notifications")})
+        public boolean enabled = false;
+        @Comment({@CommentValue("Bot token from @BotFather")})
+        public String botToken = "";
+        @Comment({@CommentValue("Chat id: user, group or channel (often negative for groups)")})
+        public String chatId = "";
     }
 }

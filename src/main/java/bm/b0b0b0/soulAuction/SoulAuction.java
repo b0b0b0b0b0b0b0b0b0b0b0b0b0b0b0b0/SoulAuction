@@ -11,6 +11,7 @@ import bm.b0b0b0.soulAuction.repository.AuctionRepository;
 import bm.b0b0b0.soulAuction.repository.AuctionRepositoryFactory;
 import bm.b0b0b0.soulAuction.model.StorageMode;
 import bm.b0b0b0.soulAuction.placeholder.SoulAuctionPlaceholderExpansion;
+import bm.b0b0b0.soulAuction.service.AuctionExternalNotifier;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.service.EconomyBridge;
 import bm.b0b0b0.soulAuction.service.PermissionLimitResolver;
@@ -47,6 +48,7 @@ public final class SoulAuction extends JavaPlugin {
         PermissionLimitResolver permissionLimitResolver = new PermissionLimitResolver(getName());
         TaxPolicyResolver taxPolicyResolver = new TaxPolicyResolver();
         PriceLimitResolver priceLimitResolver = new PriceLimitResolver();
+        AuctionExternalNotifier externalNotifier = new AuctionExternalNotifier(this, () -> pluginConfig.auctionSettings());
         auctionService = new AuctionService(
                 repository,
                 this::pluginConfig,
@@ -56,7 +58,8 @@ public final class SoulAuction extends JavaPlugin {
                 redisSellGuard,
                 runtimeStorage,
                 taxPolicyResolver,
-                priceLimitResolver
+                priceLimitResolver,
+                externalNotifier
         );
         getLogger().info("Vault connected: " + auctionService.hasVault());
         getLogger().info("PlayerPoints connected: " + auctionService.hasPlayerPoints());

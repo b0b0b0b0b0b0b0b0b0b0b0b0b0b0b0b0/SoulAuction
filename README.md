@@ -92,3 +92,15 @@
 - `soulauction.price.min.<цена>` — минимальная цена лота для игрока.
 - `soulauction.price.max.<цена>` — максимальная цена лота для игрока.
 
+### Discord и Telegram
+
+В `config.yml` → секция `notifications`:
+
+- **Discord:** `notifications.discord.enabled`, `webhookUrl` (Incoming Webhook канала).
+- **Telegram:** `notifications.telegram.enabled`, `botToken`, `chatId`.
+- События: `notify-sold`, `notify-listed`, `notify-expired`, фильтр `min-price`.
+- Отправка **асинхронная** (Java HTTP), без shade и без бота на сервере Minecraft.
+- **Аватарки игроков в Discord:** `notifications.discord.show-player-avatars` (голова продавца в author, покупателя — thumbnail на сделках). CDN: `avatar-provider` = `MINOTAR` (дефолт) или `CRAFATAR`.
+
+После `/ah reload` подхватываются новые URL и флаги.
+
