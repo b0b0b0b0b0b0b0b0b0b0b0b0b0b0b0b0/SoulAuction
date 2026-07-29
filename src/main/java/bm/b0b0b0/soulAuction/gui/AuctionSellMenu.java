@@ -252,7 +252,7 @@ public final class AuctionSellMenu implements InventoryHolder {
 
     private void changePrice(int delta) {
         Player player = Bukkit.getPlayer(viewerId);
-        int max = player == null ? auctionService.maxPrice() : auctionService.maxPrice(player, auctionId);
+        int max = player == null ? auctionService.globalMaxPrice() : auctionService.maxPrice(player, auctionId);
         int next = price + delta;
         if (next < 1) {
             next = 1;

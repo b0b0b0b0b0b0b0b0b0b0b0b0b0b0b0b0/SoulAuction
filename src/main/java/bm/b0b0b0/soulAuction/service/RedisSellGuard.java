@@ -62,11 +62,6 @@ public final class RedisSellGuard {
         return true;
     }
 
-    @Deprecated
-    public boolean tryAcquireListingLock(long listingId) {
-        return tryAcquireListingLockLocal(listingId);
-    }
-
     public boolean tryAcquireListingLockLocal(long listingId) {
         return localLocks.tryAcquireListingLock(listingId);
     }

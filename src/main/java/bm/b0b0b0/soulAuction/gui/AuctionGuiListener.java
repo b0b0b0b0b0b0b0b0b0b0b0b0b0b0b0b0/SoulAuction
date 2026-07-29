@@ -217,7 +217,7 @@ public final class AuctionGuiListener implements Listener {
             AuctionSellMenu sellMenu = new AuctionSellMenu(player.getUniqueId(), menu.auctionId(), auctionService, messageService);
             sellMenu.putReservedItem(cursor.clone());
             sellMenu.syncAmountFromItem();
-            event.setCursor(null);
+            event.getView().setCursor(ItemStack.empty());
             PluginSchedulers.run(plugin, player, () -> player.openInventory(sellMenu.getInventory()));
             return;
         }

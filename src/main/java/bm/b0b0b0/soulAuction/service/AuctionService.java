@@ -356,10 +356,6 @@ public final class AuctionService {
         synchronized (sellLock) {
             SellResult result = listingCreator.create(seller, auctionId, price, soldItem, definitionLookup());
             if (result.success() && result.listing() != null) {
-                item.setAmount(item.getAmount() - sellAmount);
-                if (item.getAmount() <= 0) {
-                    item.setType(Material.AIR);
-                }
                 invalidateListingCache(result.listing().auctionId(), result.listing(), false);
             }
             return result;
@@ -807,17 +803,16 @@ public final class AuctionService {
         return priceLimitResolver.resolve(player, definition, settings().limits).maxPrice();
     }
 
+    public int globalMaxPrice() {
+        return settings().limits.maxPrice;
+    }
+
     public PriceLimitResolver.PriceBounds priceBounds(Player player, String auctionId) {
         AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
         if (definition == null) {
             return new PriceLimitResolver.PriceBounds(settings().limits.minPrice, settings().limits.maxPrice);
         }
         return priceLimitResolver.resolve(player, definition, settings().limits);
-    }
-
-    @Deprecated
-    public int maxPrice() {
-        return settings().limits.maxPrice;
     }
 
     public List<DealHistoryEntry> adminHistoryForPlayer(UUID playerId, int limit) {

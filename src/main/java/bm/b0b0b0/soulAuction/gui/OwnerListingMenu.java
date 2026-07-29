@@ -76,7 +76,7 @@ public final class OwnerListingMenu implements InventoryHolder {
         }
         if (slot == PLUS_SLOT) {
             Player player = Bukkit.getPlayer(viewerId);
-            int max = player == null ? auctionService.maxPrice() : auctionService.maxPrice(player, auctionId);
+            int max = player == null ? auctionService.globalMaxPrice() : auctionService.maxPrice(player, auctionId);
             editedPrice = Math.min(max, editedPrice + 100);
             refresh();
         }
