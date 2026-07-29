@@ -21,25 +21,9 @@
 - Защита от двойной покупки (анти-дюп на уровне удаления лота перед транзакцией).
 - MiniMessage + HEX + градиенты в сообщениях.
 
-## Требования
-
-- Java 21
-- Paper 1.21+
-- Vault (для аукционов с экономикой `VAULT`)
-- PlayerPoints (для аукционов с экономикой `PLAYER_POINTS`)
-
-## Сборка
-
-```bash
-./gradlew build
-```
-
-Готовый jar появится в `build/libs/`.
-
 ## Команды
 
 ### Игроки
-
 - `/ah` — открыть аукцион по умолчанию.
 - `/ah <auctionId>` — открыть конкретный аукцион.
 - `/ah sell <price>` — выставить предмет из руки в аукцион по умолчанию.
@@ -68,13 +52,11 @@
 ### Аукцион-специфичные (задаются в `config.yml`)
 
 Для каждого аукциона есть отдельные узлы:
-
 - `openPermission` — право открыть этот аукцион.
 - `buyPermission` — право покупать лоты в этом аукционе.
 - `sellPermission` — право выставлять лоты в этот аукцион.
 
 Пример:
-
 - `soulauction.open.vip`
 - `soulauction.buy.vip`
 - `soulauction.sell.vip`
@@ -89,54 +71,3 @@
 Если выдано несколько узлов, берётся максимальный лимит.
 Если узлов нет, берутся дефолты из `limits`.
 
-## Конфиги аукционов
-
-```yaml
-defaultAuctionId: global
-
-storage:
-  mode: "MYSQL"
-  flatDirectory: "data/listings"
-  database:
-    host: "127.0.0.1"
-    port: 3306
-    database: "soulauction"
-    username: "root"
-    password: "password"
-    poolSize: 8
-    sqliteFile: "data/auction.db"
-  redis:
-    enabled: true
-    host: "127.0.0.1"
-    port: 6379
-    password: ""
-    database: 0
-    timeoutMs: 1500
-    sellLockMillis: 2500
-
-limits:
-  defaultMaxActiveListingsPerAuction: 3
-  defaultMaxActiveListingsGlobal: 6
-  maxPrice: 500000
-  allowSelfBuy: false
-  allowSelling: true
-
-auctionsDirectory: "auctions"
-```
-
-Каждый аукцион лежит отдельным файлом в папке `auctions/`, например:
-
-`auctions/global.yml`
-```yaml
-id: "global"
-displayName: "Глобальный"
-economy: "VAULT"
-buyEnabled: true
-sellEnabled: true
-listingTtlSeconds: 86400
-saleTaxPercent: 5.0
-blockedMaterials: ["BEDROCK", "BARRIER"]
-openPermission: "soulauction.open.global"
-buyPermission: "soulauction.buy.global"
-sellPermission: "soulauction.sell.global"
-```
