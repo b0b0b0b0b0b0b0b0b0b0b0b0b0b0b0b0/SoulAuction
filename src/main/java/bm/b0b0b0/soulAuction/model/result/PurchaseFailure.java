@@ -8,7 +8,8 @@ public enum PurchaseFailure {
     ECONOMY_UNAVAILABLE("error-economy-unavailable"),
     OWN_LISTING("error-own-listing"),
     NOT_ENOUGH_MONEY("error-not-enough-money"),
-    INVENTORY_FULL("error-inventory-full");
+    INVENTORY_FULL("error-inventory-full"),
+    STORAGE_NOT_READY("error-still-loading");
 
     private final String messageKey;
 

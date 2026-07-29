@@ -23,7 +23,8 @@ public interface AuctionRepository {
             AuctionEconomyType economyType,
             String itemBase64,
             AuctionCategory category,
-            String searchText
+            String searchText,
+            String metadataJson
     );
 
     AuctionListing remove(long listingId);

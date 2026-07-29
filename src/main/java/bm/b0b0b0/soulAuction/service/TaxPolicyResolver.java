@@ -1,9 +1,13 @@
 package bm.b0b0b0.soulAuction.service;
 
 import bm.b0b0b0.soulAuction.config.settings.AuctionDefinitionSettings;
+import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
+import bm.b0b0b0.soulAuction.config.settings.MaterialRuleSettings;
+import bm.b0b0b0.soulAuction.model.TaxMode;
 import java.util.Locale;
 import java.util.Set;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.permissions.PermissionAttachmentInfo;
 
 public final class TaxPolicyResolver {
@@ -21,22 +25,52 @@ public final class TaxPolicyResolver {
         }
     }
 
-    public TaxAmounts resolve(Player buyer, Player seller, AuctionDefinitionSettings definition, int listingPrice) {
+    public TaxAmounts resolve(
+            Player buyer,
+            Player seller,
+            AuctionDefinitionSettings definition,
+            AuctionSettings globalSettings,
+            int listingPrice,
+            ItemStack soldItem
+    ) {
         if (buyer != null && buyer.hasPermission(BYPASS_PERMISSION)) {
             return new TaxAmounts(0, 0);
         }
         if (seller != null && seller.hasPermission(BYPASS_PERMISSION)) {
             return new TaxAmounts(0, 0);
         }
-        double salePercent = Math.max(0.0D, definition.saleTaxPercent);
-        double buyPercent = Math.max(0.0D, definition.buyTaxPercent);
+        MaterialRuleSettings materialRule = MaterialRuleMatcher.match(
+                soldItem,
+                globalSettings.materialRules,
+                definition.materialRules
+        );
+        double salePercent = pickPercent(definition.saleTaxPercent, materialRule == null ? -1 : materialRule.saleTaxPercent);
+        double buyPercent = pickPercent(definition.buyTaxPercent, materialRule == null ? -1 : materialRule.buyTaxPercent);
         if (seller != null) {
             salePercent = applyDiscount(seller, salePercent);
         }
-        return new TaxAmounts(
-                computeTax(listingPrice, salePercent),
-                computeTax(listingPrice, buyPercent)
-        );
+        TaxMode mode = TaxMode.fromString(definition.taxMode);
+        int saleTax = computeTax(listingPrice, salePercent);
+        int buyTax = computeTax(listingPrice, buyPercent);
+        if (mode == TaxMode.VAT) {
+            buyTax = computeTax(listingPrice + saleTax, buyPercent);
+        }
+        if (mode == TaxMode.CAPITALISM && listingPrice >= definition.capitalismThreshold) {
+            saleTax += computeTax(listingPrice, definition.capitalismSurchargePercent);
+        }
+        return new TaxAmounts(saleTax, buyTax);
+    }
+
+    /** Backward-compatible entry when item stack is unavailable. */
+    public TaxAmounts resolve(Player buyer, Player seller, AuctionDefinitionSettings definition, int listingPrice) {
+        return resolve(buyer, seller, definition, new AuctionSettings(), listingPrice, null);
+    }
+
+    private double pickPercent(double base, double override) {
+        if (override >= 0.0D) {
+            return override;
+        }
+        return Math.max(0.0D, base);
     }
 
     private double applyDiscount(Player seller, double salePercent) {

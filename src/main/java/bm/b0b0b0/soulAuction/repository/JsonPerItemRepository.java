@@ -105,7 +105,8 @@ public final class JsonPerItemRepository implements AuctionRepository {
             AuctionEconomyType economyType,
             String itemBase64,
             AuctionCategory category,
-            String searchText
+            String searchText,
+            String metadataJson
     ) {
         long listingId = nextId.getAndIncrement();
         AuctionListing listing = new AuctionListing(
@@ -118,7 +119,8 @@ public final class JsonPerItemRepository implements AuctionRepository {
                 System.currentTimeMillis(),
                 itemBase64,
                 category,
-                searchText
+                searchText,
+                metadataJson
         );
         listingsById.put(listingId, listing);
         CompletableFuture.runAsync(() -> writeListingSync(listing), ioExecutor);
@@ -161,7 +163,8 @@ public final class JsonPerItemRepository implements AuctionRepository {
                 old.createdAtEpochMillis(),
                 old.itemBase64(),
                 old.category(),
-                old.searchText()
+                old.searchText(),
+                old.metadataJson()
         );
         listingsById.put(listingId, updated);
         CompletableFuture.runAsync(() -> writeListingSync(updated), ioExecutor);
@@ -249,7 +252,8 @@ public final class JsonPerItemRepository implements AuctionRepository {
                 listing.createdAtEpochMillis(),
                 listing.itemBase64(),
                 listing.category(),
-                listing.searchText()
+                listing.searchText(),
+                listing.metadataJson()
         );
     }
 

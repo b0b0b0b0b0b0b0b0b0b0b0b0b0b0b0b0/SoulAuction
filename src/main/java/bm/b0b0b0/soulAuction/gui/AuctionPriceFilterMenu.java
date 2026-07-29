@@ -81,6 +81,7 @@ public final class AuctionPriceFilterMenu implements InventoryHolder {
             auctionService.setBrowseFilterState(viewerId, new BrowseFilterState(
                     current.searchQuery(),
                     current.favoritesOnly(),
+                    current.favoriteListingsOnly(),
                     draftMin,
                     draftMax
             ));

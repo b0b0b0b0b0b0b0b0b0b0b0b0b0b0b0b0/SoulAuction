@@ -102,7 +102,8 @@ public final class FileAuctionRepository implements AuctionRepository {
             AuctionEconomyType economyType,
             String itemBase64,
             AuctionCategory category,
-            String searchText
+            String searchText,
+            String metadataJson
     ) {
         long listingId = nextId.getAndIncrement();
         AuctionListing listing = new AuctionListing(
@@ -115,7 +116,8 @@ public final class FileAuctionRepository implements AuctionRepository {
                 System.currentTimeMillis(),
                 itemBase64,
                 category,
-                searchText
+                searchText,
+                metadataJson
         );
         listingsById.put(listingId, listing);
         return listing;
@@ -152,7 +154,8 @@ public final class FileAuctionRepository implements AuctionRepository {
                 old.createdAtEpochMillis(),
                 old.itemBase64(),
                 old.category(),
-                old.searchText()
+                old.searchText(),
+                old.metadataJson()
         );
         listingsById.put(listingId, updated);
         return true;
@@ -225,7 +228,8 @@ public final class FileAuctionRepository implements AuctionRepository {
                 listing.createdAtEpochMillis(),
                 listing.itemBase64(),
                 listing.category(),
-                listing.searchText()
+                listing.searchText(),
+                listing.metadataJson()
         );
     }
 

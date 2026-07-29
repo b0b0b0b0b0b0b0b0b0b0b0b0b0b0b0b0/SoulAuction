@@ -43,12 +43,21 @@ public final class CoinsEngineBridge {
         return api != null;
     }
 
+    public String defaultCurrencyId() {
+        return currencyId;
+    }
+
     public boolean has(UUID playerId, int amount) {
+        return has(playerId, amount, currencyId);
+    }
+
+    public boolean has(UUID playerId, int amount, String currency) {
         if (api == null) {
             return false;
         }
+        String resolved = currency == null || currency.isBlank() ? currencyId : currency;
         try {
-            Object result = getBalanceMethod.invoke(api, playerId, currencyId);
+            Object result = getBalanceMethod.invoke(api, playerId, resolved);
             double balance = result instanceof Number number ? number.doubleValue() : 0D;
             return balance >= amount;
         } catch (Exception exception) {
@@ -57,11 +66,16 @@ public final class CoinsEngineBridge {
     }
 
     public boolean withdraw(UUID playerId, int amount) {
+        return withdraw(playerId, amount, currencyId);
+    }
+
+    public boolean withdraw(UUID playerId, int amount, String currency) {
         if (api == null) {
             return false;
         }
+        String resolved = currency == null || currency.isBlank() ? currencyId : currency;
         try {
-            Object result = removeBalanceMethod.invoke(api, playerId, currencyId, (double) amount);
+            Object result = removeBalanceMethod.invoke(api, playerId, resolved, (double) amount);
             return result instanceof Boolean value && value;
         } catch (Exception exception) {
             return false;
@@ -69,11 +83,16 @@ public final class CoinsEngineBridge {
     }
 
     public boolean deposit(UUID playerId, int amount) {
+        return deposit(playerId, amount, currencyId);
+    }
+
+    public boolean deposit(UUID playerId, int amount, String currency) {
         if (api == null) {
             return false;
         }
+        String resolved = currency == null || currency.isBlank() ? currencyId : currency;
         try {
-            Object result = addBalanceMethod.invoke(api, playerId, currencyId, (double) amount);
+            Object result = addBalanceMethod.invoke(api, playerId, resolved, (double) amount);
             return result instanceof Boolean value && value;
         } catch (Exception exception) {
             return false;
@@ -81,6 +100,11 @@ public final class CoinsEngineBridge {
     }
 
     public String format(int amount) {
-        return amount + " " + currencyId;
+        return format(amount, currencyId);
+    }
+
+    public String format(int amount, String currency) {
+        String resolved = currency == null || currency.isBlank() ? currencyId : currency;
+        return amount + " " + resolved;
     }
 }

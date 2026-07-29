@@ -140,7 +140,13 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             BrowseFilterState current = auctionService.browseFilterState(viewerId);
             auctionService.setBrowseFilterState(
                     viewerId,
-                    new BrowseFilterState(current.searchQuery(), favoritesOnly, current.minPrice(), current.maxPrice())
+                    new BrowseFilterState(
+                            current.searchQuery(),
+                            favoritesOnly,
+                            current.favoriteListingsOnly(),
+                            current.minPrice(),
+                            current.maxPrice()
+                    )
             );
             page = 0;
             refresh();
@@ -181,7 +187,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         int visible = listingSlots.size();
         BrowseFilterState state = auctionService.browseFilterState(viewerId);
         BrowseFilterState filter = new BrowseFilterState(
-                searchQuery, favoritesOnly, state.minPrice(), state.maxPrice()
+                searchQuery, favoritesOnly, state.favoriteListingsOnly(), state.minPrice(), state.maxPrice()
         );
         BrowsePage browsePage = auctionService.browsePage(
                 auctionId, sort, category, page, visible, searchQuery, viewerId, filter
@@ -197,19 +203,22 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             if (itemMeta != null) {
                 java.util.ArrayList<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>(messageService.components(
                         "listing-lore",
-                        Map.of("seller", listing.sellerName(), "price", auctionService.formatPrice(listing.price(), listing.economyType()))
+                        Map.of("seller", listing.sellerName(), "price", auctionService.formatPrice(listing.price(), listing.economyType(), listing.auctionId()))
                 ));
                 lore.addAll(messageService.componentsFromTemplates(
                         auctionService.listingLoreTemplate(auctionId),
                         Map.of(
                                 "seller", listing.sellerName(),
-                                "price", auctionService.formatPrice(listing.price(), listing.economyType()),
+                                "price", auctionService.formatPrice(listing.price(), listing.economyType(), listing.auctionId()),
                                 "id", String.valueOf(listing.listingId()),
                                 "auction", listing.auctionId()
                         )
                 ));
                 if (auctionService.isFavoriteSeller(viewerId, listing.sellerId())) {
                     lore.add(messageService.component("listing-lore-favorite"));
+                }
+                if (auctionService.isFavoriteListing(viewerId, listing.listingId())) {
+                    lore.add(messageService.component("listing-lore-favorite-listing"));
                 }
                 itemMeta.lore(lore);
                 item.setItemMeta(itemMeta);
@@ -291,7 +300,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         int visible = guiSettings.listingSlots.size();
         BrowseFilterState state = auctionService.browseFilterState(viewerId);
         BrowseFilterState filter = new BrowseFilterState(
-                searchQuery, favoritesOnly, state.minPrice(), state.maxPrice()
+                searchQuery, favoritesOnly, state.favoriteListingsOnly(), state.minPrice(), state.maxPrice()
         );
         int total = auctionService.count(auctionId, category, searchQuery, viewerId, filter);
         int maxPage = Math.max(0, (total - 1) / visible);
@@ -341,6 +350,16 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             case PRICE_ASC -> messageService.raw("sort-price-asc");
             case PRICE_DESC -> messageService.raw("sort-price-desc");
             case SELLER_ASC -> messageService.raw("sort-seller-asc");
+            case SELLER_DESC -> messageService.raw("sort-seller-desc");
+            case AMOUNT_ASC -> messageService.raw("sort-amount-asc");
+            case AMOUNT_DESC -> messageService.raw("sort-amount-desc");
+            case MATERIAL_ASC -> messageService.raw("sort-material-asc");
+            case MATERIAL_DESC -> messageService.raw("sort-material-desc");
+            case CATEGORY_ASC -> messageService.raw("sort-category-asc");
+            case LISTING_ID_ASC -> messageService.raw("sort-id-asc");
+            case LISTING_ID_DESC -> messageService.raw("sort-id-desc");
+            case UNIT_PRICE_ASC -> messageService.raw("sort-unit-price-asc");
+            case UNIT_PRICE_DESC -> messageService.raw("sort-unit-price-desc");
         };
     }
 

@@ -9,6 +9,7 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import java.util.function.Supplier;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class MessageService {
@@ -16,6 +17,7 @@ public final class MessageService {
     private final JavaPlugin plugin;
     private final MiniMessage miniMessage;
     private FileConfiguration messages;
+    private Supplier<Boolean> respectDisabledMessages = () -> true;
 
     public MessageService(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -31,11 +33,20 @@ public final class MessageService {
         messages = YamlConfiguration.loadConfiguration(messagesFile);
     }
 
+    public void setRespectDisabledMessages(Supplier<Boolean> respectDisabledMessages) {
+        if (respectDisabledMessages != null) {
+            this.respectDisabledMessages = respectDisabledMessages;
+        }
+    }
+
     public Component component(String key) {
         return component(key, Collections.emptyMap());
     }
 
     public Component component(String key, Map<String, String> placeholders) {
+        if (isDisabled(key)) {
+            return Component.empty();
+        }
         String value = template(key);
         value = value.replace("{prefix}", template("prefix"));
         for (Map.Entry<String, String> entry : placeholders.entrySet()) {
@@ -81,5 +92,12 @@ public final class MessageService {
 
     private String template(String key) {
         return messages.getString(key, key);
+    }
+
+    private boolean isDisabled(String key) {
+        if (!Boolean.TRUE.equals(respectDisabledMessages.get())) {
+            return false;
+        }
+        return messages.getStringList("disabled-messages").stream().anyMatch(entry -> entry.equalsIgnoreCase(key));
     }
 }

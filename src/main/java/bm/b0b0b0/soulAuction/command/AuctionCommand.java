@@ -69,9 +69,17 @@ public final class AuctionCommand implements CommandExecutor {
             return handleLimit(sender, args);
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("purge")) {
+            if (!auctionService.isLoaded()) {
+                sender.sendMessage(messageService.component("error-still-loading"));
+                return true;
+            }
             return adminCommand.purge(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("admin")) {
+            if (!auctionService.isLoaded() && !isAdminReadOnly(args)) {
+                sender.sendMessage(messageService.component("error-still-loading"));
+                return true;
+            }
             return adminCommand.handle(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
         }
         if (!(sender instanceof Player player)) {
@@ -80,6 +88,10 @@ public final class AuctionCommand implements CommandExecutor {
         }
         if (!player.hasPermission(PERMISSION_AH)) {
             player.sendMessage(messageService.component("error-no-permission"));
+            return true;
+        }
+        if (!auctionService.isLoaded()) {
+            player.sendMessage(messageService.component("error-still-loading"));
             return true;
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("sell")) {
@@ -392,5 +404,9 @@ public final class AuctionCommand implements CommandExecutor {
 
     private void sendSellError(Player player, SellFailure failure) {
         player.sendMessage(messageService.component(failure.messageKey()));
+    }
+
+    private static boolean isAdminReadOnly(String[] args) {
+        return args.length > 1 && args[1].equalsIgnoreCase("migrate");
     }
 }

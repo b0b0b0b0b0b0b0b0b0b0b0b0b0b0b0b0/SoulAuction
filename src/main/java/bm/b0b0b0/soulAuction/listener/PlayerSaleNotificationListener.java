@@ -23,9 +23,16 @@ public final class PlayerSaleNotificationListener implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        if (auctionService.claimPendingSalePayments(player)) {
+            player.sendMessage(messageService.component("success-claim-money-auto"));
+        }
         List<PendingSaleNotification> notifications = auctionService.takePendingSaleNotifications(player.getUniqueId());
         for (PendingSaleNotification notification : notifications) {
-            String payout = auctionService.formatPrice(notification.payout(), notification.economyType());
+            String payout = auctionService.formatPrice(
+                    notification.payout(),
+                    notification.economyType(),
+                    notification.auctionId()
+            );
             String tax = String.valueOf(notification.tax());
             player.sendMessage(messageService.component(
                     "offline-sale-notification",

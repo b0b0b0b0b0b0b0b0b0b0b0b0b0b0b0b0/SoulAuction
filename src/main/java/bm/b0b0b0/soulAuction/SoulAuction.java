@@ -26,6 +26,7 @@ import bm.b0b0b0.soulAuction.service.PriceLimitResolver;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
+import java.util.concurrent.TimeUnit;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SoulAuction extends JavaPlugin {
@@ -43,13 +44,16 @@ public final class SoulAuction extends JavaPlugin {
         configurationLoader = new ConfigurationLoader(this);
         pluginConfig = configurationLoader.load();
         messageService = new MessageService(this);
+        messageService.setRespectDisabledMessages(
+                () -> pluginConfig.auctionSettings().features.respectDisabledMessages
+        );
         repository = AuctionRepositoryFactory.create(this, pluginConfig.auctionSettings());
         runtimeStorage = new AuctionRuntimeStorage(getDataFolder().toPath());
         EconomyBridge economyBridge = new EconomyBridge(this);
         PlayerPointsBridge playerPointsBridge = new PlayerPointsBridge(this);
         StorageMode storageMode = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
         boolean useRedisSellGuard = storageMode == StorageMode.MYSQL;
-        redisSellGuard = new RedisSellGuard(useRedisSellGuard, pluginConfig.auctionSettings().storage.redis);
+        redisSellGuard = new RedisSellGuard(this, useRedisSellGuard, pluginConfig.auctionSettings().storage.redis);
         PermissionLimitResolver permissionLimitResolver = new PermissionLimitResolver(getName());
         PermissionPriorityResolver priorityResolver = new PermissionPriorityResolver();
         TaxPolicyResolver taxPolicyResolver = new TaxPolicyResolver();
@@ -78,12 +82,14 @@ public final class SoulAuction extends JavaPlugin {
         auctionService.attachCacheSubscriber();
         getLogger().info("Vault connected: " + auctionService.hasVault());
         getLogger().info("PlayerPoints connected: " + auctionService.hasPlayerPoints());
-        try {
-            auctionService.load().join();
+        getLogger().info("Region scheduling: Paper/Folia via PluginSchedulers (Global/Entity/Region/Async)");
+        auctionService.load().whenComplete((unused, exception) -> PluginSchedulers.runGlobal(this, () -> {
+            if (exception != null) {
+                getLogger().severe("Cannot load auctions: " + exception.getMessage());
+                return;
+            }
             getLogger().info("Auctions loaded");
-        } catch (Exception exception) {
-            getLogger().severe("Cannot load auctions: " + exception.getMessage());
-        }
+        }));
         getServer().getPluginManager().registerEvents(new AuctionGuiListener(this, this::pluginConfig, auctionService, messageService), this);
         getServer().getPluginManager().registerEvents(new PlayerSaleNotificationListener(auctionService, messageService), this);
         getServer().getPluginManager().registerEvents(new AuctionAliasListener(this::pluginConfig), this);
@@ -98,7 +104,7 @@ public final class SoulAuction extends JavaPlugin {
                 auctionService,
                 this::reloadAll
         ));
-        PluginSchedulers.runAsyncTimer(
+        PluginSchedulers.runGlobalTimer(
                 this,
                 100L,
                 auctionService.expireCheckIntervalSeconds() * 20L,
@@ -121,7 +127,7 @@ public final class SoulAuction extends JavaPlugin {
             return;
         }
         try {
-            auctionService.close().join();
+            auctionService.close().get(30L, TimeUnit.SECONDS);
         } catch (Exception exception) {
             getLogger().severe("Cannot save auctions: " + exception.getMessage());
         }
@@ -136,6 +142,13 @@ public final class SoulAuction extends JavaPlugin {
 
     private void reloadAll() {
         pluginConfig = configurationLoader.load();
+        messageService.setRespectDisabledMessages(
+                () -> pluginConfig.auctionSettings().features.respectDisabledMessages
+        );
         messageService.reload();
+    }
+
+    public AuctionService auctionService() {
+        return auctionService;
     }
 }

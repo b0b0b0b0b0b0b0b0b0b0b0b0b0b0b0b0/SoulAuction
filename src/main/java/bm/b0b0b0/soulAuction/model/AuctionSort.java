@@ -5,15 +5,21 @@ public enum AuctionSort {
     OLDEST,
     PRICE_ASC,
     PRICE_DESC,
-    SELLER_ASC;
+    SELLER_ASC,
+    SELLER_DESC,
+    AMOUNT_ASC,
+    AMOUNT_DESC,
+    MATERIAL_ASC,
+    MATERIAL_DESC,
+    CATEGORY_ASC,
+    LISTING_ID_ASC,
+    LISTING_ID_DESC,
+    UNIT_PRICE_ASC,
+    UNIT_PRICE_DESC;
 
     public AuctionSort next() {
-        return switch (this) {
-            case NEWEST -> OLDEST;
-            case OLDEST -> PRICE_ASC;
-            case PRICE_ASC -> PRICE_DESC;
-            case PRICE_DESC -> SELLER_ASC;
-            case SELLER_ASC -> NEWEST;
-        };
+        AuctionSort[] values = values();
+        int next = (ordinal() + 1) % values.length;
+        return values[next];
     }
 }

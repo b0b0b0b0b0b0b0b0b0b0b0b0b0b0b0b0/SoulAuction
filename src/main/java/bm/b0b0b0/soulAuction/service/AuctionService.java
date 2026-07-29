@@ -16,6 +16,7 @@ import bm.b0b0b0.soulAuction.model.result.CancelFailure;
 import bm.b0b0b0.soulAuction.model.result.CancelResult;
 import bm.b0b0b0.soulAuction.model.result.ClaimResult;
 import bm.b0b0b0.soulAuction.model.result.EditPriceResult;
+import bm.b0b0b0.soulAuction.model.result.PurchaseFailure;
 import bm.b0b0b0.soulAuction.model.result.PurchaseQuote;
 import bm.b0b0b0.soulAuction.model.result.PurchaseResult;
 import bm.b0b0b0.soulAuction.model.result.SellFailure;
@@ -24,11 +25,14 @@ import bm.b0b0b0.soulAuction.repository.AuctionRepository;
 import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService;
 import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterState;
 import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowsePage;
+import bm.b0b0b0.soulAuction.service.customitem.CustomItemRuleEngine;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
+import bm.b0b0b0.soulAuction.service.economy.ItemCurrencyService;
+import com.google.gson.Gson;
 import bm.b0b0b0.soulAuction.service.listing.AuctionListingCreator;
 import bm.b0b0b0.soulAuction.service.listing.AuctionPurchaseService;
 import bm.b0b0b0.soulAuction.service.listing.ListingLockRunner;
-import bm.b0b0b0.soulAuction.service.listing.RemovedListing;
+import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import java.util.ArrayList;
@@ -88,7 +92,13 @@ public final class AuctionService {
     ) {
         this.repository = repository;
         this.configSupplier = configSupplier;
-        this.economy = new AuctionEconomyService(vaultBridge, playerPointsBridge, experienceBridge, coinsEngineBridge);
+        this.economy = new AuctionEconomyService(
+                vaultBridge,
+                playerPointsBridge,
+                experienceBridge,
+                coinsEngineBridge,
+                new ItemCurrencyService()
+        );
         this.permissionLimitResolver = permissionLimitResolver;
         this.redisSellGuard = redisSellGuard;
         this.runtimeStorage = runtimeStorage;
@@ -98,7 +108,10 @@ public final class AuctionService {
         this.externalNotifier = externalNotifier;
         this.listingLocks = new ListingLockRunner();
         AuctionSellPolicy sellPolicy = new AuctionSellPolicy(runtimeStorage);
+        CustomItemRuleEngine customItemRuleEngine = new CustomItemRuleEngine();
         java.util.function.Consumer<String> invalidate = this::invalidateListingCache;
+        java.util.function.BiConsumer<String, AuctionListing> listingSync = this::publishListingNetworkChange;
+        ListingSaleClaimer listingSaleClaimer = new ListingSaleClaimer(repository, redisSellGuard);
         this.listingCreator = new AuctionListingCreator(
                 repository,
                 configSupplier,
@@ -109,6 +122,7 @@ public final class AuctionService {
                 runtimeStorage,
                 sellPolicy,
                 externalNotifier,
+                customItemRuleEngine,
                 invalidate,
                 limitResolver
         );
@@ -119,12 +133,19 @@ public final class AuctionService {
                 taxPolicyResolver,
                 runtimeStorage,
                 externalNotifier,
-                redisSellGuard,
                 listingLocks,
+                listingSaleClaimer,
                 invalidate,
+                listingSync,
                 messageService
         );
-        this.browseService = new AuctionBrowseService(repository, listingCache, runtimeStorage, priorityResolver);
+        this.browseService = new AuctionBrowseService(
+                repository,
+                listingCache,
+                runtimeStorage,
+                priorityResolver,
+                () -> configSupplier.get().auctionSettings()
+        );
         this.browsePreferences = new ConcurrentHashMap<>();
         this.browseFilters = new ConcurrentHashMap<>();
         this.pendingChatSearch = new ConcurrentHashMap<>();
@@ -165,19 +186,81 @@ public final class AuctionService {
         return runtimeStorage.isFavoriteSeller(viewerId, sellerId);
     }
 
+    public boolean toggleFavoriteListing(UUID viewerId, long listingId) {
+        return runtimeStorage.toggleFavoriteListing(viewerId, listingId);
+    }
+
+    public boolean isFavoriteListing(UUID viewerId, long listingId) {
+        return runtimeStorage.isFavoriteListing(viewerId, listingId);
+    }
+
     public void invalidateListingCache(String auctionId) {
         listingCache.invalidate(auctionId);
         redisSellGuard.publishCacheInvalidate(auctionId);
     }
 
+    public void invalidateListingCache(String auctionId, AuctionListing listing, boolean removed) {
+        invalidateListingCache(auctionId);
+        if (listing != null) {
+            publishListingNetworkChange(removed ? "REMOVE" : "UPSERT", listing);
+        }
+    }
+
+    private void publishListingNetworkChange(String action, AuctionListing listing) {
+        AuctionSettings settings = settings();
+        if (settings.network == null || !settings.network.redisFullListingSync) {
+            return;
+        }
+        if (listing == null) {
+            return;
+        }
+        redisSellGuard.publishListingChange(action, listing, new Gson());
+    }
+
     public void attachCacheSubscriber() {
-        redisSellGuard.startCacheSubscriber(payload -> {
-            if (payload == null || payload.equals("*")) {
-                listingCache.invalidateAll();
+        Gson gson = new Gson();
+        redisSellGuard.startCacheSubscriber(message -> {
+            if (message == null || message.isBlank()) {
                 return;
             }
-            listingCache.invalidate(payload);
+            if (message.startsWith("L+")) {
+                AuctionListing listing = gson.fromJson(message.substring(2), AuctionListing.class);
+                if (listing != null) {
+                    listingCache.applyNetworkListing(listing);
+                }
+                return;
+            }
+            if (message.startsWith("L-")) {
+                int separator = message.indexOf('|', 2);
+                if (separator > 2) {
+                    long listingId = Long.parseLong(message.substring(2, separator));
+                    String auctionId = message.substring(separator + 1);
+                    listingCache.removeNetworkListing(listingId, auctionId);
+                }
+                return;
+            }
+            if (payloadEqualsStar(message)) {
+                listingCache.invalidateAll();
+                listingCache.clearNetworkOverlay();
+                return;
+            }
+            listingCache.invalidate(message);
         });
+    }
+
+    private static boolean payloadEqualsStar(String message) {
+        return "*".equals(message);
+    }
+
+    public String listingCacheStats() {
+        return "buckets=" + listingCache.cachedAuctionBuckets()
+                + ", listings=" + listingCache.cachedListingCount()
+                + ", networkOverlay=" + listingCache.networkOverlaySize();
+    }
+
+    public void rebuildListingCache() {
+        listingCache.invalidateAll();
+        listingCache.clearNetworkOverlay();
     }
 
     public void setBrowsePreferences(UUID playerId, BrowsePreferences preferences) {
@@ -192,8 +275,21 @@ public final class AuctionService {
         return Optional.ofNullable(browsePreferences.remove(playerId));
     }
 
+    private volatile boolean loaded;
+
+    public boolean isLoaded() {
+        return loaded;
+    }
+
     public CompletableFuture<Void> load() {
-        return repository.load().thenCompose(unused -> runtimeStorage.load());
+        loaded = false;
+        return repository.load()
+                .thenCompose(unused -> runtimeStorage.load())
+                .whenComplete((unused, throwable) -> {
+                    if (throwable == null) {
+                        loaded = true;
+                    }
+                });
     }
 
     public CompletableFuture<Void> flush() {
@@ -205,6 +301,9 @@ public final class AuctionService {
     }
 
     public SellResult createListing(Player seller, String auctionId, int price) {
+        if (!loaded) {
+            return SellResult.failure(SellFailure.STORAGE_NOT_READY);
+        }
         ItemStack itemInHand = seller.getInventory().getItemInMainHand();
         if (itemInHand.isEmpty()) {
             return SellResult.failure(SellFailure.EMPTY_HAND);
@@ -215,6 +314,9 @@ public final class AuctionService {
             SellResult result = listingCreator.create(seller, auctionId, price, soldItem, definitionLookup());
             if (result.success()) {
                 seller.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+                if (result.success() && result.listing() != null) {
+                    invalidateListingCache(result.listing().auctionId(), result.listing(), false);
+                }
             }
             return result;
         }
@@ -225,6 +327,9 @@ public final class AuctionService {
     }
 
     public SellResult createListingFromItem(Player seller, String auctionId, int price, ItemStack item, int amount) {
+        if (!loaded) {
+            return SellResult.failure(SellFailure.STORAGE_NOT_READY);
+        }
         if (item == null || item.isEmpty()) {
             return SellResult.failure(SellFailure.EMPTY_HAND);
         }
@@ -233,11 +338,18 @@ public final class AuctionService {
         soldItem.setAmount(sellAmount);
         Object sellLock = playerSellLocks.computeIfAbsent(seller.getUniqueId(), ignored -> new Object());
         synchronized (sellLock) {
-            return listingCreator.create(seller, auctionId, price, soldItem, definitionLookup());
+            SellResult result = listingCreator.create(seller, auctionId, price, soldItem, definitionLookup());
+            if (result.success() && result.listing() != null) {
+                invalidateListingCache(result.listing().auctionId(), result.listing(), false);
+            }
+            return result;
         }
     }
 
     public PurchaseResult purchase(Player buyer, long listingId) {
+        if (!loaded) {
+            return PurchaseResult.failure(PurchaseFailure.STORAGE_NOT_READY);
+        }
         return purchaseService.purchase(buyer, listingId, purchaseDefinitionLookup());
     }
 
@@ -251,8 +363,41 @@ public final class AuctionService {
             return null;
         }
         Player sellerOnline = Bukkit.getPlayer(listing.sellerId());
-        TaxPolicyResolver.TaxAmounts taxes = taxPolicyResolver.resolve(buyer, sellerOnline, definition, listing.price());
+        ItemStack item = ItemStackCodec.decode(listing.itemBase64());
+        TaxPolicyResolver.TaxAmounts taxes = taxPolicyResolver.resolve(
+                buyer,
+                sellerOnline,
+                definition,
+                settings(),
+                listing.price(),
+                item
+        );
         return new PurchaseQuote(listing, taxes.buyerCharge(listing.price()), taxes.saleTax(), taxes.buyTax());
+    }
+
+    public boolean claimPendingSalePayments(Player player) {
+        List<PendingSaleNotification> pending = runtimeStorage.takePendingSaleNotifications(player.getUniqueId());
+        if (pending.isEmpty()) {
+            return false;
+        }
+        boolean anyPaid = false;
+        List<PendingSaleNotification> failed = new ArrayList<>();
+        for (PendingSaleNotification notification : pending) {
+            AuctionDefinitionSettings definition = findAuction(notification.auctionId(), configSupplier.get());
+            if (definition == null) {
+                failed.add(notification);
+                continue;
+            }
+            if (economy.deposit(player.getUniqueId(), notification.payout(), notification.economyType(), definition)) {
+                anyPaid = true;
+            } else {
+                failed.add(notification);
+            }
+        }
+        for (PendingSaleNotification notification : failed) {
+            runtimeStorage.addPendingSaleNotification(notification);
+        }
+        return anyPaid;
     }
 
     public int expireListings() {
@@ -281,33 +426,33 @@ public final class AuctionService {
     }
 
     private boolean expireOne(long listingId) {
-        try (RemovedListing hold = RemovedListing.take(repository, listingId)) {
-            AuctionListing removed = hold.listing().orElse(null);
-            if (removed == null) {
-                return false;
-            }
-            runtimeStorage.addClaim(
-                    removed.sellerId(),
-                    removed.auctionId(),
-                    removed.listingId(),
-                    removed.itemBase64(),
-                    "EXPIRED"
-            );
-            hold.commit();
-            runtimeStorage.addHistory(
-                    "EXPIRED",
-                    removed.auctionId(),
-                    removed.listingId(),
-                    removed.sellerId(),
-                    null,
-                    removed.price(),
-                    0,
-                    removed.economyType(),
-                    0
-            );
-            externalNotifier.expired(removed);
-            return true;
+        Optional<AuctionListing> withdrawn = withdrawListing(listingId, "EXPIRED");
+        AuctionListing removed = withdrawn.orElse(null);
+        if (removed == null) {
+            return false;
         }
+        runtimeStorage.addClaim(
+                removed.sellerId(),
+                removed.auctionId(),
+                removed.listingId(),
+                removed.itemBase64(),
+                "EXPIRED"
+        );
+        repository.flush();
+        invalidateListingCache(removed.auctionId(), removed, true);
+        runtimeStorage.addHistory(
+                "EXPIRED",
+                removed.auctionId(),
+                removed.listingId(),
+                removed.sellerId(),
+                null,
+                removed.price(),
+                0,
+                removed.economyType(),
+                0
+        );
+        externalNotifier.expired(removed);
+        return true;
     }
 
     public List<AuctionListing> myListings(UUID sellerId, String auctionId) {
@@ -330,45 +475,29 @@ public final class AuctionService {
     }
 
     private CancelResult cancelListingLocked(Player seller, long listingId, boolean canCancelAny) {
-        try (RemovedListing hold = RemovedListing.take(repository, listingId)) {
-            AuctionListing listing = hold.listing().orElse(null);
-            if (listing == null) {
-                return CancelResult.failure(CancelFailure.NOT_FOUND);
-            }
-            if (!canCancelAny && !listing.sellerId().equals(seller.getUniqueId())) {
-                return CancelResult.failure(CancelFailure.NOT_OWNER);
-            }
-            ItemStack item = ItemStackCodec.decode(listing.itemBase64());
-            Map<Integer, ItemStack> leftovers = seller.getInventory().addItem(item);
-            if (!leftovers.isEmpty()) {
-                runtimeStorage.addClaim(
-                        seller.getUniqueId(),
-                        listing.auctionId(),
-                        listing.listingId(),
-                        listing.itemBase64(),
-                        "CANCELLED"
-                );
-                hold.commit();
-                repository.flush();
-                invalidateListingCache(listing.auctionId());
-                runtimeStorage.addHistory(
-                        "CANCELLED_TO_CLAIM",
-                        listing.auctionId(),
-                        listing.listingId(),
-                        listing.sellerId(),
-                        null,
-                        listing.price(),
-                        0,
-                        listing.economyType(),
-                        0
-                );
-                return CancelResult.success(true);
-            }
-            hold.commit();
+        Optional<AuctionListing> withdrawn = withdrawListing(listingId, "CANCELLED");
+        AuctionListing listing = withdrawn.orElse(null);
+        if (listing == null) {
+            return CancelResult.failure(CancelFailure.NOT_FOUND);
+        }
+        if (!canCancelAny && !listing.sellerId().equals(seller.getUniqueId())) {
+            rollbackWithdraw(listing, "CANCELLED");
+            return CancelResult.failure(CancelFailure.NOT_OWNER);
+        }
+        ItemStack item = ItemStackCodec.decode(listing.itemBase64());
+        Map<Integer, ItemStack> leftovers = seller.getInventory().addItem(item);
+        if (!leftovers.isEmpty()) {
+            runtimeStorage.addClaim(
+                    seller.getUniqueId(),
+                    listing.auctionId(),
+                    listing.listingId(),
+                    listing.itemBase64(),
+                    "CANCELLED"
+            );
             repository.flush();
-            invalidateListingCache(listing.auctionId());
+            invalidateListingCache(listing.auctionId(), listing, true);
             runtimeStorage.addHistory(
-                    "CANCELLED",
+                    "CANCELLED_TO_CLAIM",
                     listing.auctionId(),
                     listing.listingId(),
                     listing.sellerId(),
@@ -378,8 +507,38 @@ public final class AuctionService {
                     listing.economyType(),
                     0
             );
-            return CancelResult.success(false);
+            return CancelResult.success(true);
         }
+        repository.flush();
+        invalidateListingCache(listing.auctionId(), listing, true);
+        runtimeStorage.addHistory(
+                "CANCELLED",
+                listing.auctionId(),
+                listing.listingId(),
+                listing.sellerId(),
+                null,
+                listing.price(),
+                0,
+                listing.economyType(),
+                0
+        );
+        return CancelResult.success(false);
+    }
+
+    private Optional<AuctionListing> withdrawListing(long listingId, String sqlStatus) {
+        if (repository instanceof bm.b0b0b0.soulAuction.repository.SqlAuctionRepository sqlRepository) {
+            return sqlRepository.claimStatusBlocking(listingId, sqlStatus);
+        }
+        AuctionListing removed = repository.remove(listingId);
+        return removed == null ? Optional.empty() : Optional.of(removed);
+    }
+
+    private void rollbackWithdraw(AuctionListing listing, String sqlStatus) {
+        if (repository instanceof bm.b0b0b0.soulAuction.repository.SqlAuctionRepository sqlRepository) {
+            sqlRepository.restoreFromStatusBlocking(listing, sqlStatus);
+            return;
+        }
+        repository.putBack(listing);
     }
 
     public ClaimResult claim(Player player, boolean claimAll) {
@@ -493,7 +652,7 @@ public final class AuctionService {
         if (definition == null) {
             return EditPriceResult.LISTING_UNAVAILABLE;
         }
-        PriceLimitResolver.PriceBounds bounds = priceLimitResolver.resolve(seller, definition, settings().limits);
+        PriceLimitResolver.PriceBounds bounds = priceLimitResolver.resolve(seller, definition, settings(), ItemStackCodec.decode(listing.itemBase64()));
         if (!bounds.isValid(newPrice)) {
             return EditPriceResult.INVALID_PRICE;
         }
@@ -501,7 +660,12 @@ public final class AuctionService {
             return EditPriceResult.LISTING_UNAVAILABLE;
         }
         repository.flush();
-        invalidateListingCache(listing.auctionId());
+        AuctionListing updated = repository.findById(listingId);
+        if (updated != null) {
+            invalidateListingCache(updated.auctionId(), updated, false);
+        } else {
+            invalidateListingCache(listing.auctionId());
+        }
         runtimeStorage.addHistory(
                 "PRICE_EDIT",
                 listing.auctionId(),
@@ -546,7 +710,13 @@ public final class AuctionService {
     }
 
     public String formatPrice(int price, AuctionEconomyType type) {
-        return economy.format(price, type);
+        AuctionDefinitionSettings definition = findAuction(defaultAuctionId(), configSupplier.get());
+        return economy.format(price, type, definition);
+    }
+
+    public String formatPrice(int price, AuctionEconomyType type, String auctionId) {
+        AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
+        return economy.format(price, type, definition);
     }
 
     public List<String> listingLoreTemplate(String auctionId) {
@@ -592,7 +762,7 @@ public final class AuctionService {
     }
 
     public boolean hasCoinsEngine() {
-        return economy.isAvailable(AuctionEconomyType.COINS_ENGINE);
+        return economy.isAvailable(AuctionEconomyType.COINS_ENGINE, null);
     }
 
     public AuctionEconomyType economyType(String auctionId) {

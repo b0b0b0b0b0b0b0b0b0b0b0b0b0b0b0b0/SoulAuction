@@ -1,11 +1,12 @@
 # SoulAuction
 
-Современный аукцион-плагин для Paper 1.21+ с GUI, категориями, сортировкой, мульти-аукционами и раздельной экономикой.
+Современный аукцион-плагин для **Paper 1.21+ и Folia** с region-aware потоками, GUI, категориями, сортировкой, мульти-аукционами и раздельной экономикой.
 
 ## Возможности
 
+- **Folia / region threading:** без `BukkitScheduler`; sync через `PluginSchedulers`. **Hot path (клик GUI)** — только in-memory lock + `ListingLockRunner`, без сетевого I/O на main/region. Redis pub/lock — **async**, best-effort для сети.
 - Несколько независимых аукционов с разными ID.
-- Отдельная валюта на каждый аукцион: `VAULT`, `PLAYER_POINTS`, `EXPERIENCE`, `COINS_ENGINE`.
+- Отдельная валюта на каждый аукцион: `VAULT`, `PLAYER_POINTS`, `EXPERIENCE`, `COINS_ENGINE`, `ITEM`.
 - Выбор хранилища: `JSON`, `YAML`, `SQLITE`, `MYSQL`.
 - SQL-режимы работают через асинхронный пул соединений.
 - Redis lock перед продажей (для `MYSQL`) для дополнительной anti-dupe защиты.

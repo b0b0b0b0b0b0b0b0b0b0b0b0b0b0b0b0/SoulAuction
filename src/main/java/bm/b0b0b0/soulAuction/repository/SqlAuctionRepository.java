@@ -5,6 +5,7 @@ import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.StorageMode;
+import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.nio.file.Path;
@@ -14,7 +15,9 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
@@ -81,7 +84,8 @@ public final class SqlAuctionRepository implements AuctionRepository {
             AuctionEconomyType economyType,
             String itemBase64,
             AuctionCategory category,
-            String searchText
+            String searchText,
+            String metadataJson
     ) {
         long listingId = nextId.getAndIncrement();
         AuctionListing listing = new AuctionListing(
@@ -94,7 +98,8 @@ public final class SqlAuctionRepository implements AuctionRepository {
                 System.currentTimeMillis(),
                 itemBase64,
                 category,
-                searchText
+                searchText,
+                metadataJson
         );
         listingsById.put(listingId, listing);
         CompletableFuture.runAsync(() -> insertListing(listing), ioExecutor);
@@ -108,6 +113,141 @@ public final class SqlAuctionRepository implements AuctionRepository {
             CompletableFuture.runAsync(() -> markSold(listingId), ioExecutor);
         }
         return removed;
+    }
+
+    public Optional<AuctionListing> claimForSaleBlocking(long listingId, RedisSellGuard redisSellGuard) {
+        try {
+            return CompletableFuture.supplyAsync(
+                    () -> claimForSaleSync(listingId, redisSellGuard),
+                    ioExecutor
+            ).get(8L, TimeUnit.SECONDS);
+        } catch (Exception exception) {
+            return Optional.empty();
+        }
+    }
+
+    public void restoreActiveBlocking(AuctionListing listing) {
+        if (listing == null) {
+            return;
+        }
+        try {
+            CompletableFuture.runAsync(() -> restoreActiveSync(listing), ioExecutor).get(8L, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+        }
+    }
+
+    public Optional<AuctionListing> claimStatusBlocking(long listingId, String newStatus) {
+        try {
+            return CompletableFuture.supplyAsync(
+                    () -> claimStatusSync(listingId, newStatus),
+                    ioExecutor
+            ).get(8L, TimeUnit.SECONDS);
+        } catch (Exception exception) {
+            return Optional.empty();
+        }
+    }
+
+    public void restoreFromStatusBlocking(AuctionListing listing, String previousStatus) {
+        if (listing == null || previousStatus == null || previousStatus.isBlank()) {
+            return;
+        }
+        try {
+            CompletableFuture.runAsync(() -> restoreFromStatusSync(listing, previousStatus), ioExecutor)
+                    .get(8L, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private Optional<AuctionListing> claimStatusSync(long listingId, String newStatus) {
+        AuctionListing snapshot = listingsById.get(listingId);
+        if (snapshot == null) {
+            return Optional.empty();
+        }
+        if (!atomicTransition(listingId, "ACTIVE", newStatus)) {
+            listingsById.remove(listingId);
+            return Optional.empty();
+        }
+        listingsById.remove(listingId);
+        return Optional.of(snapshot);
+    }
+
+    private void restoreFromStatusSync(AuctionListing listing, String previousStatus) {
+        String sql = "UPDATE soulauction_listings SET status='ACTIVE' WHERE listing_id=? AND status=?";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, listing.listingId());
+            statement.setString(2, previousStatus);
+            if (statement.executeUpdate() == 1) {
+                listingsById.put(listing.listingId(), listing);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private boolean atomicTransition(long listingId, String fromStatus, String toStatus) {
+        String sql = "UPDATE soulauction_listings SET status=? WHERE listing_id=? AND status=?";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, toStatus);
+            statement.setLong(2, listingId);
+            statement.setString(3, fromStatus);
+            return statement.executeUpdate() == 1;
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
+    private Optional<AuctionListing> claimForSaleSync(long listingId, RedisSellGuard redisSellGuard) {
+        if (redisSellGuard != null && !redisSellGuard.tryAcquireListingLockLocal(listingId)) {
+            return Optional.empty();
+        }
+        if (redisSellGuard != null && redisSellGuard.distributedLocksRequired()) {
+            if (!redisSellGuard.tryAcquireListingLockDistributed(listingId)) {
+                if (redisSellGuard != null) {
+                    redisSellGuard.releaseListingLock(listingId);
+                }
+                return Optional.empty();
+            }
+        }
+        AuctionListing snapshot = listingsById.get(listingId);
+        if (snapshot == null) {
+            if (redisSellGuard != null) {
+                redisSellGuard.releaseListingLock(listingId);
+            }
+            return Optional.empty();
+        }
+        if (!atomicMarkSoldIfActive(listingId)) {
+            listingsById.remove(listingId);
+            if (redisSellGuard != null) {
+                redisSellGuard.releaseListingLock(listingId);
+            }
+            return Optional.empty();
+        }
+        listingsById.remove(listingId);
+        return Optional.of(snapshot);
+    }
+
+    private void restoreActiveSync(AuctionListing listing) {
+        String sql = "UPDATE soulauction_listings SET status='ACTIVE' WHERE listing_id=? AND status='SOLD'";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, listing.listingId());
+            if (statement.executeUpdate() == 1) {
+                listingsById.put(listing.listingId(), listing);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private boolean atomicMarkSoldIfActive(long listingId) {
+        String sql = "UPDATE soulauction_listings SET status='SOLD' WHERE listing_id=? AND status='ACTIVE'";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, listingId);
+            return statement.executeUpdate() == 1;
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     @Override
@@ -137,7 +277,8 @@ public final class SqlAuctionRepository implements AuctionRepository {
                 old.createdAtEpochMillis(),
                 old.itemBase64(),
                 old.category(),
-                old.searchText()
+                old.searchText(),
+                old.metadataJson()
         );
         listingsById.put(listingId, updated);
         CompletableFuture.runAsync(() -> updatePriceSql(listingId, newPrice), ioExecutor);
@@ -230,12 +371,28 @@ public final class SqlAuctionRepository implements AuctionRepository {
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.execute();
         }
+        ensureColumn("search_text", "TEXT");
+        ensureColumn("metadata_json", "TEXT");
+    }
+
+    private void ensureColumn(String column, String sqlType) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "ALTER TABLE soulauction_listings ADD COLUMN " + column + " " + sqlType
+             )) {
+            statement.executeUpdate();
+        } catch (Exception ignored) {
+            // column likely exists
+        }
     }
 
     private void loadActiveListings() throws Exception {
         listingsById.clear();
         long maxId = 0L;
-        String sql = "SELECT listing_id, auction_id, seller_id, seller_name, price, economy_type, created_at, item_base64, category FROM soulauction_listings WHERE status='ACTIVE'";
+        String sql = """
+                SELECT listing_id, auction_id, seller_id, seller_name, price, economy_type, created_at, item_base64, category, search_text, metadata_json
+                FROM soulauction_listings WHERE status='ACTIVE'
+                """;
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet resultSet = statement.executeQuery()) {
@@ -249,7 +406,9 @@ public final class SqlAuctionRepository implements AuctionRepository {
                         AuctionEconomyType.fromString(resultSet.getString("economy_type")),
                         resultSet.getLong("created_at"),
                         resultSet.getString("item_base64"),
-                        AuctionCategory.valueOf(resultSet.getString("category"))
+                        AuctionCategory.valueOf(resultSet.getString("category")),
+                        resultSet.getString("search_text"),
+                        resultSet.getString("metadata_json")
                 );
                 listingsById.put(listing.listingId(), listing);
                 if (listing.listingId() > maxId) {
@@ -263,8 +422,8 @@ public final class SqlAuctionRepository implements AuctionRepository {
     private void insertListing(AuctionListing listing) {
         String sql = """
                 INSERT INTO soulauction_listings
-                (listing_id, auction_id, seller_id, seller_name, price, economy_type, created_at, item_base64, category, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+                (listing_id, auction_id, seller_id, seller_name, price, economy_type, created_at, item_base64, category, status, search_text, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
                 """;
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -277,19 +436,15 @@ public final class SqlAuctionRepository implements AuctionRepository {
             statement.setLong(7, listing.createdAtEpochMillis());
             statement.setString(8, listing.itemBase64());
             statement.setString(9, listing.category().name());
+            statement.setString(10, listing.searchText());
+            statement.setString(11, listing.metadataJson());
             statement.executeUpdate();
         } catch (Exception ignored) {
         }
     }
 
     private void markSold(long listingId) {
-        String sql = "UPDATE soulauction_listings SET status='SOLD' WHERE listing_id=?";
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setLong(1, listingId);
-            statement.executeUpdate();
-        } catch (Exception ignored) {
-        }
+        atomicMarkSoldIfActive(listingId);
     }
 
     private void upsertActive(AuctionListing listing) {

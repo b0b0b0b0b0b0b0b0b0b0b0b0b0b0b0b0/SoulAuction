@@ -17,6 +17,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -31,6 +32,7 @@ public final class AuctionRuntimeStorage {
     private final Path limitsFile;
     private final Path notificationsFile;
     private final Path favoritesFile;
+    private final Path favoriteListingsFile;
     private final Path cooldownsFile;
     private final Path runtimeBlacklistFile;
     private final Path auditFile;
@@ -41,6 +43,7 @@ public final class AuctionRuntimeStorage {
     private final List<LimitOverrideEntry> limitOverrides;
     private final List<PendingSaleNotification> notifications;
     private final Map<UUID, List<UUID>> favoriteSellersByViewer;
+    private final Map<UUID, List<Long>> favoriteListingsByViewer;
     private final Map<UUID, Long> lastSellEpochMillis;
     private final List<UUID> runtimeBlacklist;
     private final List<AuditLogEntry> auditLog;
@@ -56,6 +59,7 @@ public final class AuctionRuntimeStorage {
         this.limitsFile = dataDirectory.resolve("limits.json");
         this.notificationsFile = dataDirectory.resolve("notifications.json");
         this.favoritesFile = dataDirectory.resolve("favorites.json");
+        this.favoriteListingsFile = dataDirectory.resolve("favorite-listings.json");
         this.cooldownsFile = dataDirectory.resolve("sell-cooldowns.json");
         this.runtimeBlacklistFile = dataDirectory.resolve("runtime-blacklist.json");
         this.auditFile = dataDirectory.resolve("audit.json");
@@ -66,6 +70,7 @@ public final class AuctionRuntimeStorage {
         this.limitOverrides = new ArrayList<>();
         this.notifications = new ArrayList<>();
         this.favoriteSellersByViewer = new HashMap<>();
+        this.favoriteListingsByViewer = new HashMap<>();
         this.lastSellEpochMillis = new HashMap<>();
         this.runtimeBlacklist = new ArrayList<>();
         this.auditLog = new ArrayList<>();
@@ -84,6 +89,7 @@ public final class AuctionRuntimeStorage {
                 loadLimitsSync();
                 loadNotificationsSync();
                 loadFavoritesSync();
+                loadFavoriteListingsSync();
                 loadCooldownsSync();
                 loadRuntimeBlacklistSync();
                 loadAuditSync();
@@ -298,6 +304,56 @@ public final class AuctionRuntimeStorage {
                 return List.of();
             }
             return List.copyOf(favorites);
+        }
+    }
+
+    public boolean toggleFavoriteListing(UUID viewerId, long listingId) {
+        synchronized (favoriteListingsByViewer) {
+            List<Long> favorites = favoriteListingsByViewer.computeIfAbsent(viewerId, ignored -> new ArrayList<>());
+            if (favorites.contains(listingId)) {
+                favorites.remove(listingId);
+                scheduleDebouncedFlush();
+                return false;
+            }
+            favorites.add(listingId);
+            scheduleDebouncedFlush();
+            return true;
+        }
+    }
+
+    public boolean isFavoriteListing(UUID viewerId, long listingId) {
+        synchronized (favoriteListingsByViewer) {
+            List<Long> favorites = favoriteListingsByViewer.get(viewerId);
+            return favorites != null && favorites.contains(listingId);
+        }
+    }
+
+    public Set<Long> favoriteListings(UUID viewerId) {
+        synchronized (favoriteListingsByViewer) {
+            List<Long> favorites = favoriteListingsByViewer.get(viewerId);
+            if (favorites == null || favorites.isEmpty()) {
+                return Set.of();
+            }
+            return Set.copyOf(favorites);
+        }
+    }
+
+    private void loadFavoriteListingsSync() throws Exception {
+        synchronized (favoriteListingsByViewer) {
+            favoriteListingsByViewer.clear();
+            if (!Files.exists(favoriteListingsFile)) {
+                return;
+            }
+            try (Reader reader = Files.newBufferedReader(favoriteListingsFile)) {
+                FavoriteListingsPayload payload = gson.fromJson(reader, FavoriteListingsPayload.class);
+                if (payload != null && payload.entries != null) {
+                    for (FavoriteListingEntry entry : payload.entries) {
+                        if (entry.viewerId != null && entry.listingIds != null) {
+                            favoriteListingsByViewer.put(entry.viewerId, new ArrayList<>(entry.listingIds));
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -649,6 +705,16 @@ public final class AuctionRuntimeStorage {
                 gson.toJson(favoritesPayload, writer);
             }
         }
+        synchronized (favoriteListingsByViewer) {
+            FavoriteListingsPayload favoriteListingsPayload = new FavoriteListingsPayload();
+            favoriteListingsPayload.entries = new ArrayList<>();
+            for (Map.Entry<UUID, List<Long>> entry : favoriteListingsByViewer.entrySet()) {
+                favoriteListingsPayload.entries.add(new FavoriteListingEntry(entry.getKey(), new ArrayList<>(entry.getValue())));
+            }
+            try (Writer writer = Files.newBufferedWriter(favoriteListingsFile)) {
+                gson.toJson(favoriteListingsPayload, writer);
+            }
+        }
         synchronized (lastSellEpochMillis) {
             CooldownsPayload cooldownsPayload = new CooldownsPayload();
             cooldownsPayload.entries = new ArrayList<>();
@@ -706,6 +772,20 @@ public final class AuctionRuntimeStorage {
 
     private static final class FavoritesPayload {
         private List<FavoriteEntry> entries;
+    }
+
+    private static final class FavoriteListingEntry {
+        private UUID viewerId;
+        private List<Long> listingIds;
+
+        private FavoriteListingEntry(UUID viewerId, List<Long> listingIds) {
+            this.viewerId = viewerId;
+            this.listingIds = listingIds;
+        }
+    }
+
+    private static final class FavoriteListingsPayload {
+        private List<FavoriteListingEntry> entries;
     }
 
     private static final class CooldownEntry {

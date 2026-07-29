@@ -51,6 +51,12 @@ public final class AuctionGuiListener implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
+        if (!auctionService.isLoaded()) {
+            event.setCancelled(true);
+            player.sendMessage(messageService.component("error-still-loading"));
+            player.closeInventory();
+            return;
+        }
         if (event.getClickedInventory() == null) {
             return;
         }
@@ -166,6 +172,15 @@ public final class AuctionGuiListener implements Listener {
                 player.sendMessage(messageService.component(
                         added ? "favorite-added" : "favorite-removed",
                         Map.of("seller", listing.sellerName())
+                ));
+                menu.refresh();
+                return;
+            }
+            if (event.isShiftClick() && event.isLeftClick()) {
+                boolean added = auctionService.toggleFavoriteListing(player.getUniqueId(), listing.listingId());
+                player.sendMessage(messageService.component(
+                        added ? "favorite-listing-added" : "favorite-listing-removed",
+                        Map.of("id", String.valueOf(listing.listingId()))
                 ));
                 menu.refresh();
                 return;

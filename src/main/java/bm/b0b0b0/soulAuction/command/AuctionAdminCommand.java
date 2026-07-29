@@ -50,6 +50,9 @@ public final class AuctionAdminCommand {
             case "blacklist" -> blacklist(sender, subArgs);
             case "recover" -> recover(sender, subArgs);
             case "audit" -> audit(sender, subArgs);
+            case "cache" -> cache(sender, subArgs);
+            case "sellfor" -> sellFor(sender, subArgs);
+            case "migrate" -> migrate(sender, subArgs);
             default -> {
                 sender.sendMessage(messageService.component("error-admin-usage"));
                 yield true;
@@ -193,6 +196,71 @@ public final class AuctionAdminCommand {
         }
         auctionService.audit(admin.getUniqueId(), admin.getName(), "ADMIN_RECOVER", "claimId=" + claimId);
         admin.sendMessage(messageService.component("success-admin-recover", Map.of("id", String.valueOf(claimId))));
+        return true;
+    }
+
+    private boolean cache(CommandSender sender, String[] args) {
+        if (args.length < 1) {
+            sender.sendMessage(messageService.component("error-admin-cache-usage"));
+            return true;
+        }
+        String action = args[0].toLowerCase();
+        return switch (action) {
+            case "stats" -> {
+                sender.sendMessage(messageService.component("admin-cache-stats", Map.of("stats", auctionService.listingCacheStats())));
+                yield true;
+            }
+            case "rebuild", "invalidate" -> {
+                auctionService.rebuildListingCache();
+                sender.sendMessage(messageService.component("admin-cache-rebuilt"));
+                yield true;
+            }
+            default -> {
+                sender.sendMessage(messageService.component("error-admin-cache-usage"));
+                yield true;
+            }
+        };
+    }
+
+    private boolean sellFor(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player admin)) {
+            sender.sendMessage(messageService.component("error-only-player"));
+            return true;
+        }
+        if (args.length < 3) {
+            sender.sendMessage(messageService.component("error-admin-sellfor-usage"));
+            return true;
+        }
+        OfflinePlayer target = Bukkit.getOfflinePlayer(args[0]);
+        Player online = target.getPlayer();
+        if (online == null) {
+            sender.sendMessage(messageService.component("error-player-offline"));
+            return true;
+        }
+        String auctionId = args[1];
+        int price;
+        try {
+            price = Integer.parseInt(args[2]);
+        } catch (NumberFormatException exception) {
+            sender.sendMessage(messageService.component("error-admin-sellfor-usage"));
+            return true;
+        }
+        var result = auctionService.createListingFromItem(online, auctionId, price, admin.getInventory().getItemInMainHand());
+        if (!result.success()) {
+            admin.sendMessage(messageService.component(result.failure().messageKey()));
+            return true;
+        }
+        admin.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
+        admin.sendMessage(messageService.component(
+                "success-admin-sellfor",
+                Map.of("player", online.getName(), "id", String.valueOf(result.listing().listingId()))
+        ));
+        auctionService.audit(admin.getUniqueId(), admin.getName(), "ADMIN_SELLFOR", "target=" + online.getUniqueId());
+        return true;
+    }
+
+    private boolean migrate(CommandSender sender, String[] args) {
+        sender.sendMessage(messageService.component("admin-migrate-stub", Map.of("source", args.length > 0 ? args[0] : "unknown")));
         return true;
     }
 

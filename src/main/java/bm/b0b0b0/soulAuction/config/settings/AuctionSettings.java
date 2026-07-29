@@ -41,6 +41,22 @@ public final class AuctionSettings extends YamlSerializable {
     @Comment({@CommentValue("CoinsEngine default currency id when economy is COINS_ENGINE")})
     public String coinsEngineCurrency = "coins";
 
+    @NewLine
+    @Comment({@CommentValue("Multi-server and redis listing sync")})
+    public NetworkSettings network = new NetworkSettings();
+
+    @NewLine
+    @Comment({@CommentValue("Feature toggles")})
+    public FeatureSettings features = new FeatureSettings();
+
+    @NewLine
+    @Comment({@CommentValue("Global custom item plugin rules (merged with per-auction)")})
+    public List<CustomItemPluginRuleSettings> customItemRules = List.of();
+
+    @NewLine
+    @Comment({@CommentValue("Global per-material rules (merged with per-auction)")})
+    public List<MaterialRuleSettings> materialRules = List.of();
+
     public AuctionSettings() {
         super(SoulAuctionSerializerConfig.INSTANCE);
     }
@@ -61,6 +77,26 @@ public final class AuctionSettings extends YamlSerializable {
         public boolean allowSelling = true;
         @Comment({@CommentValue("How often expired listings are checked, seconds")})
         public int expireCheckIntervalSeconds = 30;
+        @Comment({@CommentValue("Auto-deposit money to online sellers; offline uses pending money claim")})
+        public boolean autoClaimMoneyWhenOnline = true;
+    }
+
+    public static final class NetworkSettings {
+
+        @Comment({@CommentValue("Unique id of this server in a network")})
+        public String serverId = "server-1";
+        @Comment({@CommentValue("Publish full listing JSON on redis (requires redis enabled)")})
+        public boolean redisFullListingSync = true;
+    }
+
+    public static final class FeatureSettings {
+
+        @Comment({@CommentValue("Use LuckPerms API for offline seller tax/limit when available")})
+        public boolean luckPermsOfflinePermissions = true;
+        @Comment({@CommentValue("Advanced search regex (ProtocolLib not required)")})
+        public boolean advancedSearchRegex = false;
+        @Comment({@CommentValue("Enable message keys disable list in messages.yml under disabled-messages")})
+        public boolean respectDisabledMessages = true;
     }
 
     public static final class StorageSettings {

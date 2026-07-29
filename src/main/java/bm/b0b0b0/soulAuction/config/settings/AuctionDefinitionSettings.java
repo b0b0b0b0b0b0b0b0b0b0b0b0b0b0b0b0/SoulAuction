@@ -18,9 +18,30 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
             @CommentValue("VAULT - server money via Vault"),
             @CommentValue("PLAYER_POINTS - points via PlayerPoints"),
             @CommentValue("EXPERIENCE - player levels (online payout only)"),
-            @CommentValue("COINS_ENGINE - CoinsEngine currency")
+            @CommentValue("COINS_ENGINE - CoinsEngine currency"),
+            @CommentValue("ITEM - pay with itemCurrencyMaterial stack units")
     })
     public String economy = "VAULT";
+    @Comment({
+            @CommentValue("Additional payment economies allowed in same auction house browser"),
+            @CommentValue("Example: VAULT, PLAYER_POINTS, ITEM")
+    })
+    public List<String> allowedEconomies = List.of();
+    @Comment({@CommentValue("Bukkit material used when economy is ITEM (price = item count)")})
+    public String itemCurrencyMaterial = "EMERALD";
+    @Comment({@CommentValue("Tax mode: FLAT, VAT (buyer pays extra), CAPITALISM (high-price surcharge)")})
+    public String taxMode = "FLAT";
+    @Comment({@CommentValue("For CAPITALISM mode: extra tax percent when price exceeds threshold")})
+    public double capitalismThreshold = 10000.0D;
+    public double capitalismSurchargePercent = 5.0D;
+    @Comment({@CommentValue("Per-material tax and price overrides")})
+    public List<MaterialRuleSettings> materialRules = List.of();
+    @Comment({@CommentValue("Custom item plugin sell rules for this auction")})
+    public List<CustomItemPluginRuleSettings> customItemRules = List.of();
+    @Comment({@CommentValue("Enable bid listings (experimental)")})
+    public boolean bidsEnabled = false;
+    @Comment({@CommentValue("Enable rent listings (experimental)")})
+    public boolean rentEnabled = false;
     @Comment({@CommentValue("CoinsEngine currency for this auction when economy is COINS_ENGINE")})
     public String coinsEngineCurrency = "";
 

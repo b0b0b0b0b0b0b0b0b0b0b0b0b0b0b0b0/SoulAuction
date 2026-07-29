@@ -3,9 +3,11 @@ package bm.b0b0b0.soulAuction.service.listing;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.config.settings.AuctionDefinitionSettings;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
+import bm.b0b0b0.soulAuction.config.settings.CustomItemPluginRuleSettings;
 import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
+import bm.b0b0b0.soulAuction.model.ListingMetadata;
 import bm.b0b0b0.soulAuction.model.result.SellFailure;
 import bm.b0b0b0.soulAuction.model.result.SellResult;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
@@ -14,10 +16,13 @@ import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
 import bm.b0b0b0.soulAuction.service.PermissionLimitResolver;
 import bm.b0b0b0.soulAuction.service.PriceLimitResolver;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
+import bm.b0b0b0.soulAuction.service.customitem.CustomItemRuleEngine;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import bm.b0b0b0.soulAuction.util.ListingSearchText;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
 import org.bukkit.entity.Player;
@@ -34,6 +39,7 @@ public final class AuctionListingCreator {
     private final AuctionRuntimeStorage runtimeStorage;
     private final AuctionSellPolicy sellPolicy;
     private final AuctionExternalNotifier externalNotifier;
+    private final CustomItemRuleEngine customItemRuleEngine;
     private final java.util.function.Consumer<String> invalidateCacheForAuction;
     private final LimitResolver limitResolver;
 
@@ -47,6 +53,7 @@ public final class AuctionListingCreator {
             AuctionRuntimeStorage runtimeStorage,
             AuctionSellPolicy sellPolicy,
             AuctionExternalNotifier externalNotifier,
+            CustomItemRuleEngine customItemRuleEngine,
             java.util.function.Consumer<String> invalidateCacheForAuction,
             LimitResolver limitResolver
     ) {
@@ -59,6 +66,7 @@ public final class AuctionListingCreator {
         this.runtimeStorage = runtimeStorage;
         this.sellPolicy = sellPolicy;
         this.externalNotifier = externalNotifier;
+        this.customItemRuleEngine = customItemRuleEngine;
         this.invalidateCacheForAuction = invalidateCacheForAuction;
         this.limitResolver = limitResolver;
     }
@@ -90,10 +98,15 @@ public final class AuctionListingCreator {
         if (sellPolicy.isSellCooldownActive(seller.getUniqueId(), settings)) {
             return SellResult.failure(SellFailure.COOLDOWN);
         }
-        if (!economy.isAvailable(AuctionEconomyType.fromString(definition.economy))) {
+        AuctionEconomyType economyType = AuctionEconomyType.fromString(definition.economy);
+        if (!economy.isAvailable(economyType, definition)) {
             return SellResult.failure(SellFailure.ECONOMY_UNAVAILABLE);
         }
-        PriceLimitResolver.PriceBounds bounds = priceLimitResolver.resolve(seller, definition, settings.limits);
+        List<CustomItemPluginRuleSettings> customRules = mergedCustomRules(settings, definition);
+        if (!customItemRuleEngine.isSellAllowed(soldItem, customRules)) {
+            return SellResult.failure(SellFailure.CUSTOM_ITEM_BLOCKED);
+        }
+        PriceLimitResolver.PriceBounds bounds = priceLimitResolver.resolve(seller, definition, settings, soldItem);
         if (!bounds.isValid(price)) {
             return SellResult.failure(price < bounds.minPrice() ? SellFailure.PRICE_TOO_LOW : SellFailure.PRICE_TOO_HIGH);
         }
@@ -111,21 +124,34 @@ public final class AuctionListingCreator {
         }
         AuctionCategory category = AuctionCategory.fromMaterial(soldItem.getType());
         String searchText = ListingSearchText.fromItem(seller.getName(), soldItem);
+        ListingMetadata metadata = ListingMetadata.empty();
+        metadata.serverOrigin = settings.network == null ? "" : settings.network.serverId;
         AuctionListing listing = repository.create(
                 normalizedAuctionId,
                 seller.getUniqueId(),
                 seller.getName(),
                 price,
-                AuctionEconomyType.fromString(definition.economy),
+                economyType,
                 ItemStackCodec.encode(soldItem),
                 category,
-                searchText
+                searchText,
+                metadata.toJson()
         );
         repository.flush();
         runtimeStorage.recordSell(seller.getUniqueId());
-        invalidateCacheForAuction.accept(normalizedAuctionId);
         externalNotifier.listingCreated(listing, soldItem);
         return SellResult.success(listing);
+    }
+
+    private List<CustomItemPluginRuleSettings> mergedCustomRules(AuctionSettings settings, AuctionDefinitionSettings definition) {
+        List<CustomItemPluginRuleSettings> merged = new ArrayList<>();
+        if (settings.customItemRules != null) {
+            merged.addAll(settings.customItemRules);
+        }
+        if (definition.customItemRules != null) {
+            merged.addAll(definition.customItemRules);
+        }
+        return merged;
     }
 
     public interface DefinitionLookup {

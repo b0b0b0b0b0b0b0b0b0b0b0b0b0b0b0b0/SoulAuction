@@ -6,7 +6,8 @@ public enum AuctionEconomyType {
     VAULT,
     PLAYER_POINTS,
     EXPERIENCE,
-    COINS_ENGINE;
+    COINS_ENGINE,
+    ITEM;
 
     public static AuctionEconomyType fromString(String value) {
         if (value == null) {
