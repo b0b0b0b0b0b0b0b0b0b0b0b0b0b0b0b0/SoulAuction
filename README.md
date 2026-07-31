@@ -78,6 +78,44 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 - **Несколько строк в чате:** ключ как **YAML-список** строк — плагин шлёт каждую строку отдельным сообщением (`MessageService.send`). Одна строка — как раньше. Поиск в чате, успех продажи, истечение лота, usage-команды — в этом формате.
 - Плейсхолдеры lore лота в GUI: `{seller}`, `{price}`, `{id}`, `{auction}`, `{expires_in}`, `{expires_at}` (последние два — если TTL включён); опционально `listingLoreTemplate` в `auctions/*.yml`.
 
+## PlaceholderAPI
+
+Плейсы регистрируются автоматически, если PlaceholderAPI на сервере. Идентификатор — `soulauction`, т.е. `%soulauction_<параметр>%`. Числа форматируются под локаль игрока (разделители тысяч). У любого плейсхолдера есть вариант с суффиксом `_raw` — значение без форматирования (`1500000` вместо `1 500 000`, ключ enum вместо имени из lang) для скорбордов и плагинов, которым нужно голое число.
+
+### Счётчики
+
+| Плейсхолдер | Значение |
+|---|---|
+| `%soulauction_active_count%` | Активные лоты игрока (алиасы: `sell_count`, `purchasable_count`) |
+| `%soulauction_expired_count%` | Просроченные предметы игрока (claim с причиной EXPIRED) |
+| `%soulauction_total_active_count%` | Все лоты на аукционе |
+| `%soulauction_sell_limit%` | Общий лимит лотов игрока (права + override) |
+| `%soulauction_claims%` | Все предметы игрока в claim |
+| `%soulauction_listings_all%` / `%soulauction_listings_<auctionId>%` | Активные лоты игрока (все / в конкретном аукционе) |
+| `%soulauction_listings_total%` | Все лоты (без форматирования, legacy) |
+
+### Настройки игрока
+
+| Плейсхолдер | Значение |
+|---|---|
+| `%soulauction_selected_sorting%` | Выбранная сортировка |
+| `%soulauction_selected_category%` | Выбранная категория |
+| `%soulauction_selected_currency%` | Валюта последнего открытого аукциона (`currency-*` из lang) |
+| `%soulauction_categories_enabled%`, `%soulauction_expired_items_enabled%`, `%soulauction_auction_listing_confirmation_enabled%` | Всегда `true` — эти системы в SoulAuction не отключаются |
+
+### Статистика сделок
+
+Персистентная (`data/stats.json`), при первом запуске один раз заполняется из существующей истории. Валюта в `<currency>` — тип экономики: `vault`, `player_points`, `experience`, `coins_engine`, `item`.
+
+| Плейсхолдер | Значение |
+|---|---|
+| `%soulauction_items_sold%` | Продано предметов игроком |
+| `%soulauction_items_purchased%` | Куплено предметов игроком |
+| `%soulauction_money_made%` | Заработано игроком (после налога) |
+| `%soulauction_money_spent%` | Потрачено игроком (с налогом покупателя) |
+| `%soulauction_items_sold_<currency>%` и аналоги | То же, по конкретной валюте |
+| `%soulauction_total_items_sold%`, `%soulauction_total_money_made%` и т.д. | Глобально по серверу, включая `_<currency>` |
+
 ## Команды
 
 ### Игроки

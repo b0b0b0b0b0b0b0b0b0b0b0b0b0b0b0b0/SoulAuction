@@ -68,8 +68,9 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         );
         this.listingBySlot = new HashMap<>();
         this.page = Math.max(0, initialPage);
-        this.sort = AuctionSort.NEWEST;
-        this.category = AuctionCategory.ALL;
+        AuctionService.BrowseSelection selection = auctionService.browseSelection(viewerId);
+        this.sort = selection.sort();
+        this.category = selection.category();
         BrowseFilterState filterState = auctionService.browseFilterState(viewerId);
         this.favoritesOnly = filterState.favoritesOnly();
         if (searchQuery == null || searchQuery.isBlank()) {
@@ -180,6 +181,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
     }
 
     public void refresh() {
+        auctionService.recordBrowseSelection(viewerId, sort, category, auctionId);
         listingBySlot.clear();
         inventory.clear();
         List<Integer> listingSlots = guiSettings.listingSlots;
@@ -391,35 +393,10 @@ public final class AuctionBrowserMenu implements InventoryHolder {
     }
 
     private String sortName(AuctionSort value) {
-        return switch (value) {
-            case NEWEST -> messageService.raw(viewerId, "sort-newest");
-            case OLDEST -> messageService.raw(viewerId, "sort-oldest");
-            case PRICE_ASC -> messageService.raw(viewerId, "sort-price-asc");
-            case PRICE_DESC -> messageService.raw(viewerId, "sort-price-desc");
-            case SELLER_ASC -> messageService.raw(viewerId, "sort-seller-asc");
-            case SELLER_DESC -> messageService.raw(viewerId, "sort-seller-desc");
-            case AMOUNT_ASC -> messageService.raw(viewerId, "sort-amount-asc");
-            case AMOUNT_DESC -> messageService.raw(viewerId, "sort-amount-desc");
-            case MATERIAL_ASC -> messageService.raw(viewerId, "sort-material-asc");
-            case MATERIAL_DESC -> messageService.raw(viewerId, "sort-material-desc");
-            case CATEGORY_ASC -> messageService.raw(viewerId, "sort-category-asc");
-            case LISTING_ID_ASC -> messageService.raw(viewerId, "sort-id-asc");
-            case LISTING_ID_DESC -> messageService.raw(viewerId, "sort-id-desc");
-            case UNIT_PRICE_ASC -> messageService.raw(viewerId, "sort-unit-price-asc");
-            case UNIT_PRICE_DESC -> messageService.raw(viewerId, "sort-unit-price-desc");
-        };
+        return messageService.raw(viewerId, value.messageKey());
     }
 
     private String categoryName(AuctionCategory value) {
-        return switch (value) {
-            case ALL -> messageService.raw(viewerId, "category-all");
-            case BLOCKS -> messageService.raw(viewerId, "category-blocks");
-            case WEAPONS -> messageService.raw(viewerId, "category-weapons");
-            case TOOLS -> messageService.raw(viewerId, "category-tools");
-            case ARMOR -> messageService.raw(viewerId, "category-armor");
-            case FOOD -> messageService.raw(viewerId, "category-food");
-            case REDSTONE -> messageService.raw(viewerId, "category-redstone");
-            case OTHER -> messageService.raw(viewerId, "category-other");
-        };
+        return messageService.raw(viewerId, value.messageKey());
     }
 }

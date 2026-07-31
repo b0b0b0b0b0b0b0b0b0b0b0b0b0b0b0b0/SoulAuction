@@ -4,6 +4,7 @@ import bm.b0b0b0.soulAuction.model.AuditLogEntry;
 import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
+import bm.b0b0b0.soulAuction.model.AuctionStatType;
 import bm.b0b0b0.soulAuction.model.LimitOverrideEntry;
 import bm.b0b0b0.soulAuction.model.PendingExpiredListingNotification;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
@@ -17,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -37,6 +39,7 @@ public final class AuctionRuntimeStorage {
     private final Path cooldownsFile;
     private final Path runtimeBlacklistFile;
     private final Path auditFile;
+    private final Path statsFile;
     private final Gson gson;
     private final ExecutorService ioExecutor;
     private final List<ClaimEntry> claims;
@@ -49,6 +52,8 @@ public final class AuctionRuntimeStorage {
     private final Map<UUID, Long> lastSellEpochMillis;
     private final List<UUID> runtimeBlacklist;
     private final List<AuditLogEntry> auditLog;
+    private final Map<UUID, DealStatsCounters> playerDealStats;
+    private final DealStatsCounters globalDealStats;
     private final AtomicLong nextClaimId;
     private final AtomicLong nextHistoryId;
     private final AtomicLong nextAuditId;
@@ -65,6 +70,7 @@ public final class AuctionRuntimeStorage {
         this.cooldownsFile = dataDirectory.resolve("sell-cooldowns.json");
         this.runtimeBlacklistFile = dataDirectory.resolve("runtime-blacklist.json");
         this.auditFile = dataDirectory.resolve("audit.json");
+        this.statsFile = dataDirectory.resolve("stats.json");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
         this.ioExecutor = Executors.newSingleThreadExecutor();
         this.claims = new ArrayList<>();
@@ -77,6 +83,8 @@ public final class AuctionRuntimeStorage {
         this.lastSellEpochMillis = new HashMap<>();
         this.runtimeBlacklist = new ArrayList<>();
         this.auditLog = new ArrayList<>();
+        this.playerDealStats = new HashMap<>();
+        this.globalDealStats = new DealStatsCounters();
         this.nextClaimId = new AtomicLong(1L);
         this.nextHistoryId = new AtomicLong(1L);
         this.nextAuditId = new AtomicLong(1L);
@@ -96,6 +104,7 @@ public final class AuctionRuntimeStorage {
                 loadCooldownsSync();
                 loadRuntimeBlacklistSync();
                 loadAuditSync();
+                loadDealStatsSync();
                 flushSync();
             } catch (Exception exception) {
                 throw new IllegalStateException(exception);
@@ -428,6 +437,68 @@ public final class AuctionRuntimeStorage {
         }
     }
 
+    public void recordDealStats(UUID sellerId, UUID buyerId, AuctionEconomyType economyType, long sellerIncome, long buyerSpent) {
+        String currency = currencyKey(economyType);
+        synchronized (playerDealStats) {
+            applyDeal(countersFor(sellerId), countersFor(buyerId), currency, sellerIncome, buyerSpent);
+        }
+        scheduleDebouncedFlush();
+    }
+
+    public long dealStat(UUID playerId, AuctionStatType type, String currencyKey) {
+        synchronized (playerDealStats) {
+            DealStatsCounters counters = playerDealStats.get(playerId);
+            return counters == null ? 0L : statValue(counters, type, currencyKey);
+        }
+    }
+
+    public long globalDealStat(AuctionStatType type, String currencyKey) {
+        synchronized (playerDealStats) {
+            return statValue(globalDealStats, type, currencyKey);
+        }
+    }
+
+    private void applyDeal(DealStatsCounters seller, DealStatsCounters buyer, String currency, long sellerIncome, long buyerSpent) {
+        increment(seller.itemsSold, currency, 1L);
+        increment(seller.moneyMade, currency, sellerIncome);
+        if (buyer != null) {
+            increment(buyer.itemsPurchased, currency, 1L);
+            increment(buyer.moneySpent, currency, buyerSpent);
+        }
+        increment(globalDealStats.itemsSold, currency, 1L);
+        increment(globalDealStats.moneyMade, currency, sellerIncome);
+        increment(globalDealStats.itemsPurchased, currency, 1L);
+        increment(globalDealStats.moneySpent, currency, buyerSpent);
+    }
+
+    private DealStatsCounters countersFor(UUID playerId) {
+        if (playerId == null) {
+            return null;
+        }
+        return playerDealStats.computeIfAbsent(playerId, ignored -> new DealStatsCounters());
+    }
+
+    private static void increment(Map<String, Long> values, String currency, long amount) {
+        values.merge(currency, amount, Long::sum);
+    }
+
+    private static long statValue(DealStatsCounters counters, AuctionStatType type, String currencyKey) {
+        Map<String, Long> values = counters.valuesFor(type);
+        if (currencyKey == null || currencyKey.isBlank()) {
+            long total = 0L;
+            for (long value : values.values()) {
+                total += value;
+            }
+            return total;
+        }
+        return values.getOrDefault(currencyKey.toLowerCase(Locale.ROOT), 0L);
+    }
+
+    private static String currencyKey(AuctionEconomyType economyType) {
+        AuctionEconomyType type = economyType == null ? AuctionEconomyType.VAULT : economyType;
+        return type.name().toLowerCase(Locale.ROOT);
+    }
+
     public int purgeHistoryOlderThan(long maxAgeMillis) {
         long cutoff = System.currentTimeMillis() - Math.max(0L, maxAgeMillis);
         int removed;
@@ -695,6 +766,52 @@ public final class AuctionRuntimeStorage {
         }
     }
 
+    private void loadDealStatsSync() throws Exception {
+        synchronized (playerDealStats) {
+            playerDealStats.clear();
+            globalDealStats.clearAll();
+            if (!Files.exists(statsFile)) {
+                seedDealStatsFromHistory();
+                return;
+            }
+            try (Reader reader = Files.newBufferedReader(statsFile)) {
+                DealStatsPayload payload = gson.fromJson(reader, DealStatsPayload.class);
+                if (payload == null) {
+                    return;
+                }
+                if (payload.global != null) {
+                    globalDealStats.copyFrom(payload.global);
+                }
+                if (payload.players != null) {
+                    for (PlayerDealStatsEntry entry : payload.players) {
+                        if (entry.playerId == null || entry.stats == null) {
+                            continue;
+                        }
+                        DealStatsCounters counters = new DealStatsCounters();
+                        counters.copyFrom(entry.stats);
+                        playerDealStats.put(entry.playerId, counters);
+                    }
+                }
+            }
+        }
+    }
+
+    private void seedDealStatsFromHistory() {
+        List<DealHistoryEntry> snapshot;
+        synchronized (history) {
+            snapshot = new ArrayList<>(history);
+        }
+        for (DealHistoryEntry entry : snapshot) {
+            if (!"SOLD".equalsIgnoreCase(entry.action())) {
+                continue;
+            }
+            String currency = currencyKey(entry.economyType());
+            long payout = Math.max(0L, (long) entry.price() - entry.tax());
+            long charge = (long) entry.price() + Math.max(0, entry.buyTax());
+            applyDeal(countersFor(entry.sellerId()), countersFor(entry.buyerId()), currency, payout, charge);
+        }
+    }
+
     private void flushSync() throws Exception {
         synchronized (claims) {
             ClaimsPayload claimsPayload = new ClaimsPayload();
@@ -772,6 +889,17 @@ public final class AuctionRuntimeStorage {
                 gson.toJson(auditPayload, writer);
             }
         }
+        synchronized (playerDealStats) {
+            DealStatsPayload statsPayload = new DealStatsPayload();
+            statsPayload.global = globalDealStats.copy();
+            statsPayload.players = new ArrayList<>();
+            for (Map.Entry<UUID, DealStatsCounters> entry : playerDealStats.entrySet()) {
+                statsPayload.players.add(new PlayerDealStatsEntry(entry.getKey(), entry.getValue().copy()));
+            }
+            try (Writer writer = Files.newBufferedWriter(statsFile)) {
+                gson.toJson(statsPayload, writer);
+            }
+        }
     }
 
     private static final class ClaimsPayload {
@@ -842,5 +970,56 @@ public final class AuctionRuntimeStorage {
     private static final class AuditPayload {
         private long nextAuditId;
         private List<AuditLogEntry> entries;
+    }
+
+    private static final class DealStatsCounters {
+        private Map<String, Long> itemsSold = new HashMap<>();
+        private Map<String, Long> itemsPurchased = new HashMap<>();
+        private Map<String, Long> moneyMade = new HashMap<>();
+        private Map<String, Long> moneySpent = new HashMap<>();
+
+        private Map<String, Long> valuesFor(AuctionStatType type) {
+            return switch (type) {
+                case ITEMS_SOLD -> itemsSold;
+                case ITEMS_PURCHASED -> itemsPurchased;
+                case MONEY_MADE -> moneyMade;
+                case MONEY_SPENT -> moneySpent;
+            };
+        }
+
+        private void clearAll() {
+            itemsSold = new HashMap<>();
+            itemsPurchased = new HashMap<>();
+            moneyMade = new HashMap<>();
+            moneySpent = new HashMap<>();
+        }
+
+        private void copyFrom(DealStatsCounters source) {
+            itemsSold = source.itemsSold == null ? new HashMap<>() : new HashMap<>(source.itemsSold);
+            itemsPurchased = source.itemsPurchased == null ? new HashMap<>() : new HashMap<>(source.itemsPurchased);
+            moneyMade = source.moneyMade == null ? new HashMap<>() : new HashMap<>(source.moneyMade);
+            moneySpent = source.moneySpent == null ? new HashMap<>() : new HashMap<>(source.moneySpent);
+        }
+
+        private DealStatsCounters copy() {
+            DealStatsCounters output = new DealStatsCounters();
+            output.copyFrom(this);
+            return output;
+        }
+    }
+
+    private static final class PlayerDealStatsEntry {
+        private UUID playerId;
+        private DealStatsCounters stats;
+
+        private PlayerDealStatsEntry(UUID playerId, DealStatsCounters stats) {
+            this.playerId = playerId;
+            this.stats = stats;
+        }
+    }
+
+    private static final class DealStatsPayload {
+        private DealStatsCounters global;
+        private List<PlayerDealStatsEntry> players;
     }
 }

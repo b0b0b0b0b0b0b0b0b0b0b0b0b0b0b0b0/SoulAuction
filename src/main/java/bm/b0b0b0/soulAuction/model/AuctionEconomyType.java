@@ -9,6 +9,10 @@ public enum AuctionEconomyType {
     COINS_ENGINE,
     ITEM;
 
+    public String messageKey() {
+        return "currency-" + name().toLowerCase(Locale.ROOT).replace('_', '-');
+    }
+
     public static AuctionEconomyType fromString(String value) {
         if (value == null) {
             return VAULT;

@@ -139,6 +139,7 @@ public final class AuctionPurchaseService {
                     listing.economyType(),
                     buyTax
             );
+            runtimeStorage.recordDealStats(listing.sellerId(), buyer.getUniqueId(), listing.economyType(), payout, charge);
             if (!sellerPaid) {
                 PendingSaleNotification pending = new PendingSaleNotification(
                         listing.sellerId(),

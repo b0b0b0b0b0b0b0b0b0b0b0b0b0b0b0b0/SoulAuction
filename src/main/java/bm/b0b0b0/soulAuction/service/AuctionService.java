@@ -9,6 +9,7 @@ import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.AuctionSort;
+import bm.b0b0b0.soulAuction.model.AuctionStatType;
 import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.PendingExpiredListingNotification;
@@ -56,6 +57,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.inventory.ItemStack;
@@ -79,6 +81,7 @@ public final class AuctionService {
     private final MessageService messageService;
     private final ConcurrentHashMap<UUID, BrowsePreferences> browsePreferences;
     private final ConcurrentHashMap<UUID, BrowseFilterState> browseFilters;
+    private final ConcurrentHashMap<UUID, BrowseSelection> browseSelections;
     private final ConcurrentHashMap<UUID, PendingChatSearch> pendingChatSearch;
     private final ConcurrentHashMap<UUID, Object> playerSellLocks;
 
@@ -160,6 +163,7 @@ public final class AuctionService {
         );
         this.browsePreferences = new ConcurrentHashMap<>();
         this.browseFilters = new ConcurrentHashMap<>();
+        this.browseSelections = new ConcurrentHashMap<>();
         this.pendingChatSearch = new ConcurrentHashMap<>();
         this.playerSellLocks = new ConcurrentHashMap<>();
     }
@@ -168,6 +172,21 @@ public final class AuctionService {
     }
 
     public record PendingChatSearch(String auctionId) {
+    }
+
+    public record BrowseSelection(AuctionSort sort, AuctionCategory category, String auctionId) {
+    }
+
+    public void recordBrowseSelection(UUID viewerId, AuctionSort sort, AuctionCategory category, String auctionId) {
+        browseSelections.put(viewerId, new BrowseSelection(sort, category, auctionId));
+    }
+
+    public BrowseSelection browseSelection(UUID viewerId) {
+        BrowseSelection selection = browseSelections.get(viewerId);
+        if (selection != null) {
+            return selection;
+        }
+        return new BrowseSelection(AuctionSort.NEWEST, AuctionCategory.ALL, defaultAuctionId());
     }
 
     public BrowseFilterState browseFilterState(UUID playerId) {
@@ -767,6 +786,30 @@ public final class AuctionService {
 
     public List<ClaimEntry> expiredClaims(UUID playerId) {
         return runtimeStorage.claimsByReasons(playerId, List.of("EXPIRED", "CANCELLED", "CANCELLED_TO_CLAIM"));
+    }
+
+    public int expiredClaimsCount(UUID playerId) {
+        return runtimeStorage.claimsByReasons(playerId, List.of("EXPIRED")).size();
+    }
+
+    public long dealStat(UUID playerId, AuctionStatType type, String currencyKey) {
+        return runtimeStorage.dealStat(playerId, type, currencyKey);
+    }
+
+    public long globalDealStat(AuctionStatType type, String currencyKey) {
+        return runtimeStorage.globalDealStat(type, currencyKey);
+    }
+
+    public int sellLimit(OfflinePlayer player) {
+        if (player == null) {
+            return settings().limits.defaultMaxActiveListingsGlobal;
+        }
+        Player online = player.getPlayer();
+        if (online != null) {
+            return resolveEffectiveGlobalLimit(online);
+        }
+        int byCommand = runtimeStorage.getLimitOverride(player.getUniqueId(), "all");
+        return Math.max(settings().limits.defaultMaxActiveListingsGlobal, byCommand);
     }
 
     public EditPriceResult editListingPrice(Player seller, long listingId, int newPrice) {

@@ -1,5 +1,6 @@
 package bm.b0b0b0.soulAuction.model;
 
+import java.util.Locale;
 import org.bukkit.Material;
 
 public enum AuctionCategory {
@@ -11,6 +12,10 @@ public enum AuctionCategory {
     FOOD,
     REDSTONE,
     OTHER;
+
+    public String messageKey() {
+        return "category-" + name().toLowerCase(Locale.ROOT);
+    }
 
     public static AuctionCategory fromMaterial(Material material) {
         String name = material.name();

@@ -188,7 +188,7 @@ public final class SoulAuction extends JavaPlugin {
             }
         }
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
-            new SoulAuctionPlaceholderExpansion(auctionService).register();
+            new SoulAuctionPlaceholderExpansion(auctionService, messageService).register();
             startupLog.stepOk("PlaceholderAPI — expansion зарегистрирован");
         } else {
             startupLog.stepSkipped("PlaceholderAPI — не найден");

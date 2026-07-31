@@ -1,5 +1,7 @@
 package bm.b0b0b0.soulAuction.model;
 
+import java.util.Locale;
+
 public enum AuctionSort {
     NEWEST,
     OLDEST,
@@ -21,5 +23,13 @@ public enum AuctionSort {
         AuctionSort[] values = values();
         int next = (ordinal() + 1) % values.length;
         return values[next];
+    }
+
+    public String messageKey() {
+        return switch (this) {
+            case LISTING_ID_ASC -> "sort-id-asc";
+            case LISTING_ID_DESC -> "sort-id-desc";
+            default -> "sort-" + name().toLowerCase(Locale.ROOT).replace('_', '-');
+        };
     }
 }
