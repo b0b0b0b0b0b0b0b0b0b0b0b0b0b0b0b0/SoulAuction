@@ -57,7 +57,7 @@ public final class AuctionSellMenu implements InventoryHolder {
         this.auctionId = auctionId;
         this.auctionService = auctionService;
         this.messageService = messageService;
-        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, "sell-menu-title", Map.of("auction", auctionService.auctionDisplayName(auctionId))));
+        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, "sell-menu-title", auctionService.auctionGuiTitlePlaceholders(auctionId)));
         this.price = Math.max(1, initialPrice);
         this.sellAmount = Math.max(0, initialSellAmount);
         refresh();

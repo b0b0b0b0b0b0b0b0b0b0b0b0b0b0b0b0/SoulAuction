@@ -12,6 +12,7 @@ import bm.b0b0b0.soulAuction.model.result.ClaimResult;
 import bm.b0b0b0.soulAuction.model.result.SellFailure;
 import bm.b0b0b0.soulAuction.model.result.SellResult;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService;
 import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterState;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.List;
@@ -50,14 +51,21 @@ public final class AuctionCommand implements CommandExecutor {
             Supplier<PluginConfig> configSupplier,
             MessageService messageService,
             AuctionService auctionService,
-            Runnable reloadAction
+            Runnable reloadAction,
+            AdminAuctionCreateService adminAuctionCreateService
     ) {
         this.plugin = plugin;
         this.configSupplier = configSupplier;
         this.messageService = messageService;
         this.auctionService = auctionService;
         this.reloadAction = reloadAction;
-        this.adminCommand = new AuctionAdminCommand(plugin, configSupplier, messageService, auctionService);
+        this.adminCommand = new AuctionAdminCommand(
+                plugin,
+                configSupplier,
+                messageService,
+                auctionService,
+                adminAuctionCreateService
+        );
     }
 
     @Override

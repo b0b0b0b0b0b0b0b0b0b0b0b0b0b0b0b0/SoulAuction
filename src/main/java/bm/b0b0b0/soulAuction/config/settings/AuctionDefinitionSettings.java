@@ -8,14 +8,16 @@ import net.elytrium.serializer.language.object.YamlSerializable;
 public final class AuctionDefinitionSettings extends YamlSerializable {
 
     @Comment({
-            @CommentValue("New auction house: copy this file to auctions/<id>.yml, then set id, display-name,"),
-            @CommentValue("open/buy/sell-permission (soulauction.*.<id>), economy if needed, grant perms — /ah reload."),
-            @CommentValue("id must be unique. Optional: config.yml default-auction-id for /ah without args."),
+            @CommentValue("New auction: prefer /ah admin gui (or /ah admin) — bottom row, Create auction (book)."),
+            @CommentValue("Chat wizard asks for id (a-z, 0-9) and display name; grant soulauction.*.<id> perms, then /ah reload."),
+            @CommentValue("Manual: copy to auctions/<id>.yml, set id + display-name + open/buy/sell-permission. id must be unique."),
+            @CommentValue("config.yml default-auction-id = which auction opens for plain /ah."),
+            @CommentValue("Admin GUI: browse all auctions, create new ones, and more — use it instead of editing YAML when you can."),
     })
     public String id = "global";
 
-    @Comment({@CommentValue("Display name in GUI title ({auction} in lang strings)")})
-    public String displayName = "Global";
+    @Comment({@CommentValue("Display name in GUI title (suffix after «Auction»). Empty = title is only the word from lang (auction-title).")})
+    public String displayName = "";
 
     @Comment({
             @CommentValue("How buyers pay and sellers get paid for listings in THIS auction file."),

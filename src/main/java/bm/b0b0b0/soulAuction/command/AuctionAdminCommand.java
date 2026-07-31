@@ -10,6 +10,8 @@ import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
 import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
 import bm.b0b0b0.soulAuction.model.StorageMode;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService;
+import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService.Step;
 import bm.b0b0b0.soulAuction.service.migration.AuctionStorageMigrator;
 import bm.b0b0b0.soulAuction.util.ItemInspectionFormatter;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
@@ -34,17 +36,20 @@ public final class AuctionAdminCommand {
     private final Supplier<PluginConfig> configSupplier;
     private final MessageService messageService;
     private final AuctionService auctionService;
+    private final AdminAuctionCreateService adminAuctionCreateService;
 
     public AuctionAdminCommand(
             JavaPlugin plugin,
             Supplier<PluginConfig> configSupplier,
             MessageService messageService,
-            AuctionService auctionService
+            AuctionService auctionService,
+            AdminAuctionCreateService adminAuctionCreateService
     ) {
         this.plugin = plugin;
         this.configSupplier = configSupplier;
         this.messageService = messageService;
         this.auctionService = auctionService;
+        this.adminAuctionCreateService = adminAuctionCreateService;
     }
 
     public boolean handle(CommandSender sender, String[] args) {
@@ -60,6 +65,9 @@ public final class AuctionAdminCommand {
         System.arraycopy(args, 1, subArgs, 0, subArgs.length);
         if (sub.equals("gui")) {
             return adminGui(sender, subArgs);
+        }
+        if (sub.equals("create")) {
+            return adminCreate(sender, subArgs);
         }
         if (!sender.hasPermission(PERMISSION_ADMIN)) {
             messageService.send(sender, "error-no-permission");
@@ -325,6 +333,41 @@ public final class AuctionAdminCommand {
                 configSupplier.get().guiGeneralSettings()
         );
         PluginSchedulers.run(plugin, player, () -> player.openInventory(menu.getInventory()));
+        return true;
+    }
+
+    private boolean adminCreate(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            messageService.send(sender, "error-only-player");
+            return true;
+        }
+        if (!AdminGuiAccess.canOpenAdminGui(sender)) {
+            messageService.send(sender, "error-admin-gui-denied");
+            return true;
+        }
+        if (args.length < 1) {
+            messageService.send(sender, "error-admin-create-usage");
+            return true;
+        }
+        String flag = args[0].toLowerCase(Locale.ROOT);
+        if (flag.equals("cancel")) {
+            if (adminAuctionCreateService.peek(player.getUniqueId()).isEmpty()) {
+                return true;
+            }
+            int page = adminAuctionCreateService.cancelAndReturnGuiPage(player.getUniqueId());
+            messageService.send(player, "admin-create-cancelled");
+            return openAdminAuctionsGui(player, page);
+        }
+        if (flag.equals("later")) {
+            var session = adminAuctionCreateService.peek(player.getUniqueId());
+            if (session.isEmpty() || session.get().step() != Step.DISPLAY_NAME) {
+                return true;
+            }
+            int page = session.get().adminGuiPage();
+            adminAuctionCreateService.submitDisplayNameLater(player);
+            return openAdminAuctionsGui(player, page);
+        }
+        messageService.send(sender, "error-admin-create-usage");
         return true;
     }
 

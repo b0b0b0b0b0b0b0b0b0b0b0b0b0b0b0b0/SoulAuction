@@ -20,6 +20,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 public final class AdminAuctionsMenu implements InventoryHolder {
 
     private static final int PAGE_SIZE = 45;
+    private static final int CREATE_SLOT = 50;
     private static final int PREV_SLOT = 45;
     private static final int INFO_SLOT = 49;
     private static final int NEXT_SLOT = 53;
@@ -78,6 +79,10 @@ public final class AdminAuctionsMenu implements InventoryHolder {
         return slot == NEXT_SLOT;
     }
 
+    public boolean isCreate(int slot) {
+        return slot == CREATE_SLOT;
+    }
+
     public boolean isInfo(int slot) {
         return slot == INFO_SLOT;
     }
@@ -121,6 +126,11 @@ public final class AdminAuctionsMenu implements InventoryHolder {
         inventory.setItem(INFO_SLOT, paper(
                 messageService.component(viewerId, "admin-auctions-info-title", pagePlaceholders()),
                 messageService.components(viewerId, "admin-auctions-info-lore", summaryPlaceholders(all.size()))
+        ));
+        inventory.setItem(CREATE_SLOT, actionItem(
+                Material.WRITABLE_BOOK,
+                messageService.component(viewerId, "admin-auctions-create-title"),
+                messageService.components(viewerId, "admin-auctions-create-lore")
         ));
         fillDecor();
     }
@@ -222,6 +232,9 @@ public final class AdminAuctionsMenu implements InventoryHolder {
     private void fillDecor() {
         ItemStack decor = actionItem(Material.GRAY_STAINED_GLASS_PANE, Component.text(" "), null);
         for (int slot = 45; slot < 54; slot++) {
+            if (slot == PREV_SLOT || slot == NEXT_SLOT || slot == INFO_SLOT || slot == CREATE_SLOT) {
+                continue;
+            }
             if (inventory.getItem(slot) == null) {
                 inventory.setItem(slot, decor);
             }

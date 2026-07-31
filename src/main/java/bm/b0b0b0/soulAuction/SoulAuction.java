@@ -3,11 +3,13 @@ package bm.b0b0b0.soulAuction;
 import bm.b0b0b0.soulAuction.bootstrap.SoulAuctionStartupLog;
 import bm.b0b0b0.soulAuction.command.AuctionCommand;
 import bm.b0b0b0.soulAuction.command.AuctionAliasListener;
+import bm.b0b0b0.soulAuction.config.AuctionDefinitionWriter;
 import bm.b0b0b0.soulAuction.config.ConfigurationLoader;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.config.StorageRuntimeMeta;
 import bm.b0b0b0.soulAuction.gui.AuctionGuiListener;
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.listener.AdminAuctionCreateChatListener;
 import bm.b0b0b0.soulAuction.listener.AuctionSearchChatListener;
 import bm.b0b0b0.soulAuction.listener.PlayerSaleNotificationListener;
 import bm.b0b0b0.soulAuction.model.StorageMode;
@@ -19,6 +21,7 @@ import bm.b0b0b0.soulAuction.service.AuctionExternalNotifier;
 import bm.b0b0b0.soulAuction.service.AuctionListingCache;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService;
 import bm.b0b0b0.soulAuction.service.CoinsEngineBridge;
 import bm.b0b0b0.soulAuction.service.EconomyBridge;
 import bm.b0b0b0.soulAuction.service.ExperienceEconomyBridge;
@@ -39,6 +42,7 @@ public final class SoulAuction extends JavaPlugin {
     private PluginConfig pluginConfig;
     private MessageService messageService;
     private AuctionService auctionService;
+    private AdminAuctionCreateService adminAuctionCreateService;
     private AuctionRepository repository;
     private RedisSellGuard redisSellGuard;
     private AuctionRuntimeStorage runtimeStorage;
@@ -96,11 +100,44 @@ public final class SoulAuction extends JavaPlugin {
             );
             auctionService.attachCacheSubscriber();
             logIntegrations();
-            getServer().getPluginManager().registerEvents(new AuctionGuiListener(this, this::pluginConfig, auctionService, messageService), this);
+            AuctionDefinitionWriter definitionWriter = new AuctionDefinitionWriter(this);
+            adminAuctionCreateService = new AdminAuctionCreateService(
+                    this::pluginConfig,
+                    definitionWriter,
+                    this::reloadAll,
+                    auctionService,
+                    messageService
+            );
+            getServer().getPluginManager().registerEvents(
+                    new AuctionGuiListener(
+                            this,
+                            this::pluginConfig,
+                            auctionService,
+                            messageService,
+                            adminAuctionCreateService
+                    ),
+                    this
+            );
             getServer().getPluginManager().registerEvents(new PlayerSaleNotificationListener(auctionService, messageService), this);
             getServer().getPluginManager().registerEvents(new AuctionAliasListener(this::pluginConfig), this);
             getServer().getPluginManager().registerEvents(
-                    new AuctionSearchChatListener(this, this::pluginConfig, auctionService, messageService),
+                    new AdminAuctionCreateChatListener(
+                            this,
+                            this::pluginConfig,
+                            adminAuctionCreateService,
+                            auctionService,
+                            messageService
+                    ),
+                    this
+            );
+            getServer().getPluginManager().registerEvents(
+                    new AuctionSearchChatListener(
+                            this,
+                            this::pluginConfig,
+                            auctionService,
+                            messageService,
+                            adminAuctionCreateService
+                    ),
                     this
             );
             getCommand("ah").setExecutor(new AuctionCommand(
@@ -108,7 +145,8 @@ public final class SoulAuction extends JavaPlugin {
                     this::pluginConfig,
                     messageService,
                     auctionService,
-                    this::reloadAll
+                    this::reloadAll,
+                    adminAuctionCreateService
             ));
             PluginSchedulers.runGlobalTimer(
                     this,

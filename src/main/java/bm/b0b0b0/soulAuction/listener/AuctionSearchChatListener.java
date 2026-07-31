@@ -5,6 +5,7 @@ import bm.b0b0b0.soulAuction.gui.AuctionBrowserMenu;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService;
 import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterState;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import io.papermc.paper.event.player.AsyncChatEvent;
@@ -23,22 +24,28 @@ public final class AuctionSearchChatListener implements Listener {
     private final Supplier<PluginConfig> configSupplier;
     private final AuctionService auctionService;
     private final MessageService messageService;
+    private final AdminAuctionCreateService adminAuctionCreateService;
 
     public AuctionSearchChatListener(
             JavaPlugin plugin,
             Supplier<PluginConfig> configSupplier,
             AuctionService auctionService,
-            MessageService messageService
+            MessageService messageService,
+            AdminAuctionCreateService adminAuctionCreateService
     ) {
         this.plugin = plugin;
         this.configSupplier = configSupplier;
         this.auctionService = auctionService;
         this.messageService = messageService;
+        this.adminAuctionCreateService = adminAuctionCreateService;
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onChat(AsyncChatEvent event) {
         Player player = event.getPlayer();
+        if (adminAuctionCreateService.peek(player.getUniqueId()).isPresent()) {
+            return;
+        }
         var pending = auctionService.peekPendingChatSearch(player.getUniqueId());
         if (pending.isEmpty()) {
             return;

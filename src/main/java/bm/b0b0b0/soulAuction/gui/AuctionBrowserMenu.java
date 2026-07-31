@@ -64,7 +64,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         this.inventory = Bukkit.createInventory(
                 this,
                 guiSettings.size,
-                messageService.component(viewerId, "auction-title", Map.of("auction", auctionService.auctionDisplayName(auctionId)))
+                messageService.component(viewerId, "auction-title", auctionService.auctionGuiTitlePlaceholders(auctionId))
         );
         this.listingBySlot = new HashMap<>();
         this.page = Math.max(0, initialPage);

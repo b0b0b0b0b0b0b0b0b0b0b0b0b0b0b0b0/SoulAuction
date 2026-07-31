@@ -891,7 +891,22 @@ public final class AuctionService {
 
     public String auctionDisplayName(String auctionId) {
         AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
-        return definition == null ? auctionId : definition.displayName;
+        if (definition == null) {
+            return auctionId;
+        }
+        if (definition.displayName == null || definition.displayName.isBlank()) {
+            return auctionId;
+        }
+        return definition.displayName;
+    }
+
+    public Map<String, String> auctionGuiTitlePlaceholders(String auctionId) {
+        String suffix = "";
+        AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
+        if (definition != null && definition.displayName != null && !definition.displayName.isBlank()) {
+            suffix = " " + definition.displayName.trim();
+        }
+        return Map.of("auction_name", suffix);
     }
 
     public int expireCheckIntervalSeconds() {

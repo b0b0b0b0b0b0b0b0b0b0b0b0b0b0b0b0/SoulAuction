@@ -3,6 +3,7 @@ package bm.b0b0b0.soulAuction.gui;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.gui.admin.AdminAuctionsMenu;
 import bm.b0b0b0.soulAuction.gui.admin.AdminGuiAccess;
+import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.util.ListingItemEquality;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
@@ -42,18 +43,21 @@ public final class AuctionGuiListener implements Listener {
     private final Supplier<PluginConfig> configSupplier;
     private final AuctionService auctionService;
     private final MessageService messageService;
+    private final AdminAuctionCreateService adminAuctionCreateService;
     private final ConcurrentHashMap<UUID, BukkitTask> browserExpiryRefreshTasks = new ConcurrentHashMap<>();
 
     public AuctionGuiListener(
             JavaPlugin plugin,
             Supplier<PluginConfig> configSupplier,
             AuctionService auctionService,
-            MessageService messageService
+            MessageService messageService,
+            AdminAuctionCreateService adminAuctionCreateService
     ) {
         this.plugin = plugin;
         this.configSupplier = configSupplier;
         this.auctionService = auctionService;
         this.messageService = messageService;
+        this.adminAuctionCreateService = adminAuctionCreateService;
     }
 
     @EventHandler
@@ -602,9 +606,18 @@ public final class AuctionGuiListener implements Listener {
             reopenAdminAuctions(player, menu.page() + 1);
             return;
         }
+        if (menu.isCreate(slot)) {
+            player.closeInventory();
+            adminAuctionCreateService.begin(player, menu.page());
+            return;
+        }
         String auctionId = menu.auctionIdAt(slot);
         if (auctionId != null) {
-            messageService.send(player, "admin-auctions-entry-click", Map.of("id", auctionId));
+            if (!event.isLeftClick() || event.isShiftClick() || event.isRightClick()) {
+                return;
+            }
+            player.closeInventory();
+            openBrowser(player, auctionId);
         }
     }
 
