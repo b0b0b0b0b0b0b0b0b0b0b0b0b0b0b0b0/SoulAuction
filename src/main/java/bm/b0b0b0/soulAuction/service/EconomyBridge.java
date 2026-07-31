@@ -1,19 +1,51 @@
 package bm.b0b0b0.soulAuction.service;
 
+import java.lang.reflect.Method;
 import java.util.UUID;
-import net.milkbowl.vault.economy.Economy;
-import net.milkbowl.vault.economy.EconomyResponse;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class EconomyBridge {
 
-    private final Economy economy;
+    private static final String ECONOMY_CLASS = "net.milkbowl.vault.economy.Economy";
+
+    private final Object economy;
+    private final Method hasMethod;
+    private final Method withdrawMethod;
+    private final Method depositMethod;
+    private final Method formatMethod;
 
     public EconomyBridge(JavaPlugin plugin) {
-        this.economy = resolveEconomy(plugin);
+        Object loadedEconomy = null;
+        Method loadedHasMethod = null;
+        Method loadedWithdrawMethod = null;
+        Method loadedDepositMethod = null;
+        Method loadedFormatMethod = null;
+        Plugin vaultPlugin = plugin.getServer().getPluginManager().getPlugin("Vault");
+        if (vaultPlugin != null && vaultPlugin.isEnabled()) {
+            try {
+                ClassLoader vaultLoader = vaultPlugin.getClass().getClassLoader();
+                Class<?> economyClass = Class.forName(ECONOMY_CLASS, true, vaultLoader);
+                RegisteredServiceProvider<?> provider = plugin.getServer().getServicesManager().getRegistration(economyClass);
+                if (provider != null) {
+                    loadedEconomy = provider.getProvider();
+                    loadedHasMethod = economyClass.getMethod("has", OfflinePlayer.class, double.class);
+                    loadedWithdrawMethod = economyClass.getMethod("withdrawPlayer", OfflinePlayer.class, double.class);
+                    loadedDepositMethod = economyClass.getMethod("depositPlayer", OfflinePlayer.class, double.class);
+                    loadedFormatMethod = economyClass.getMethod("format", double.class);
+                }
+            } catch (ReflectiveOperationException ignored) {
+                loadedEconomy = null;
+            }
+        }
+        this.economy = loadedEconomy;
+        this.hasMethod = loadedHasMethod;
+        this.withdrawMethod = loadedWithdrawMethod;
+        this.depositMethod = loadedDepositMethod;
+        this.formatMethod = loadedFormatMethod;
     }
 
     public boolean available() {
@@ -25,7 +57,12 @@ public final class EconomyBridge {
             return false;
         }
         OfflinePlayer player = Bukkit.getOfflinePlayer(playerId);
-        return economy.has(player, amount);
+        try {
+            Object result = hasMethod.invoke(economy, player, amount);
+            return result instanceof Boolean value && value;
+        } catch (ReflectiveOperationException exception) {
+            return false;
+        }
     }
 
     public boolean withdraw(UUID playerId, double amount) {
@@ -33,8 +70,12 @@ public final class EconomyBridge {
             return false;
         }
         OfflinePlayer player = Bukkit.getOfflinePlayer(playerId);
-        EconomyResponse response = economy.withdrawPlayer(player, amount);
-        return response.transactionSuccess();
+        try {
+            Object response = withdrawMethod.invoke(economy, player, amount);
+            return transactionSuccess(response);
+        } catch (ReflectiveOperationException exception) {
+            return false;
+        }
     }
 
     public boolean deposit(UUID playerId, double amount) {
@@ -42,22 +83,32 @@ public final class EconomyBridge {
             return false;
         }
         OfflinePlayer player = Bukkit.getOfflinePlayer(playerId);
-        EconomyResponse response = economy.depositPlayer(player, amount);
-        return response.transactionSuccess();
+        try {
+            Object response = depositMethod.invoke(economy, player, amount);
+            return transactionSuccess(response);
+        } catch (ReflectiveOperationException exception) {
+            return false;
+        }
     }
 
     public String format(double amount) {
         if (economy == null) {
             return String.format("%.2f", amount);
         }
-        return economy.format(amount);
+        try {
+            Object result = formatMethod.invoke(economy, amount);
+            return result == null ? String.format("%.2f", amount) : result.toString();
+        } catch (ReflectiveOperationException exception) {
+            return String.format("%.2f", amount);
+        }
     }
 
-    private Economy resolveEconomy(JavaPlugin plugin) {
-        RegisteredServiceProvider<Economy> provider = plugin.getServer().getServicesManager().getRegistration(Economy.class);
-        if (provider == null) {
-            return null;
+    private static boolean transactionSuccess(Object response) throws ReflectiveOperationException {
+        if (response == null) {
+            return false;
         }
-        return provider.getProvider();
+        Method successMethod = response.getClass().getMethod("transactionSuccess");
+        Object result = successMethod.invoke(response);
+        return result instanceof Boolean value && value;
     }
 }

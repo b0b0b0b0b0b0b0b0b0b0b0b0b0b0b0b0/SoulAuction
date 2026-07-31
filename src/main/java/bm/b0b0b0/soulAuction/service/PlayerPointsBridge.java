@@ -19,14 +19,26 @@ public final class PlayerPointsBridge {
         Method loadedTakeMethod = null;
         Method loadedGiveMethod = null;
         Plugin playerPointsPlugin = plugin.getServer().getPluginManager().getPlugin("PlayerPoints");
-        if (playerPointsPlugin != null) {
+        if (playerPointsPlugin != null && playerPointsPlugin.isEnabled()) {
             try {
-                Method getApiMethod = playerPointsPlugin.getClass().getMethod("getAPI");
-                loadedApi = getApiMethod.invoke(playerPointsPlugin);
-                loadedLookMethod = loadedApi.getClass().getMethod("look", UUID.class);
-                loadedTakeMethod = loadedApi.getClass().getMethod("take", UUID.class, int.class);
-                loadedGiveMethod = loadedApi.getClass().getMethod("give", UUID.class, int.class);
-            } catch (Exception exception) {
+                Class<?> playerPointsClass = Class.forName(
+                        "org.black_ixx.playerpoints.PlayerPoints",
+                        true,
+                        playerPointsPlugin.getClass().getClassLoader()
+                );
+                Method getInstance = playerPointsClass.getMethod("getInstance");
+                Object playerPoints = getInstance.invoke(null);
+                if (playerPoints != null) {
+                    Method getApiMethod = playerPointsClass.getMethod("getAPI");
+                    loadedApi = getApiMethod.invoke(playerPoints);
+                    if (loadedApi != null) {
+                        Class<?> apiClass = loadedApi.getClass();
+                        loadedLookMethod = apiClass.getMethod("look", UUID.class);
+                        loadedTakeMethod = apiClass.getMethod("take", UUID.class, int.class);
+                        loadedGiveMethod = apiClass.getMethod("give", UUID.class, int.class);
+                    }
+                }
+            } catch (ReflectiveOperationException exception) {
                 Bukkit.getLogger().warning("SoulAuction: cannot hook PlayerPoints API: " + exception.getMessage());
             }
         }
@@ -48,7 +60,7 @@ public final class PlayerPointsBridge {
             Object result = lookMethod.invoke(api, playerId);
             int balance = result instanceof Number number ? number.intValue() : 0;
             return balance >= amount;
-        } catch (Exception exception) {
+        } catch (ReflectiveOperationException exception) {
             return false;
         }
     }
@@ -60,7 +72,7 @@ public final class PlayerPointsBridge {
         try {
             Object result = takeMethod.invoke(api, playerId, amount);
             return result instanceof Boolean value && value;
-        } catch (Exception exception) {
+        } catch (ReflectiveOperationException exception) {
             return false;
         }
     }
@@ -72,7 +84,7 @@ public final class PlayerPointsBridge {
         try {
             Object result = giveMethod.invoke(api, playerId, amount);
             return result instanceof Boolean value && value;
-        } catch (Exception exception) {
+        } catch (ReflectiveOperationException exception) {
             return false;
         }
     }

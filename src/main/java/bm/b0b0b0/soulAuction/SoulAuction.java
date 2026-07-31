@@ -4,6 +4,7 @@ import bm.b0b0b0.soulAuction.bootstrap.SoulAuctionStartupLog;
 import bm.b0b0b0.soulAuction.command.AuctionCommand;
 import bm.b0b0b0.soulAuction.command.AuctionAliasListener;
 import bm.b0b0b0.soulAuction.config.AuctionDefinitionWriter;
+import bm.b0b0b0.soulAuction.config.AuctionEconomyBootstrap;
 import bm.b0b0b0.soulAuction.config.ConfigurationLoader;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.config.StorageRuntimeMeta;
@@ -33,6 +34,7 @@ import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import bm.b0b0b0.soulAuction.util.upd.SoulAuctionUpdateChecker;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -71,6 +73,10 @@ public final class SoulAuction extends JavaPlugin {
             runtimeStorage = new AuctionRuntimeStorage(getDataFolder().toPath());
             EconomyBridge economyBridge = new EconomyBridge(this);
             PlayerPointsBridge playerPointsBridge = new PlayerPointsBridge(this);
+            Path auctionsDirectory = getDataFolder().toPath().resolve(pluginConfig.auctionSettings().auctionsDirectory);
+            for (String economyChange : AuctionEconomyBootstrap.alignDefinitions(this, auctionsDirectory, pluginConfig.auctionDefinitions())) {
+                startupLog.stepOk(economyChange + " (auto)");
+            }
             boolean useRedisSellGuard = storageMode == StorageMode.MYSQL;
             redisSellGuard = new RedisSellGuard(this, useRedisSellGuard, pluginConfig.auctionSettings().storage.redis);
             logRedis(useRedisSellGuard);
@@ -158,19 +164,34 @@ public final class SoulAuction extends JavaPlugin {
             startupLog.info("Loading listings...");
             auctionService.load().whenComplete((unused, exception) -> PluginSchedulers.runGlobal(this, () -> finishStartup(exception)));
         } catch (Throwable throwable) {
-            getLogger().severe("SoulAuction enable failed");
-            throwable.printStackTrace();
-            startupLog.stepFail("Startup error — see stack trace above");
-            startupLog.bannerFailure(throwable.getMessage() == null ? "unknown error" : throwable.getMessage());
+            String reason = startupFailureReason(throwable);
+            getLogger().severe("SoulAuction enable failed: " + reason);
+            startupLog.stepFail(reason);
+            startupLog.bannerFailure("enable failed");
             getServer().getPluginManager().disablePlugin(this);
         }
     }
 
+    private static String startupFailureReason(Throwable throwable) {
+        Throwable root = throwable;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        if (root instanceof ClassNotFoundException || root instanceof NoClassDefFoundError) {
+            return "Missing dependency: " + root.getMessage();
+        }
+        String message = throwable.getMessage();
+        if (message == null || message.isBlank()) {
+            return throwable.getClass().getSimpleName();
+        }
+        return message;
+    }
+
     private void finishStartup(Throwable exception) {
         if (exception != null) {
-            getLogger().severe("Cannot load auctions: " + exception.getMessage());
-            exception.printStackTrace();
-            startupLog.stepFail("Storage — load failed");
+            String reason = startupFailureReason(exception);
+            getLogger().severe("Cannot load auctions: " + reason);
+            startupLog.stepFail("Storage — load failed: " + reason);
             startupLog.bannerFailure("load failed");
             getServer().getPluginManager().disablePlugin(this);
             return;

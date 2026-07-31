@@ -3,6 +3,7 @@ package bm.b0b0b0.soulAuction.config;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
 import bm.b0b0b0.soulAuction.config.settings.AuctionDefinitionSettings;
 import bm.b0b0b0.soulAuction.config.settings.GuiGeneralSettings;
+import bm.b0b0b0.soulAuction.service.EconomyIntegrationProbe;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -59,10 +60,10 @@ public final class ConfigurationLoader {
                 }
             }
             if (definitions.isEmpty()) {
-                AuctionDefinitionSettings defaultAuction = SerializedConfigReloader.reload(
-                        new AuctionDefinitionSettings(),
-                        auctionsDirectory.resolve("global.yml")
-                );
+                AuctionDefinitionSettings defaultAuction = new AuctionDefinitionSettings();
+                EconomyIntegrationProbe.applyPreferredEconomy(plugin, defaultAuction);
+                Path globalFile = auctionsDirectory.resolve("global.yml");
+                defaultAuction = SerializedConfigReloader.reload(defaultAuction, globalFile);
                 definitions.add(defaultAuction);
             }
             return definitions;
