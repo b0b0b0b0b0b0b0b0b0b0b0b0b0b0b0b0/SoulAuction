@@ -8,6 +8,15 @@ import net.elytrium.serializer.language.object.YamlSerializable;
 
 public final class AuctionSettings extends YamlSerializable {
 
+    @Comment({
+            @CommentValue("=== Update check ==="),
+            @CommentValue("On startup (async): fetch latest version from https://b0b0b0.dev/pl/souls/soulauction.txt"),
+            @CommentValue("and print result to console. No player or server data is sent."),
+            @CommentValue("Set false to disable the remote version check entirely."),
+    })
+    public boolean checkForUpdates = true;
+
+    @NewLine
     @Comment({@CommentValue("Global limits and safety options")})
     public LimitsSettings limits = new LimitsSettings();
 

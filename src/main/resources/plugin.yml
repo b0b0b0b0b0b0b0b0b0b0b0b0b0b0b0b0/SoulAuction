@@ -1,5 +1,5 @@
 name: SoulAuction
-version: '1.0'
+version: '1.1'
 main: bm.b0b0b0.soulAuction.SoulAuction
 api-version: '1.21'
 folia-supported: true

@@ -195,7 +195,9 @@ public final class SoulAuction extends JavaPlugin {
             startupLog.stepSkipped("PlaceholderAPI — not found");
         }
         startupLog.bannerSuccess();
-        SoulAuctionUpdateChecker.schedule(this, getPluginMeta().getVersion());
+        if (pluginConfig.auctionSettings().checkForUpdates) {
+            SoulAuctionUpdateChecker.schedule(this, getPluginMeta().getVersion());
+        }
         StorageRuntimeMeta.write(getDataFolder().toPath(), pluginConfig.auctionSettings());
     }
 
