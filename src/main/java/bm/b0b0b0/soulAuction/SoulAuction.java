@@ -32,6 +32,7 @@ import bm.b0b0b0.soulAuction.service.PriceLimitResolver;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
+import bm.b0b0b0.soulAuction.util.upd.SoulAuctionUpdateChecker;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -53,19 +54,19 @@ public final class SoulAuction extends JavaPlugin {
         startupLog.bannerStart(getPluginMeta().getVersion());
         try {
             if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
-                startupLog.stepFail("Папка данных — не удалось создать");
+                startupLog.stepFail("Data folder — failed to create");
             }
-            startupLog.info("Загрузка конфигурации...");
+            startupLog.info("Loading configuration...");
             configurationLoader = new ConfigurationLoader(this);
             pluginConfig = configurationLoader.load();
             startupLog.stepSchedulers();
             StorageMode storageMode = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
-            startupLog.stepOk("Конфиг — storage=" + storageMode.name()
-                    + ", аукционов=" + pluginConfig.auctionDefinitions().size());
+            startupLog.stepOk("Config — storage=" + storageMode.name()
+                    + ", auctions=" + pluginConfig.auctionDefinitions().size());
             logStorageConfigChange();
             messageService = new MessageService(this);
             wireMessageServiceConfig();
-            startupLog.stepOk("Сообщения — lang: " + String.join(", ", messageService.loadedLocaleIds()));
+            startupLog.stepOk("Messages — lang: " + String.join(", ", messageService.loadedLocaleIds()));
             repository = AuctionRepositoryFactory.create(this, pluginConfig.auctionSettings());
             runtimeStorage = new AuctionRuntimeStorage(getDataFolder().toPath());
             EconomyBridge economyBridge = new EconomyBridge(this);
@@ -154,12 +155,12 @@ public final class SoulAuction extends JavaPlugin {
                     auctionService.expireCheckIntervalSeconds() * 20L,
                     () -> auctionService.expireListings()
             );
-            startupLog.info("Загрузка лотов...");
+            startupLog.info("Loading listings...");
             auctionService.load().whenComplete((unused, exception) -> PluginSchedulers.runGlobal(this, () -> finishStartup(exception)));
         } catch (Throwable throwable) {
             getLogger().severe("SoulAuction enable failed");
             throwable.printStackTrace();
-            startupLog.stepFail("Ошибка при старте — см. stack trace выше");
+            startupLog.stepFail("Startup error — see stack trace above");
             startupLog.bannerFailure(throwable.getMessage() == null ? "unknown error" : throwable.getMessage());
             getServer().getPluginManager().disablePlugin(this);
         }
@@ -169,13 +170,13 @@ public final class SoulAuction extends JavaPlugin {
         if (exception != null) {
             getLogger().severe("Cannot load auctions: " + exception.getMessage());
             exception.printStackTrace();
-            startupLog.stepFail("Хранилище — ошибка загрузки");
+            startupLog.stepFail("Storage — load failed");
             startupLog.bannerFailure("load failed");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
         int listings = auctionService.totalListingsCount();
-        startupLog.stepOk("Лоты — активных " + listings);
+        startupLog.stepOk("Listings — active " + listings);
         StorageMode activeStorage = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
         if (listings == 0) {
             StorageMode legacy = AuctionStorageMigrator.detectLegacyStorage(
@@ -184,16 +185,17 @@ public final class SoulAuction extends JavaPlugin {
                     activeStorage
             );
             if (legacy != null) {
-                startupLog.stepSkipped("Хранилище пусто — найдены данные " + legacy + "; /ah admin migrate from " + legacy);
+                startupLog.stepSkipped("Storage empty — found legacy data " + legacy + "; /ah admin migrate from " + legacy);
             }
         }
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new SoulAuctionPlaceholderExpansion(auctionService, messageService).register();
-            startupLog.stepOk("PlaceholderAPI — expansion зарегистрирован");
+            startupLog.stepOk("PlaceholderAPI — expansion registered");
         } else {
-            startupLog.stepSkipped("PlaceholderAPI — не найден");
+            startupLog.stepSkipped("PlaceholderAPI — not found");
         }
         startupLog.bannerSuccess();
+        SoulAuctionUpdateChecker.schedule(this, getPluginMeta().getVersion());
         StorageRuntimeMeta.write(getDataFolder().toPath(), pluginConfig.auctionSettings());
     }
 
@@ -205,23 +207,23 @@ public final class SoulAuction extends JavaPlugin {
         if (!change.configChanged() || change.previous() == null) {
             return;
         }
-        String message = "Storage изменён с прошлого запуска: было "
+        String message = "Storage changed since last run: was "
                 + change.previous().mode()
-                + ", в config сейчас "
+                + ", config now "
                 + change.current().mode()
-                + " — проверь лоты и /ah admin migrate при необходимости";
+                + " — verify listings and /ah admin migrate if needed";
         startupLog.stepFail(message);
         getLogger().warning(message);
     }
 
     private void logRedis(boolean useRedisSellGuard) {
         if (!useRedisSellGuard) {
-            startupLog.stepSkipped("Redis — не используется (storage ≠ MYSQL)");
+            startupLog.stepSkipped("Redis — not used (storage ≠ MYSQL)");
             return;
         }
         var redis = pluginConfig.auctionSettings().storage.redis;
         if (!redis.enabled) {
-            startupLog.stepSkipped("Redis — отключён в конфиге");
+            startupLog.stepSkipped("Redis — disabled in config");
             return;
         }
         if (redisSellGuard.enabled()) {
@@ -229,31 +231,31 @@ public final class SoulAuction extends JavaPlugin {
                     + (redis.pubSubEnabled ? " · pub/sub" : ""));
             return;
         }
-        startupLog.stepFail("Redis — не подключён");
+        startupLog.stepFail("Redis — not connected");
     }
 
     private void logIntegrations() {
-        startupLog.info("Интеграции:");
+        startupLog.info("Integrations:");
         if (auctionService.hasVault()) {
             startupLog.stepOk("Vault — economy");
         } else if (getServer().getPluginManager().getPlugin("Vault") != null) {
-            startupLog.stepFail("Vault — economy не подключена");
+            startupLog.stepFail("Vault — economy not hooked");
         } else {
-            startupLog.stepSkipped("Vault — не найден");
+            startupLog.stepSkipped("Vault — not found");
         }
         if (auctionService.hasPlayerPoints()) {
             startupLog.stepOk("PlayerPoints — API");
         } else if (getServer().getPluginManager().getPlugin("PlayerPoints") != null) {
-            startupLog.stepFail("PlayerPoints — API не готов");
+            startupLog.stepFail("PlayerPoints — API not ready");
         } else {
-            startupLog.stepSkipped("PlayerPoints — не найден");
+            startupLog.stepSkipped("PlayerPoints — not found");
         }
         if (auctionService.hasCoinsEngine()) {
-            startupLog.stepOk("CoinsEngine — подключён");
+            startupLog.stepOk("CoinsEngine — connected");
         } else if (getServer().getPluginManager().getPlugin("CoinsEngine") != null) {
-            startupLog.stepSkipped("CoinsEngine — на сервере, валюта не используется");
+            startupLog.stepSkipped("CoinsEngine — present, currency not in use");
         } else {
-            startupLog.stepSkipped("CoinsEngine — не найден");
+            startupLog.stepSkipped("CoinsEngine — not found");
         }
     }
 

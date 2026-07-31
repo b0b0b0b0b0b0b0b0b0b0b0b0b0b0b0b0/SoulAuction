@@ -1,6 +1,7 @@
 package bm.b0b0b0.soulAuction.util;
 
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import java.util.concurrent.TimeUnit;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
@@ -93,6 +94,16 @@ public final class PluginSchedulers {
 
     public static void runAsync(Plugin plugin, Runnable runnable) {
         plugin.getServer().getAsyncScheduler().runNow(plugin, scheduledTask -> runnable.run());
+    }
+
+    public static ScheduledTask runAsyncLater(Plugin plugin, long delayTicks, Runnable runnable) {
+        long delayMillis = Math.max(1L, delayTicks) * 50L;
+        return plugin.getServer().getAsyncScheduler().runDelayed(
+                plugin,
+                scheduledTask -> runnable.run(),
+                delayMillis,
+                TimeUnit.MILLISECONDS
+        );
     }
 
     public static void runAsyncTimer(Plugin plugin, long initialDelayTicks, long periodTicks, Runnable runnable) {
