@@ -635,4 +635,5 @@ success-admin-migrate:
   - "{prefix}<color:#34D399>Migrated {source} → {target}</color>"
   - "<color:#A1A1AA>Imported:</color> <color:#F5D0FE>{import}</color> <color:#6B7280>skip {skip}, fail {fail}, total {total}</color>"
   - "<color:#A1A1AA>Source archived:</color> <color:#F5D0FE>{archived}</color>"
-disabled-messages: []
+disabled-messages:
+  - example-disabled-key

@@ -243,7 +243,10 @@ public final class AuctionSettings extends YamlSerializable {
         public boolean luckPermsOfflinePermissions = true;
         @Comment({@CommentValue("Advanced search regex (ProtocolLib not required)")})
         public boolean advancedSearchRegex = false;
-        @Comment({@CommentValue("Enable message keys disable list in lang/messages_*.yml under disabled-messages")})
+        @Comment({
+                @CommentValue("Enable message keys disable list in lang/messages_*.yml → disabled-messages."),
+                @CommentValue("Example placeholder key: example-disabled-key (does nothing; replace with keys like announce-sale)."),
+        })
         public boolean respectDisabledMessages = true;
         @Comment({@CommentValue("Cache pre-sorted listing lists per auction (recommended for 10k+ lots)")})
         public boolean preSortedBrowseCache = true;
