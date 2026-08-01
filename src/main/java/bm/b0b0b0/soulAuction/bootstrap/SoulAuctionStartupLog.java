@@ -28,7 +28,7 @@ public final class SoulAuctionStartupLog {
         if (FOLIA) {
             console.sendMessage(PREFIX + CYAN + "Folia" + RESET + GRAY + " · region threads · entity/global/async" + RESET);
         } else {
-            console.sendMessage(PREFIX + GRAY + "Paper · Folia-ready (region schedulers)" + RESET);
+            console.sendMessage(PREFIX + GRAY + "Paper" + RESET);
         }
         console.sendMessage(PREFIX + " ");
         console.sendMessage(PREFIX + " Startup:");
@@ -72,7 +72,7 @@ public final class SoulAuctionStartupLog {
             stepOk("Schedulers — Folia region threads");
             return;
         }
-        stepOk("Schedulers — Paper Folia-ready API");
+        stepOk("Schedulers — Paper");
     }
 
     public void unload() {

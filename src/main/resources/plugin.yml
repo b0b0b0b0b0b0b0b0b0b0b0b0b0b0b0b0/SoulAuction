@@ -12,7 +12,6 @@ libraries:
   - com.mysql:mysql-connector-j:8.4.0
   - org.xerial:sqlite-jdbc:3.46.0.0
   - redis.clients:jedis:5.2.0
-  - org.bstats:bstats-bukkit:3.2.1
 commands:
   ah:
     description: Open auction menu
