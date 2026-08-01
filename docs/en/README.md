@@ -131,9 +131,9 @@ There is no global on/off in `config.yml` — only per auction:
 | Where | Field / action |
 |-------|----------------|
 | `auctions/<id>.yml` | `fake-activity-enabled: true` / `false` (default `false`) |
-| `/ah admin` → **right-click** an auction | fake-activity menu |
-| Menu → **slot 22** | toggle (`LIME_DYE` / `RED_DYE`) → `auctions/<id>.yml` |
-| Menu → **slot 49** | pool, limits, tick (read-only) |
+| `/ah admin` → **right-click** an auction | auction settings |
+| Menu → **slot 22** | toggle fake activity (`LIME_DYE` / `RED_DYE`) → `auctions/<id>.yml` |
+| Menu → **slot 49** | fake activity: pool, limits, tick (read-only) |
 
 Example in `auctions/global.yml`:
 
@@ -251,9 +251,9 @@ GUI lookup is async; the head updates when the texture arrives (no in-memory cac
 | Action | Result |
 |--------|--------|
 | **Left-click** an auction | open storefront as a player |
-| **Right-click** an auction | fake-activity menu |
-| **Slot 22** | toggle fake activity (wool) |
-| **Slot 49** | pool, limits, tick (read-only) |
+| **Right-click** an auction | auction settings |
+| **Slot 22** | toggle fake activity (dye) |
+| **Slot 49** | fake activity: pool and limits (read-only) |
 | **Slot 45** | back to auction list |
 | Book in the bottom row | create a new auction (chat wizard) |
 
@@ -291,7 +291,7 @@ GUI lookup is async; the head updates when the texture arrives (no in-memory cac
 - `/ah admin cache stats|rebuild|invalidate` — catalog cache.
 - `/ah admin sellfor <player> <auctionId> <price>` — list on behalf of a player (item in hand).
 - `/ah admin fake <nick> <auctionId> <price>` — synthetic listing under the given nick (item in hand; see fake activity).
-- `/ah admin gui [page]` — auction list GUI (right-click an auction for fake activity).
+- `/ah admin gui [page]` — auction list GUI (right-click an auction for settings).
 - `/ah admin parse tags|nbt` — parse NBT/tags of item in hand (custom items).
 - `/ah view <player> [auctionId]` — player's listings GUI.
 

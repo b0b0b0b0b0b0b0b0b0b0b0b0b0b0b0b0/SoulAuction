@@ -5,16 +5,20 @@ import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.UUID;
 import java.util.function.Consumer;
 import org.bukkit.plugin.Plugin;
+import redis.clients.jedis.DefaultJedisClientConfig;
+import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.JedisClientConfig;
 import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.RedisClient;
 import redis.clients.jedis.params.SetParams;
 
 public final class RedisSellGuard {
 
     private final Plugin plugin;
-    private final JedisPool jedisPool;
+    private final RedisClient jedis;
+    private final HostAndPort redisAddress;
+    private final JedisClientConfig redisClientConfig;
     private final long sellLockMillis;
     private final boolean pubSubEnabled;
     private final String pubSubChannel;
@@ -31,24 +35,32 @@ public final class RedisSellGuard {
                 ? "soulauction:cache"
                 : settings.pubSubChannel;
         if (!enabled || !settings.enabled) {
-            this.jedisPool = null;
+            this.jedis = null;
+            this.redisAddress = null;
+            this.redisClientConfig = null;
             return;
         }
-        JedisPoolConfig poolConfig = new JedisPoolConfig();
-        poolConfig.setMaxTotal(8);
-        if (settings.password == null || settings.password.isBlank()) {
-            this.jedisPool = new JedisPool(poolConfig, settings.host, settings.port, settings.timeoutMs, null, settings.database);
-        } else {
-            this.jedisPool = new JedisPool(poolConfig, settings.host, settings.port, settings.timeoutMs, settings.password, settings.database);
+        DefaultJedisClientConfig.Builder clientConfigBuilder = DefaultJedisClientConfig.builder()
+                .connectionTimeoutMillis(settings.timeoutMs)
+                .socketTimeoutMillis(settings.timeoutMs)
+                .database(settings.database);
+        if (settings.password != null && !settings.password.isBlank()) {
+            clientConfigBuilder.password(settings.password);
         }
+        this.redisClientConfig = clientConfigBuilder.build();
+        this.redisAddress = new HostAndPort(settings.host, settings.port);
+        this.jedis = RedisClient.builder()
+                .hostAndPort(redisAddress)
+                .clientConfig(redisClientConfig)
+                .build();
     }
 
     public boolean enabled() {
-        return jedisPool != null;
+        return jedis != null;
     }
 
     public boolean distributedLocksRequired() {
-        return jedisPool != null;
+        return jedis != null;
     }
 
     public boolean tryAcquireSellLock(UUID playerId) {
@@ -88,7 +100,7 @@ public final class RedisSellGuard {
     }
 
     public void publishCacheInvalidate(String auctionId) {
-        if (plugin == null || jedisPool == null || !pubSubEnabled) {
+        if (plugin == null || jedis == null || !pubSubEnabled) {
             return;
         }
         String payload = auctionId == null || auctionId.isBlank() ? "*" : auctionId.toLowerCase();
@@ -96,7 +108,7 @@ public final class RedisSellGuard {
     }
 
     public void publishListingChange(String action, bm.b0b0b0.soulAuction.model.AuctionListing listing, com.google.gson.Gson gson) {
-        if (plugin == null || jedisPool == null || !pubSubEnabled || listing == null || gson == null) {
+        if (plugin == null || jedis == null || !pubSubEnabled || listing == null || gson == null) {
             return;
         }
         String payload;
@@ -110,7 +122,7 @@ public final class RedisSellGuard {
     }
 
     public void startCacheSubscriber(Consumer<String> onInvalidate) {
-        if (jedisPool == null || !pubSubEnabled || onInvalidate == null) {
+        if (jedis == null || !pubSubEnabled || onInvalidate == null) {
             return;
         }
         stopCacheSubscriber();
@@ -125,8 +137,8 @@ public final class RedisSellGuard {
         };
         subscriberThread = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
-                try (Jedis jedis = jedisPool.getResource()) {
-                    jedis.subscribe(pubSub, pubSubChannel);
+                try (Jedis subscriber = new Jedis(redisAddress, redisClientConfig)) {
+                    subscriber.subscribe(pubSub, pubSubChannel);
                 } catch (Exception exception) {
                     try {
                         Thread.sleep(2000L);
@@ -157,16 +169,16 @@ public final class RedisSellGuard {
 
     public void close() {
         stopCacheSubscriber();
-        if (jedisPool != null) {
-            jedisPool.close();
+        if (jedis != null) {
+            jedis.close();
         }
     }
 
     boolean tryAcquireDistributed(String key) {
-        if (jedisPool == null) {
+        if (jedis == null) {
             return true;
         }
-        try (Jedis jedis = jedisPool.getResource()) {
+        try {
             SetParams params = SetParams.setParams().nx().px(sellLockMillis);
             String result = jedis.set(key, "1", params);
             return "OK".equalsIgnoreCase(result);
@@ -176,17 +188,17 @@ public final class RedisSellGuard {
     }
 
     void releaseDistributed(String key) {
-        if (jedisPool == null) {
+        if (jedis == null) {
             return;
         }
-        try (Jedis jedis = jedisPool.getResource()) {
+        try {
             jedis.del(key);
         } catch (Exception ignored) {
         }
     }
 
     private void publishRaw(String payload) {
-        try (Jedis jedis = jedisPool.getResource()) {
+        try {
             jedis.publish(pubSubChannel, payload);
         } catch (Exception ignored) {
         }

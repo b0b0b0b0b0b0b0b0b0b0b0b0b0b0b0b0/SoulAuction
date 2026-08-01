@@ -144,6 +144,17 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
     })
     public boolean fakeActivityEnabled = false;
 
+    @Comment({
+            @CommentValue("Filler panes in main /ah browser (border + empty prev/next slots)."),
+            @CommentValue("Empty = use filler-material from gui/general.yml."),
+    })
+    public String guiFillerMaterial = "";
+
+    @Comment({
+            @CommentValue("Custom Model Data for gui-filler-material (-1 = use gui/general.yml filler-custom-model-data)."),
+    })
+    public int guiFillerCustomModelData = -1;
+
     public AuctionDefinitionSettings() {
         super(SoulAuctionSerializerConfig.INSTANCE);
     }

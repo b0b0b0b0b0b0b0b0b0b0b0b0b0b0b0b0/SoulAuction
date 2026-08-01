@@ -184,6 +184,8 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         auctionService.recordBrowseSelection(viewerId, sort, category, auctionId);
         listingBySlot.clear();
         inventory.clear();
+        ItemStack filler = GuiFillerItem.create(guiSettings, auctionService.findAuctionDefinition(auctionId));
+        applyBorderFillers(filler);
         List<Integer> listingSlots = guiSettings.listingSlots;
         int visible = listingSlots.size();
         BrowseFilterState state = auctionService.browseFilterState(viewerId);
@@ -248,6 +250,8 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                             messageService.components(viewerId, "button-prev-page-lore")
                     )
             );
+        } else {
+            inventory.setItem(guiSettings.previousPageSlot, filler);
         }
         if (page < maxPage) {
             inventory.setItem(
@@ -259,6 +263,8 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                             messageService.components(viewerId, "button-next-page-lore")
                     )
             );
+        } else {
+            inventory.setItem(guiSettings.nextPageSlot, filler);
         }
         inventory.setItem(
                 guiSettings.historySlot,
@@ -274,12 +280,10 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                 actionItem(
                         guiSettings.refreshMaterial,
                         guiSettings.refreshCustomModelData,
-                        searchQuery == null
-                                ? messageService.component(viewerId, "button-refresh")
-                                : messageService.component(viewerId, "button-refresh-search", Map.of("query", searchQuery)),
-                        searchQuery == null
-                                ? messageService.components(viewerId, "button-refresh-lore")
-                                : messageService.components(viewerId, "button-refresh-search-lore", Map.of("query", searchQuery))
+                        messageService.component(viewerId, "button-refresh", refreshStatusPlaceholders(total, maxPage, listings.size())),
+                        searchQuery == null || searchQuery.isBlank()
+                                ? messageService.components(viewerId, "button-refresh-lore", refreshStatusPlaceholders(total, maxPage, listings.size()))
+                                : messageService.components(viewerId, "button-refresh-search-lore", refreshStatusPlaceholders(total, maxPage, listings.size()))
                 )
         );
         inventory.setItem(
@@ -331,6 +335,7 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                         messageService.components(viewerId, "button-price-filter-lore")
                 )
         );
+        applyControlBarFillers(filler);
     }
 
     public void nextPage() {
@@ -352,6 +357,55 @@ public final class AuctionBrowserMenu implements InventoryHolder {
             page--;
             refresh();
         }
+    }
+
+    private void applyBorderFillers(ItemStack filler) {
+        if (guiSettings.borderSlots == null || guiSettings.borderSlots.isEmpty()) {
+            return;
+        }
+        for (Integer slot : guiSettings.borderSlots) {
+            if (slot == null || slot < 0 || slot >= inventory.getSize()) {
+                continue;
+            }
+            inventory.setItem(slot, filler);
+        }
+    }
+
+    private void applyControlBarFillers(ItemStack filler) {
+        int barStart = Math.max(0, guiSettings.size - 9);
+        for (int slot = barStart; slot < inventory.getSize(); slot++) {
+            ItemStack current = inventory.getItem(slot);
+            if (current == null || current.getType().isAir()) {
+                inventory.setItem(slot, filler);
+            }
+        }
+    }
+
+    private Map<String, String> refreshStatusPlaceholders(int total, int maxPage, int shown) {
+        int pages = total <= 0 ? 1 : maxPage + 1;
+        Map<String, String> placeholders = new HashMap<>();
+        placeholders.put("total", String.valueOf(total));
+        placeholders.put("page", String.valueOf(page + 1));
+        placeholders.put("pages", String.valueOf(pages));
+        placeholders.put("shown", String.valueOf(shown));
+        placeholders.put("category", categoryName(category));
+        placeholders.put("sort", sortName(sort));
+        if (searchQuery == null || searchQuery.isBlank()) {
+            placeholders.put("query", "");
+        } else {
+            placeholders.put("query", searchQuery);
+        }
+        if (favoritesOnly) {
+            placeholders.put("filters", messageService.raw(viewerId, "button-refresh-filter-favorites"));
+        } else if (searchQuery != null && !searchQuery.isBlank()) {
+            placeholders.put(
+                    "filters",
+                    messageService.raw(viewerId, "button-refresh-filter-search").replace("{query}", searchQuery)
+            );
+        } else {
+            placeholders.put("filters", messageService.raw(viewerId, "button-refresh-filter-none"));
+        }
+        return placeholders;
     }
 
     private ItemStack actionItem(String materialName, int customModelData, Component title) {

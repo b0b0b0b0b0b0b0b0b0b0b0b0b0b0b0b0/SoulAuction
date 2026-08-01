@@ -549,19 +549,34 @@ public final class AuctionService {
     }
 
     public boolean syntheticSellerHasActiveListing(String sellerName, String auctionId) {
+        return countSyntheticListingsForSeller(sellerName, auctionId) > 0;
+    }
+
+    public int countSyntheticListingsForSeller(String sellerName, String auctionId) {
         if (sellerName == null || sellerName.isBlank() || auctionId == null || auctionId.isBlank()) {
-            return false;
+            return 0;
         }
         UUID sellerId = SyntheticSellerIds.forDisplayName(sellerName.trim());
+        int count = 0;
         for (AuctionListing listing : repository.listAll()) {
             if (!listing.sellerId().equals(sellerId)) {
                 continue;
             }
+            if (!listing.metadata().syntheticSeller) {
+                continue;
+            }
             if (listing.auctionId().equalsIgnoreCase(auctionId)) {
-                return true;
+                count++;
             }
         }
-        return false;
+        return count;
+    }
+
+    public boolean syntheticSellerCanListMore(String sellerName, String auctionId, int maxPerSeller) {
+        if (maxPerSeller <= 0) {
+            return false;
+        }
+        return countSyntheticListingsForSeller(sellerName, auctionId) < maxPerSeller;
     }
 
     public String resolveSellerDisplayName(UUID sellerId) {

@@ -11,22 +11,40 @@ public final class GuiGeneralSettings extends YamlSerializable {
     @Comment({
             @CommentValue("Main auction browser inventory size (rows × 9). Must be a multiple of 9."),
             @CommentValue("54 = six rows (slots 0–53). Slot index 0 is top-left, +1 goes right, +9 next row."),
-            @CommentValue("Default layout: slots 0–44 show listings; 45–53 are control buttons (see below)."),
+            @CommentValue("Default layout: top row controls + border; listings 9–35; bottom controls 45–53."),
     })
     public int size = 54;
 
     @Comment({
-            @CommentValue("Chest slots where active listings are drawn (page size = this list length)."),
-            @CommentValue("Do not reuse the same slot for controls — keep control slots out of this list."),
-            @CommentValue("Example smaller GUI (45 slots): use 0–35 here and move controls to row 5."),
+            @CommentValue("Decorative border slots (glass panes). Not used for listings or controls."),
+            @CommentValue("Default: top row except refresh-slot (4), and row above controls 36–44."),
     })
-    public List<Integer> listingSlots = List.of(
-            0, 1, 2, 3, 4, 5, 6, 7, 8,
-            9, 10, 11, 12, 13, 14, 15, 16, 17,
-            18, 19, 20, 21, 22, 23, 24, 25, 26,
-            27, 28, 29, 30, 31, 32, 33, 34, 35,
+    public List<Integer> borderSlots = List.of(
+            0, 1, 2, 3, 5, 6, 7, 8,
             36, 37, 38, 39, 40, 41, 42, 43, 44
     );
+
+    @Comment({
+            @CommentValue("Chest slots where active listings are drawn (page size = this list length)."),
+            @CommentValue("Do not reuse border or control slots — keep them out of this list."),
+    })
+    public List<Integer> listingSlots = List.of(
+            9, 10, 11, 12, 13, 14, 15, 16, 17,
+            18, 19, 20, 21, 22, 23, 24, 25, 26,
+            27, 28, 29, 30, 31, 32, 33, 34, 35
+    );
+
+    @NewLine
+    @Comment({
+            @CommentValue("Default filler item for border slots and empty prev/next slots (gui/general.yml)."),
+            @CommentValue("Override per auction in auctions/<id>.yml → gui-filler-material."),
+    })
+    public String fillerMaterial = "BLACK_STAINED_GLASS_PANE";
+
+    @Comment({
+            @CommentValue("Custom Model Data on filler panes (-1 = do not set)."),
+    })
+    public int fillerCustomModelData = -1;
 
     @NewLine
     @Comment({
@@ -38,7 +56,7 @@ public final class GuiGeneralSettings extends YamlSerializable {
             @CommentValue("history-slot       — your buy/sell history menu"),
             @CommentValue("category-slot      — filter by item category"),
             @CommentValue("search-slot        — search by name (chat prompt)"),
-            @CommentValue("refresh-slot       — reload listings from storage"),
+            @CommentValue("refresh-slot       — reload listings + live stats (default: top row, slot 4)"),
             @CommentValue("favorites-slot     — favorite sellers menu"),
             @CommentValue("sort-slot          — change sort order (price, date, …)"),
             @CommentValue("price-filter-slot  — min/max price filter menu"),
@@ -47,7 +65,7 @@ public final class GuiGeneralSettings extends YamlSerializable {
     public int historySlot = 46;
     public int categorySlot = 47;
     public int searchSlot = 48;
-    public int refreshSlot = 49;
+    public int refreshSlot = 4;
     public int favoritesSlot = 50;
     public int sortSlot = 51;
     public int priceFilterSlot = 52;
@@ -75,7 +93,7 @@ public final class GuiGeneralSettings extends YamlSerializable {
     public String historyMaterial = "BOOK";
     public String categoryMaterial = "CHEST";
     public String searchMaterial = "OAK_SIGN";
-    public String refreshMaterial = "SUNFLOWER";
+    public String refreshMaterial = "CLOCK";
     public String favoritesMaterial = "NETHER_STAR";
     public String sortMaterial = "COMPASS";
     public String priceFilterMaterial = "GOLD_NUGGET";

@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -27,6 +28,7 @@ public final class FakeActivityService {
     private final FakeActivityConfigLoader fakeActivityConfigLoader;
     private final Runnable reloadFakeActivityConfig;
     private final Random random = new Random();
+    private final ConcurrentHashMap<String, Long> lastMinTopUpEpochMs = new ConcurrentHashMap<>();
     private volatile boolean started;
 
     public FakeActivityService(
@@ -120,6 +122,7 @@ public final class FakeActivityService {
     public void reload() {
         if (!anyAuctionFakeEnabled()) {
             started = false;
+            lastMinTopUpEpochMs.clear();
             return;
         }
         if (!started) {
@@ -149,15 +152,15 @@ public final class FakeActivityService {
         if (config.items().isEmpty()) {
             return;
         }
+        List<String> auctionIds = resolveAuctionIds(settings);
+        if (auctionIds.isEmpty()) {
+            return;
+        }
         int target = settings.initialFillListings > 0
                 ? Math.min(settings.initialFillListings, settings.maxTotalListings)
                 : settings.maxTotalListings;
         int missing = target - auctionService.countSyntheticListings(null);
         if (missing <= 0) {
-            return;
-        }
-        List<String> auctionIds = resolveAuctionIds(settings);
-        if (auctionIds.isEmpty()) {
             return;
         }
         int created = 0;
@@ -171,7 +174,7 @@ public final class FakeActivityService {
             if (auctionId == null) {
                 break;
             }
-            String seller = pickSellerName(config.sellers().names, auctionId);
+            String seller = pickSellerName(config.sellers().names, auctionId, settings.maxListingsPerFakeSeller);
             if (seller == null) {
                 break;
             }
@@ -215,11 +218,22 @@ public final class FakeActivityService {
         if (config.items().isEmpty()) {
             return;
         }
-        if (auctionService.countSyntheticListings(null) >= settings.maxTotalListings) {
-            return;
-        }
         List<String> auctionIds = resolveAuctionIds(settings);
         if (auctionIds.isEmpty()) {
+            return;
+        }
+        tickFillTowardCaps(settings, config, auctionIds);
+        if (settings.minListingsPerAuction > 0) {
+            tickMaintainMinimum(settings, config, auctionIds);
+        }
+    }
+
+    private void tickFillTowardCaps(
+            FakeActivitySettings settings,
+            FakeActivityConfig config,
+            List<String> auctionIds
+    ) {
+        if (auctionService.countSyntheticListings(null) >= settings.maxTotalListings) {
             return;
         }
         int created = 0;
@@ -229,11 +243,54 @@ public final class FakeActivityService {
             if (auctionId == null) {
                 break;
             }
-            String seller = pickSellerName(config.sellers().names, auctionId);
+            String seller = pickSellerName(config.sellers().names, auctionId, settings.maxListingsPerFakeSeller);
             if (seller == null) {
                 break;
             }
             if (tryCreateListing(auctionId, seller, config)) {
+                created++;
+            }
+        }
+    }
+
+    private void tickMaintainMinimum(
+            FakeActivitySettings settings,
+            FakeActivityConfig config,
+            List<String> auctionIds
+    ) {
+        long cooldownMs = Math.max(1000L, settings.minTopUpCooldownSeconds * 1000L);
+        long now = System.currentTimeMillis();
+        List<String> needy = new ArrayList<>();
+        for (String auctionId : auctionIds) {
+            if (auctionService.countActiveListings(auctionId) < settings.minListingsPerAuction) {
+                needy.add(auctionId);
+            }
+        }
+        if (needy.isEmpty()) {
+            return;
+        }
+        needy.sort(Comparator.comparingInt(auctionService::countActiveListings));
+        int created = 0;
+        for (String auctionId : needy) {
+            if (created >= settings.listingsPerTick) {
+                break;
+            }
+            if (auctionService.countSyntheticListings(null) >= settings.maxTotalListings) {
+                break;
+            }
+            if (auctionService.countSyntheticListings(auctionId) >= settings.maxListingsPerAuction) {
+                continue;
+            }
+            Long lastTopUp = lastMinTopUpEpochMs.get(auctionId);
+            if (lastTopUp != null && now - lastTopUp < cooldownMs) {
+                continue;
+            }
+            String seller = pickSellerName(config.sellers().names, auctionId, settings.maxListingsPerFakeSeller);
+            if (seller == null) {
+                continue;
+            }
+            if (tryCreateListing(auctionId, seller, config)) {
+                lastMinTopUpEpochMs.put(auctionId, now);
                 created++;
             }
         }
@@ -277,12 +334,15 @@ public final class FakeActivityService {
         if (sellers == null || sellers.isEmpty()) {
             return;
         }
+        FakeActivitySettings settings = config.settings();
+        int maxPerSeller = settings.maxListingsPerFakeSeller;
         String seller = preferredSeller;
-        if (seller == null || seller.isBlank() || auctionService.syntheticSellerHasActiveListing(seller, auctionId)) {
-            seller = pickSellerName(sellers, auctionId);
+        if (seller == null || seller.isBlank()
+                || !auctionService.syntheticSellerCanListMore(seller, auctionId, maxPerSeller)) {
+            seller = pickSellerName(sellers, auctionId, maxPerSeller);
         }
         if (seller == null) {
-            seller = sellers.get(random.nextInt(sellers.size())).trim();
+            return;
         }
         tryCreateListing(auctionId, seller, config);
     }
@@ -303,7 +363,7 @@ public final class FakeActivityService {
         return best;
     }
 
-    private String pickSellerName(List<String> names, String auctionId) {
+    private String pickSellerName(List<String> names, String auctionId, int maxPerSeller) {
         List<String> trimmed = new ArrayList<>();
         for (String name : names) {
             if (name == null || name.isBlank()) {
@@ -318,14 +378,25 @@ public final class FakeActivityService {
         if (trimmed.isEmpty()) {
             return null;
         }
-        List<String> free = new ArrayList<>();
+        int minCount = Integer.MAX_VALUE;
+        List<String> candidates = new ArrayList<>();
         for (String name : trimmed) {
-            if (!auctionService.syntheticSellerHasActiveListing(name, auctionId)) {
-                free.add(name);
+            int count = auctionService.countSyntheticListingsForSeller(name, auctionId);
+            if (count >= maxPerSeller) {
+                continue;
+            }
+            if (count < minCount) {
+                minCount = count;
+                candidates.clear();
+                candidates.add(name);
+            } else if (count == minCount) {
+                candidates.add(name);
             }
         }
-        List<String> pool = free.isEmpty() ? trimmed : free;
-        return pool.get(random.nextInt(pool.size()));
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        return candidates.get(random.nextInt(candidates.size()));
     }
 
     private FakeActivityItemSettings pickItem(List<FakeActivityItemSettings> items, String auctionId) {

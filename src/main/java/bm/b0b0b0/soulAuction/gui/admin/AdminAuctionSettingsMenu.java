@@ -149,10 +149,14 @@ public final class AdminAuctionSettingsMenu implements InventoryHolder {
         placeholders.put("fake", yesNo(definition.fakeActivityEnabled));
         placeholders.put("auction_file", "auctions/" + definition.id + ".yml");
         placeholders.put("synthetic", String.valueOf(auctionService.countSyntheticListings(definition.id)));
+        placeholders.put("listings", String.valueOf(auctionService.countActiveListings(definition.id)));
         placeholders.put("pool_sellers", String.valueOf(sellers));
         placeholders.put("pool_items", String.valueOf(items));
         placeholders.put("fake_max_per_auction", settings == null ? "0" : String.valueOf(settings.maxListingsPerAuction));
+        placeholders.put("fake_max_per_seller", settings == null ? "0" : String.valueOf(settings.maxListingsPerFakeSeller));
         placeholders.put("fake_max_total", settings == null ? "0" : String.valueOf(settings.maxTotalListings));
+        placeholders.put("fake_min_per_auction", settings == null ? "0" : String.valueOf(settings.minListingsPerAuction));
+        placeholders.put("fake_min_cooldown", settings == null ? "0" : String.valueOf(settings.minTopUpCooldownSeconds));
         placeholders.put("fake_tick_seconds", settings == null ? "0" : String.valueOf(settings.tickIntervalSeconds));
         placeholders.put("fake_file", configFakeDirectory());
         return placeholders;

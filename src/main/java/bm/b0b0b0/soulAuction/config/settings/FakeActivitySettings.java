@@ -22,17 +22,17 @@ public final class FakeActivitySettings extends YamlSerializable {
     @Comment({
             @CommentValue("Delay before periodic top-up ticks after startup (seconds)."),
     })
-    public int initialDelaySeconds = 30;
+    public int initialDelaySeconds = 10;
 
     @Comment({
             @CommentValue("How often to try adding listings when below limits (seconds)."),
     })
-    public int tickIntervalSeconds = 90;
+    public int tickIntervalSeconds = 45;
 
     @Comment({
             @CommentValue("After a fake listing is bought, wait this long before listing another item (seconds)."),
     })
-    public int afterPurchaseDelaySeconds = 180;
+    public int afterPurchaseDelaySeconds = 90;
 
     @NewLine
     @Comment({
@@ -52,14 +52,20 @@ public final class FakeActivitySettings extends YamlSerializable {
 
     @NewLine
     @Comment({
+            @CommentValue("Max fake listings from one nick on one auction (mirrors limits.default-max-active-listings-per-auction)."),
+            @CommentValue("Mix of 1–3 lots per seller looks like real grinders on anarchy."),
+    })
+    public int maxListingsPerFakeSeller = 3;
+
+    @Comment({
             @CommentValue("Cap fake listings per auction house file (auctions/*.yml id)."),
     })
-    public int maxListingsPerAuction = 15;
+    public int maxListingsPerAuction = 90;
 
     @Comment({
             @CommentValue("Cap fake listings across all auctions."),
     })
-    public int maxTotalListings = 45;
+    public int maxTotalListings = 180;
 
     @Comment({
             @CommentValue("Randomly backdate fake listing created-at by up to this many seconds."),
@@ -71,7 +77,19 @@ public final class FakeActivitySettings extends YamlSerializable {
     @Comment({
             @CommentValue("How many listings to attempt each tick (until caps are reached)."),
     })
-    public int listingsPerTick = 2;
+    public int listingsPerTick = 8;
+
+    @NewLine
+    @Comment({
+            @CommentValue("Keep at least this many total listings on each fake-enabled auction (0 = disabled)."),
+            @CommentValue("Only refills when count drops below this — startup fill uses max-listings-per-auction."),
+    })
+    public int minListingsPerAuction = 63;
+
+    @Comment({
+            @CommentValue("Per-auction cooldown between minimum top-ups (seconds)."),
+    })
+    public int minTopUpCooldownSeconds = 25;
 
     @NewLine
     @Comment({
