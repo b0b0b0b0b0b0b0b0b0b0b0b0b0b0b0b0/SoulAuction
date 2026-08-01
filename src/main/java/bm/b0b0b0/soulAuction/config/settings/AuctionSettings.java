@@ -19,10 +19,8 @@ public final class AuctionSettings extends YamlSerializable {
     @NewLine
     @Comment({
             @CommentValue("=== bStats (anonymous usage statistics) ==="),
-            @CommentValue("Helps the author see how many servers run SoulAuction: plugin version,"),
-            @CommentValue("online player count, Java version, OS. No player names, IPs, or world data."),
+            @CommentValue("Helps the author see how many servers run SoulAuction: plugin version."),
             @CommentValue("Set enabled: false to opt out on this server."),
-            @CommentValue("Servers can also disable all bStats plugins in plugins/bStats/config.yml."),
     })
     public BstatsSettings bstats = new BstatsSettings();
 
