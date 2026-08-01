@@ -17,6 +17,16 @@ public final class AuctionSettings extends YamlSerializable {
     public boolean checkForUpdates = true;
 
     @NewLine
+    @Comment({
+            @CommentValue("=== bStats (anonymous usage statistics) ==="),
+            @CommentValue("Helps the author see how many servers run SoulAuction: plugin version,"),
+            @CommentValue("online player count, Java version, OS. No player names, IPs, or world data."),
+            @CommentValue("Set enabled: false to opt out on this server."),
+            @CommentValue("Servers can also disable all bStats plugins in plugins/bStats/config.yml."),
+    })
+    public BstatsSettings bstats = new BstatsSettings();
+
+    @NewLine
     @Comment({@CommentValue("Global limits and safety options")})
     public LimitsSettings limits = new LimitsSettings();
 
@@ -152,6 +162,12 @@ public final class AuctionSettings extends YamlSerializable {
         executableItems.category = "WEAPONS";
         executableItems.searchAliases = List.of("executableitems", "executable", "ei");
         return List.of(new CustomItemPluginRuleSettings(), executableItems);
+    }
+
+    public static final class BstatsSettings {
+
+        @Comment({@CommentValue("Send anonymous metrics to https://bstats.org")})
+        public boolean enabled = true;
     }
 
     public static final class LimitsSettings {

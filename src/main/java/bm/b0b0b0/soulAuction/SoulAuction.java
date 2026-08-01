@@ -1,5 +1,6 @@
 package bm.b0b0b0.soulAuction;
 
+import bm.b0b0b0.soulAuction.bootstrap.SoulAuctionMetrics;
 import bm.b0b0b0.soulAuction.bootstrap.SoulAuctionStartupLog;
 import bm.b0b0b0.soulAuction.command.AuctionCommand;
 import bm.b0b0b0.soulAuction.command.AuctionAliasListener;
@@ -61,6 +62,7 @@ public final class SoulAuction extends JavaPlugin {
             startupLog.info("Loading configuration...");
             configurationLoader = new ConfigurationLoader(this);
             pluginConfig = configurationLoader.load();
+            SoulAuctionMetrics.tryStart(this, pluginConfig.auctionSettings().bstats.enabled);
             startupLog.stepSchedulers();
             StorageMode storageMode = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
             startupLog.stepOk("Config — storage=" + storageMode.name()
@@ -210,7 +212,7 @@ public final class SoulAuction extends JavaPlugin {
             }
         }
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
-            new SoulAuctionPlaceholderExpansion(auctionService, messageService).register();
+            new SoulAuctionPlaceholderExpansion(this, auctionService, messageService).register();
             startupLog.stepOk("PlaceholderAPI — expansion registered");
         } else {
             startupLog.stepSkipped("PlaceholderAPI — not found");

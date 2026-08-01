@@ -8,16 +8,19 @@ import bm.b0b0b0.soulAuction.util.NumberDisplayFormat;
 import java.util.Locale;
 import java.util.UUID;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 
 public final class SoulAuctionPlaceholderExpansion extends PlaceholderExpansion {
 
+    private final JavaPlugin plugin;
     private final AuctionService auctionService;
     private final MessageService messageService;
 
-    public SoulAuctionPlaceholderExpansion(AuctionService auctionService, MessageService messageService) {
+    public SoulAuctionPlaceholderExpansion(JavaPlugin plugin, AuctionService auctionService, MessageService messageService) {
+        this.plugin = plugin;
         this.auctionService = auctionService;
         this.messageService = messageService;
     }
@@ -34,7 +37,7 @@ public final class SoulAuctionPlaceholderExpansion extends PlaceholderExpansion 
 
     @Override
     public @NotNull String getVersion() {
-        return "1.2";
+        return plugin.getPluginMeta().getVersion();
     }
 
     @Override

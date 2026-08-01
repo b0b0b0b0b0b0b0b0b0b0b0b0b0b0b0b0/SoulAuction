@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'bm.b0b0b0.SoulAuction'
-version = '1.2'
+version = '1.2.1'
 
 repositories {
     mavenCentral()
@@ -32,6 +32,7 @@ dependencies {
     implementation("com.mysql:mysql-connector-j:8.4.0")
     implementation("org.xerial:sqlite-jdbc:3.46.0.0")
     implementation("redis.clients:jedis:5.2.0")
+    implementation("org.bstats:bstats-bukkit:3.2.1")
 }
 
 tasks {
