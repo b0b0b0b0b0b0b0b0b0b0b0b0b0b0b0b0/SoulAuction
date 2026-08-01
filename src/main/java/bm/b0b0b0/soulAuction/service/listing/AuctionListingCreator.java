@@ -21,6 +21,7 @@ import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import bm.b0b0b0.soulAuction.util.ListingSearchText;
+import bm.b0b0b0.soulAuction.util.SyntheticSellerIds;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -161,6 +162,65 @@ public final class AuctionListingCreator {
         }
         repository.flush();
         runtimeStorage.recordSell(seller.getUniqueId());
+        externalNotifier.listingCreated(listing, soldItem);
+        return SellResult.success(listing);
+    }
+
+    public SellResult createSynthetic(
+            String sellerName,
+            String auctionId,
+            int price,
+            ItemStack soldItem,
+            DefinitionLookup definitions,
+            long createdAtEpochMillis
+    ) {
+        if (soldItem == null || soldItem.getType().isAir() || soldItem.getAmount() < 1) {
+            return SellResult.failure(SellFailure.EMPTY_HAND);
+        }
+        AuctionSettings settings = configSupplier.get().auctionSettings();
+        if (!settings.limits.allowSelling) {
+            return SellResult.failure(SellFailure.SELL_DISABLED);
+        }
+        AuctionDefinitionSettings definition = definitions.find(auctionId);
+        if (definition == null) {
+            return SellResult.failure(SellFailure.AUCTION_NOT_FOUND);
+        }
+        AuctionEconomyType economyType = AuctionEconomyType.fromString(definition.economy);
+        if (!economy.isAvailable(economyType, definition)) {
+            return SellResult.failure(SellFailure.ECONOMY_UNAVAILABLE);
+        }
+        if (price < settings.limits.minPrice || price > settings.limits.maxPrice) {
+            return SellResult.failure(price < settings.limits.minPrice ? SellFailure.PRICE_TOO_LOW : SellFailure.PRICE_TOO_HIGH);
+        }
+        String normalizedAuctionId = definition.id.toLowerCase(Locale.ROOT);
+        List<CustomItemPluginRuleSettings> customRules = mergedCustomRules(settings, definition);
+        AuctionCategory category = customItemRuleEngine.resolveCategory(
+                soldItem,
+                customRules,
+                AuctionCategory.fromMaterial(soldItem.getType())
+        );
+        String trimmedName = sellerName.trim();
+        String searchText = ListingSearchText.fromItem(trimmedName, soldItem, customRules);
+        ListingMetadata metadata = ListingMetadata.empty();
+        metadata.serverOrigin = settings.network == null ? "" : settings.network.serverId;
+        metadata.syntheticSeller = true;
+        java.util.UUID sellerId = SyntheticSellerIds.forDisplayName(trimmedName);
+        AuctionListing listing = repository.create(
+                normalizedAuctionId,
+                sellerId,
+                trimmedName,
+                price,
+                economyType,
+                ItemStackCodec.encode(soldItem),
+                category,
+                searchText,
+                metadata.toJson(),
+                createdAtEpochMillis
+        );
+        if (listing == null) {
+            return SellResult.failure(SellFailure.LISTING_ID_ALLOCATION_FAILED);
+        }
+        repository.flush();
         externalNotifier.listingCreated(listing, soldItem);
         return SellResult.success(listing);
     }

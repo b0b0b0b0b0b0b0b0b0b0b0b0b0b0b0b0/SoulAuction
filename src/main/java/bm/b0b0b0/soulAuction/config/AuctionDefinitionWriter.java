@@ -38,4 +38,11 @@ public final class AuctionDefinitionWriter {
         definition.sellPermission = "soulauction.sell." + auctionId;
         definition.save(file);
     }
+
+    public void saveDefinition(AuctionSettings auctionSettings, AuctionDefinitionSettings definition) throws IOException {
+        Path directory = auctionsDirectory(auctionSettings);
+        Files.createDirectories(directory);
+        Path file = directory.resolve(definition.id + ".yml");
+        definition.save(file);
+    }
 }

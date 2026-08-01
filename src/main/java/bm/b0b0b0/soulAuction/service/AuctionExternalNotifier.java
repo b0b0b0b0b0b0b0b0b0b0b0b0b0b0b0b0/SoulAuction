@@ -35,6 +35,9 @@ public final class AuctionExternalNotifier {
     }
 
     public void listingCreated(AuctionListing listing, ItemStack item) {
+        if (listing.metadata().syntheticSeller) {
+            return;
+        }
         AuctionSettings.NotificationsSettings settings = settingsSupplier.get().notifications;
         if (!settings.notifyListed) {
             return;
@@ -63,6 +66,9 @@ public final class AuctionExternalNotifier {
     }
 
     public void sold(AuctionListing listing, String buyerName, UUID buyerId, String priceFormatted) {
+        if (listing.metadata().syntheticSeller) {
+            return;
+        }
         AuctionSettings.NotificationsSettings settings = settingsSupplier.get().notifications;
         if (!settings.notifySold) {
             return;

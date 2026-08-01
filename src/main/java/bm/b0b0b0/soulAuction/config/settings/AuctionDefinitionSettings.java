@@ -138,6 +138,12 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
     })
     public List<String> listingLoreTemplate = List.of();
 
+    @Comment({
+            @CommentValue("Automatically create and maintain fake seller listings for this auction."),
+            @CommentValue("Toggle: /ah admin → right-click auction → slot 22 (lime/red dye)."),
+    })
+    public boolean fakeActivityEnabled = false;
+
     public AuctionDefinitionSettings() {
         super(SoulAuctionSerializerConfig.INSTANCE);
     }

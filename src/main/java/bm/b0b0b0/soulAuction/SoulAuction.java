@@ -3,10 +3,13 @@ package bm.b0b0b0.soulAuction;
 import bm.b0b0b0.soulAuction.bootstrap.SoulAuctionMetrics;
 import bm.b0b0b0.soulAuction.bootstrap.SoulAuctionStartupLog;
 import bm.b0b0b0.soulAuction.command.AuctionCommand;
+import bm.b0b0b0.soulAuction.command.AuctionCommandRegistrar;
 import bm.b0b0b0.soulAuction.command.AuctionAliasListener;
 import bm.b0b0b0.soulAuction.config.AuctionDefinitionWriter;
 import bm.b0b0b0.soulAuction.config.AuctionEconomyBootstrap;
 import bm.b0b0b0.soulAuction.config.ConfigurationLoader;
+import bm.b0b0b0.soulAuction.config.FakeActivityConfig;
+import bm.b0b0b0.soulAuction.config.FakeActivityConfigLoader;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.config.StorageRuntimeMeta;
 import bm.b0b0b0.soulAuction.gui.AuctionGuiListener;
@@ -24,6 +27,7 @@ import bm.b0b0b0.soulAuction.service.AuctionListingCache;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService;
+import bm.b0b0b0.soulAuction.service.admin.AdminAuctionSettingsService;
 import bm.b0b0b0.soulAuction.service.CoinsEngineBridge;
 import bm.b0b0b0.soulAuction.service.EconomyBridge;
 import bm.b0b0b0.soulAuction.service.ExperienceEconomyBridge;
@@ -32,7 +36,10 @@ import bm.b0b0b0.soulAuction.service.PermissionPriorityResolver;
 import bm.b0b0b0.soulAuction.service.PlayerPointsBridge;
 import bm.b0b0b0.soulAuction.service.PriceLimitResolver;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
+import bm.b0b0b0.soulAuction.service.SellerSkinSource;
+import bm.b0b0b0.soulAuction.service.SkinRestorerBridge;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
+import bm.b0b0b0.soulAuction.service.fakeactivity.FakeActivityService;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import bm.b0b0b0.soulAuction.util.upd.SoulAuctionUpdateChecker;
 import java.nio.file.Path;
@@ -47,12 +54,18 @@ public final class SoulAuction extends JavaPlugin {
     private MessageService messageService;
     private AuctionService auctionService;
     private AdminAuctionCreateService adminAuctionCreateService;
+    private AdminAuctionSettingsService adminAuctionSettingsService;
     private AuctionRepository repository;
     private RedisSellGuard redisSellGuard;
     private AuctionRuntimeStorage runtimeStorage;
+    private FakeActivityConfigLoader fakeActivityConfigLoader;
+    private FakeActivityConfig fakeActivityConfig;
+    private FakeActivityService fakeActivityService;
+    private AuctionCommand auctionCommand;
 
     @Override
     public void onEnable() {
+        AuctionCommandRegistrar.registerHandler(this);
         startupLog = new SoulAuctionStartupLog();
         startupLog.bannerStart(getPluginMeta().getVersion());
         try {
@@ -62,6 +75,8 @@ public final class SoulAuction extends JavaPlugin {
             startupLog.info("Loading configuration...");
             configurationLoader = new ConfigurationLoader(this);
             pluginConfig = configurationLoader.load();
+            fakeActivityConfigLoader = new FakeActivityConfigLoader(this);
+            fakeActivityConfig = fakeActivityConfigLoader.load(pluginConfig.auctionSettings());
             SoulAuctionMetrics.tryStart(this, pluginConfig.auctionSettings().bstats.enabled);
             startupLog.stepSchedulers();
             StorageMode storageMode = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
@@ -105,12 +120,30 @@ public final class SoulAuction extends JavaPlugin {
                     priceLimitResolver,
                     externalNotifier,
                     messageService,
-                    listingCache
+                    listingCache,
+                    this
             );
             auctionService.attachCacheSubscriber();
+            fakeActivityService = new FakeActivityService(
+                    this,
+                    auctionService,
+                    this::pluginConfig,
+                    this::fakeActivityConfig,
+                    fakeActivityConfigLoader,
+                    () -> fakeActivityConfig = fakeActivityConfigLoader.load(pluginConfig.auctionSettings())
+            );
+            auctionService.attachFakeActivityService(fakeActivityService);
             logIntegrations();
             AuctionDefinitionWriter definitionWriter = new AuctionDefinitionWriter(this);
             adminAuctionCreateService = new AdminAuctionCreateService(
+                    this::pluginConfig,
+                    definitionWriter,
+                    this::reloadAll,
+                    auctionService,
+                    messageService
+            );
+            adminAuctionSettingsService = new AdminAuctionSettingsService(
+                    this,
                     this::pluginConfig,
                     definitionWriter,
                     this::reloadAll,
@@ -123,7 +156,9 @@ public final class SoulAuction extends JavaPlugin {
                             this::pluginConfig,
                             auctionService,
                             messageService,
-                            adminAuctionCreateService
+                            adminAuctionCreateService,
+                            adminAuctionSettingsService,
+                            this::fakeActivityConfig
                     ),
                     this
             );
@@ -149,14 +184,14 @@ public final class SoulAuction extends JavaPlugin {
                     ),
                     this
             );
-            getCommand("ah").setExecutor(new AuctionCommand(
+            auctionCommand = new AuctionCommand(
                     this,
                     this::pluginConfig,
                     messageService,
                     auctionService,
                     this::reloadAll,
                     adminAuctionCreateService
-            ));
+            );
             PluginSchedulers.runGlobalTimer(
                     this,
                     100L,
@@ -217,6 +252,8 @@ public final class SoulAuction extends JavaPlugin {
         } else {
             startupLog.stepSkipped("PlaceholderAPI — not found");
         }
+        logFakeActivity();
+        scheduleSellerSkinWarmup();
         startupLog.bannerSuccess();
         if (pluginConfig.auctionSettings().checkForUpdates) {
             SoulAuctionUpdateChecker.schedule(this, getPluginMeta().getVersion());
@@ -282,6 +319,12 @@ public final class SoulAuction extends JavaPlugin {
         } else {
             startupLog.stepSkipped("CoinsEngine — not found");
         }
+        if (SkinRestorerBridge.isPluginInstalled()) {
+            startupLog.stepOk("SkinsRestorer — installed");
+        } else {
+            startupLog.stepSkipped("SkinsRestorer — not found");
+        }
+        logSellerSkins();
     }
 
     @Override
@@ -305,14 +348,102 @@ public final class SoulAuction extends JavaPlugin {
         }
     }
 
-    private PluginConfig pluginConfig() {
-        return pluginConfig;
-    }
-
     private void reloadAll() {
         pluginConfig = configurationLoader.load();
+        fakeActivityConfig = fakeActivityConfigLoader.load(pluginConfig.auctionSettings());
         wireMessageServiceConfig();
         messageService.reload();
+        if (fakeActivityService != null) {
+            fakeActivityService.reload();
+        }
+        if (fakeActivityService != null) {
+            fakeActivityService.reload();
+        }
+        if (auctionService != null) {
+            scheduleSellerSkinWarmup();
+        }
+    }
+
+    private void scheduleSellerSkinWarmup() {
+        if (auctionService == null) {
+            return;
+        }
+        auctionService.warmupSellerSkins().thenAccept(result -> PluginSchedulers.runGlobal(this, () -> {
+            if (result.requested() <= 0) {
+                return;
+            }
+            startupLog.stepOk("SkinsRestorer — prefetched "
+                    + result.resolved()
+                    + "/"
+                    + result.requested()
+                    + " fake seller skins");
+        }));
+    }
+
+    private FakeActivityConfig fakeActivityConfig() {
+        return fakeActivityConfig;
+    }
+
+    private void logFakeActivity() {
+        int totalAuctions = auctionService.sortedAuctionDefinitions().size();
+        int enabledAuctions = auctionService.countAuctionsWithFakeActivity();
+        int sellers = fakeActivityConfig.sellers().names == null ? 0 : fakeActivityConfig.sellers().names.size();
+        int items = fakeActivityConfig.items().size();
+        if (enabledAuctions == 0) {
+            startupLog.stepSkipped("Fake activity — 0/"
+                    + totalAuctions
+                    + " auctions with fake-activity-enabled, pool "
+                    + sellers
+                    + " sellers / "
+                    + items
+                    + " items");
+            return;
+        }
+        if (fakeActivityService != null) {
+            fakeActivityService.start();
+        }
+        int synthetic = auctionService.countSyntheticListings(null);
+        startupLog.stepOk("Fake activity — "
+                + enabledAuctions
+                + "/"
+                + totalAuctions
+                + " auction(s), "
+                + items
+                + " items, "
+                + sellers
+                + " sellers, "
+                + synthetic
+                + " listings");
+    }
+
+    private void logSellerSkins() {
+        SellerSkinSource source = SellerSkinSource.parse(pluginConfig.auctionSettings().sellerSkins.source);
+        if (source == SellerSkinSource.OFF) {
+            startupLog.stepSkipped("Seller skins — off");
+            return;
+        }
+        boolean skinsRestorer = SkinRestorerBridge.isPluginInstalled();
+        if (source == SellerSkinSource.MOJANG) {
+            startupLog.stepOk("Seller skins — mojang");
+            return;
+        }
+        if (source == SellerSkinSource.SKINSRESTORER) {
+            if (skinsRestorer) {
+                startupLog.stepOk("Seller skins — skins-restorer");
+            } else {
+                startupLog.stepSkipped("Seller skins — skins-restorer (SkinsRestorer not found)");
+            }
+            return;
+        }
+        if (skinsRestorer) {
+            startupLog.stepOk("Seller skins — auto (SkinsRestorer + Mojang fallback)");
+        } else {
+            startupLog.stepOk("Seller skins — auto (Mojang only, SkinsRestorer not found)");
+        }
+    }
+
+    private PluginConfig pluginConfig() {
+        return pluginConfig;
     }
 
     private void wireMessageServiceConfig() {
@@ -330,5 +461,9 @@ public final class SoulAuction extends JavaPlugin {
 
     public AuctionService auctionService() {
         return auctionService;
+    }
+
+    public AuctionCommand auctionCommand() {
+        return auctionCommand;
     }
 }

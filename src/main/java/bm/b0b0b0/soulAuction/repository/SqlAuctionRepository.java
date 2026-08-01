@@ -109,7 +109,8 @@ public final class SqlAuctionRepository implements AuctionRepository {
             String itemBase64,
             AuctionCategory category,
             String searchText,
-            String metadataJson
+            String metadataJson,
+            long createdAtEpochMillis
     ) {
         long listingId = allocateListingIdBlocking();
         if (listingId <= 0L) {
@@ -122,7 +123,7 @@ public final class SqlAuctionRepository implements AuctionRepository {
                 sellerName,
                 price,
                 economyType,
-                System.currentTimeMillis(),
+                createdAtEpochMillis,
                 itemBase64,
                 category,
                 searchText,

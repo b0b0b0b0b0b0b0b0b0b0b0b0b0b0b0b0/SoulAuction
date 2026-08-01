@@ -8,6 +8,7 @@ import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import bm.b0b0b0.soulAuction.util.ListingItemPresentation;
+import bm.b0b0b0.soulAuction.util.PlayerDisplayNames;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -17,7 +18,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -248,8 +248,8 @@ public final class PlayerRecordsMenu implements InventoryHolder {
     }
 
     private ItemStack dealPaper(DealHistoryEntry entry, boolean asPurchase) {
-        String sellerName = offlineName(entry.sellerId());
-        String buyerName = entry.buyerId() == null ? "-" : offlineName(entry.buyerId());
+        String sellerName = PlayerDisplayNames.resolve(entry.sellerId(), entry.sellerName());
+        String buyerName = PlayerDisplayNames.resolve(entry.buyerId(), entry.buyerName());
         String price = auctionService.formatPrice(entry.price(), entry.auctionId(), viewerId);
         String time = TIME_FORMAT.format(Instant.ofEpochMilli(entry.createdAtEpochMillis()).atZone(ZoneId.systemDefault()));
         String total = auctionService.formatPrice(entry.price() + entry.buyTax(), entry.auctionId(), viewerId);
@@ -291,14 +291,6 @@ public final class PlayerRecordsMenu implements InventoryHolder {
             item.setItemMeta(itemMeta);
         }
         return item;
-    }
-
-    private String offlineName(UUID uuid) {
-        OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
-        if (offlinePlayer.getName() != null) {
-            return offlinePlayer.getName();
-        }
-        return uuid.toString();
     }
 
     private static String titleKey(PlayerHistoryView view) {

@@ -123,8 +123,9 @@ public final class AuctionPurchaseService {
             int saleTax = taxes.saleTax();
             int buyTax = taxes.buyTax();
             int payout = taxes.sellerPayout(listing.price());
-            boolean sellerPaid = false;
-            if (sellerOnline != null && settings.limits.autoClaimMoneyWhenOnline) {
+            boolean syntheticSeller = listing.metadata().syntheticSeller;
+            boolean sellerPaid = syntheticSeller;
+            if (!syntheticSeller && sellerOnline != null && settings.limits.autoClaimMoneyWhenOnline) {
                 sellerPaid = economy.deposit(listing.sellerId(), payout, listing.economyType(), definition);
             }
             saleClaimer.commit(listing.listingId());
@@ -133,7 +134,9 @@ public final class AuctionPurchaseService {
                     listing.auctionId(),
                     listing.listingId(),
                     listing.sellerId(),
+                    listing.sellerName(),
                     buyer.getUniqueId(),
+                    buyer.getName(),
                     listing.price(),
                     saleTax,
                     listing.economyType(),

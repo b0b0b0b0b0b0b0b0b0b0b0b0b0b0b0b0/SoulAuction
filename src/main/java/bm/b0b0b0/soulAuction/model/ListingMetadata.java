@@ -10,6 +10,7 @@ public final class ListingMetadata {
     private static final Gson GSON = new GsonBuilder().create();
 
     public String serverOrigin = "";
+    public boolean syntheticSeller = false;
     public ListingKind kind = ListingKind.FIXED_PRICE;
     public List<String> bundleItemsBase64 = new ArrayList<>();
     public String removalReason = "";

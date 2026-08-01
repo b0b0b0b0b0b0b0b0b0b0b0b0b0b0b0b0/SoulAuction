@@ -30,6 +30,7 @@ import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterSta
 import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowsePage;
 import bm.b0b0b0.soulAuction.service.customitem.CustomItemRuleEngine;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
+import bm.b0b0b0.soulAuction.service.fakeactivity.FakeActivityService;
 import bm.b0b0b0.soulAuction.service.economy.ItemCurrencyService;
 import com.google.gson.Gson;
 import bm.b0b0b0.soulAuction.service.migration.AuctionStorageMigrator;
@@ -40,6 +41,10 @@ import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
 import bm.b0b0b0.soulAuction.util.ItemDisplayNames;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
+import bm.b0b0b0.soulAuction.util.PlayerDisplayNames;
+import bm.b0b0b0.soulAuction.util.PlayerSkullTextures;
+import bm.b0b0b0.soulAuction.util.PluginSchedulers;
+import bm.b0b0b0.soulAuction.util.SyntheticSellerIds;
 import bm.b0b0b0.soulAuction.util.SimilarItemInventory;
 import bm.b0b0b0.soulAuction.util.ListingDurationFormat;
 import java.util.HashMap;
@@ -47,6 +52,7 @@ import java.util.HashSet;
 import net.kyori.adventure.text.Component;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -60,7 +66,10 @@ import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 
 public final class AuctionService {
 
@@ -79,6 +88,9 @@ public final class AuctionService {
     private final ListingLockRunner listingLocks;
     private final AuctionExternalNotifier externalNotifier;
     private final MessageService messageService;
+    private volatile SellerSkinBridge sellerSkinBridge;
+    private volatile FakeActivityService fakeActivityService;
+    private final JavaPlugin plugin;
     private final ConcurrentHashMap<UUID, BrowsePreferences> browsePreferences;
     private final ConcurrentHashMap<UUID, BrowseFilterState> browseFilters;
     private final ConcurrentHashMap<UUID, BrowseSelection> browseSelections;
@@ -102,10 +114,12 @@ public final class AuctionService {
             PriceLimitResolver priceLimitResolver,
             AuctionExternalNotifier externalNotifier,
             MessageService messageService,
-            AuctionListingCache listingCache
+            AuctionListingCache listingCache,
+            JavaPlugin plugin
     ) {
         this.repository = repository;
         this.configSupplier = configSupplier;
+        this.plugin = plugin;
         this.economy = new AuctionEconomyService(
                 vaultBridge,
                 playerPointsBridge,
@@ -235,6 +249,26 @@ public final class AuctionService {
 
     public boolean isFavoriteListing(UUID viewerId, long listingId) {
         return runtimeStorage.isFavoriteListing(viewerId, listingId);
+    }
+
+    public List<AuctionListing> favoriteListingsForViewer(UUID viewerId) {
+        java.util.Set<Long> ids = runtimeStorage.favoriteListings(viewerId);
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        List<AuctionListing> listings = new ArrayList<>();
+        for (long listingId : ids) {
+            AuctionListing listing = repository.findById(listingId);
+            if (listing == null) {
+                if (runtimeStorage.isFavoriteListing(viewerId, listingId)) {
+                    runtimeStorage.toggleFavoriteListing(viewerId, listingId);
+                }
+                continue;
+            }
+            listings.add(listing);
+        }
+        listings.sort(Comparator.comparingLong(AuctionListing::createdAtEpochMillis).reversed());
+        return listings;
     }
 
     public void invalidateListingCache(String auctionId) {
@@ -440,11 +474,239 @@ public final class AuctionService {
         }
     }
 
+    public SellResult createAdminFakeListing(String sellerName, String auctionId, int price, ItemStack escrowItem) {
+        return createAdminFakeListing(sellerName, auctionId, price, escrowItem, System.currentTimeMillis());
+    }
+
+    public SellResult createAdminFakeListing(
+            String sellerName,
+            String auctionId,
+            int price,
+            ItemStack escrowItem,
+            long createdAtEpochMillis
+    ) {
+        if (!loaded) {
+            return SellResult.failure(SellFailure.STORAGE_NOT_READY);
+        }
+        if (escrowItem == null || escrowItem.isEmpty()) {
+            return SellResult.failure(SellFailure.EMPTY_HAND);
+        }
+        ItemStack soldItem = escrowItem.clone();
+        SellResult result = listingCreator.createSynthetic(
+                sellerName,
+                auctionId,
+                price,
+                soldItem,
+                definitionLookup(),
+                createdAtEpochMillis
+        );
+        if (result.success() && result.listing() != null) {
+            runtimeStorage.rememberSyntheticSeller(result.listing().sellerId(), result.listing().sellerName());
+            FakeActivityService activity = fakeActivityService;
+            if (activity != null) {
+                activity.registerFromAdminFake(result.listing().sellerName(), soldItem, auctionId);
+            }
+            invalidateListingCache(result.listing().auctionId(), result.listing(), false);
+            prefetchSellerSkin(result.listing().sellerName(), result.listing().sellerId());
+        }
+        return result;
+    }
+
+    public List<String> knownFakeSellerNames() {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        FakeActivityService activity = fakeActivityService;
+        if (activity != null) {
+            for (String name : activity.sellerNames()) {
+                if (name != null && !name.isBlank()) {
+                    names.add(name);
+                }
+            }
+        }
+        for (String name : runtimeStorage.knownSyntheticSellerNames()) {
+            if (name != null && !name.isBlank()) {
+                names.add(name);
+            }
+        }
+        return List.copyOf(names);
+    }
+
+    public void attachFakeActivityService(FakeActivityService service) {
+        this.fakeActivityService = service;
+    }
+
+    public int countSyntheticListings(String auctionId) {
+        int count = 0;
+        for (AuctionListing listing : repository.listAll()) {
+            if (!listing.metadata().syntheticSeller) {
+                continue;
+            }
+            if (auctionId != null && !listing.auctionId().equalsIgnoreCase(auctionId)) {
+                continue;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    public boolean syntheticSellerHasActiveListing(String sellerName, String auctionId) {
+        if (sellerName == null || sellerName.isBlank() || auctionId == null || auctionId.isBlank()) {
+            return false;
+        }
+        UUID sellerId = SyntheticSellerIds.forDisplayName(sellerName.trim());
+        for (AuctionListing listing : repository.listAll()) {
+            if (!listing.sellerId().equals(sellerId)) {
+                continue;
+            }
+            if (listing.auctionId().equalsIgnoreCase(auctionId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public String resolveSellerDisplayName(UUID sellerId) {
+        String synthetic = runtimeStorage.syntheticSellerName(sellerId);
+        if (synthetic != null && !synthetic.isBlank()) {
+            return synthetic;
+        }
+        for (AuctionListing listing : repository.listAll()) {
+            if (listing.sellerId().equals(sellerId)) {
+                return listing.sellerName();
+            }
+        }
+        return PlayerDisplayNames.resolve(sellerId, null);
+    }
+
+    private SellerSkinBridge sellerSkinBridge() {
+        SellerSkinBridge bridge = sellerSkinBridge;
+        if (bridge != null) {
+            return bridge;
+        }
+        synchronized (this) {
+            bridge = sellerSkinBridge;
+            if (bridge == null) {
+                sellerSkinBridge = bridge = new SellerSkinBridge(plugin, configSupplier);
+            }
+            return bridge;
+        }
+    }
+
+    public boolean isSyntheticSeller(UUID sellerId) {
+        if (sellerId == null) {
+            return false;
+        }
+        String synthetic = runtimeStorage.syntheticSellerName(sellerId);
+        if (synthetic != null && !synthetic.isBlank()) {
+            return true;
+        }
+        for (AuctionListing listing : repository.listAll()) {
+            if (listing.sellerId().equals(sellerId) && listing.metadata().syntheticSeller) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public List<String> sellerSkinWarmupTargets() {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        var settings = configSupplier.get().auctionSettings().sellerSkins;
+        String forced = settings.fakeSellerSkin == null ? "" : settings.fakeSellerSkin.trim();
+        if (!forced.isEmpty()) {
+            names.add(forced);
+        } else {
+            names.addAll(knownFakeSellerNames());
+        }
+        if (settings.fallbackSkin != null && !settings.fallbackSkin.isBlank()) {
+            names.add(settings.fallbackSkin.trim());
+        }
+        return List.copyOf(names);
+    }
+
+    public void applySellerSkinsToMenu(Player viewer, Inventory inventory, Map<Integer, UUID> sellersBySlot) {
+        SellerSkinBridge bridge = sellerSkinBridge();
+        if (!bridge.enabled() || viewer == null || inventory == null || sellersBySlot.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<Integer, UUID> entry : sellersBySlot.entrySet()) {
+            int slot = entry.getKey();
+            UUID sellerId = entry.getValue();
+            String sellerName = resolveSellerDisplayName(sellerId);
+            boolean synthetic = isSyntheticSeller(sellerId);
+            bridge.fetchSkinProperty(sellerName, sellerId, synthetic).thenAccept(property -> {
+                if (property.isEmpty()) {
+                    return;
+                }
+                PluginSchedulers.run(plugin, viewer, () -> applySellerSkinToSlot(
+                        viewer,
+                        inventory,
+                        slot,
+                        sellerId,
+                        sellerName,
+                        property.get()
+                ));
+            });
+        }
+    }
+
+    public CompletableFuture<SkinRestorerBridge.WarmupResult> warmupSellerSkins() {
+        return sellerSkinBridge().warmupSkinsRestorerCache(sellerSkinWarmupTargets());
+    }
+
+    public void prefetchSellerSkin(String sellerName, UUID sellerId) {
+        SellerSkinBridge bridge = sellerSkinBridge();
+        bridge.prefetchSkinsRestorer(resolveSkinPrefetchName(sellerName, sellerId));
+        if (bridge.enabled()) {
+            bridge.fetchSkinProperty(sellerName, sellerId, isSyntheticSeller(sellerId));
+        }
+    }
+
+    private String resolveSkinPrefetchName(String sellerName, UUID sellerId) {
+        var settings = configSupplier.get().auctionSettings().sellerSkins;
+        if (isSyntheticSeller(sellerId)) {
+            String forced = settings.fakeSellerSkin == null ? "" : settings.fakeSellerSkin.trim();
+            if (!forced.isEmpty()) {
+                return forced;
+            }
+        }
+        return sellerName;
+    }
+
+    private void applySellerSkinToSlot(
+            Player viewer,
+            Inventory inventory,
+            int slot,
+            UUID sellerId,
+            String sellerName,
+            SkinTexture texture
+    ) {
+        if (!viewer.isOnline() || viewer.getOpenInventory().getTopInventory() != inventory) {
+            return;
+        }
+        ItemStack current = inventory.getItem(slot);
+        if (current == null || current.getType() != Material.PLAYER_HEAD) {
+            return;
+        }
+        ItemStack updated = current.clone();
+        ItemMeta meta = updated.getItemMeta();
+        if (meta instanceof SkullMeta skullMeta) {
+            PlayerSkullTextures.apply(skullMeta, sellerId, sellerName, texture);
+            updated.setItemMeta(skullMeta);
+            inventory.setItem(slot, updated);
+        }
+    }
+
     public PurchaseResult purchase(Player buyer, long listingId) {
         if (!loaded) {
             return PurchaseResult.failure(PurchaseFailure.STORAGE_NOT_READY);
         }
-        return purchaseService.purchase(buyer, listingId, purchaseDefinitionLookup());
+        PurchaseResult result = purchaseService.purchase(buyer, listingId, purchaseDefinitionLookup());
+        if (result.success() && result.listing() != null && result.listing().metadata().syntheticSeller) {
+            FakeActivityService activity = fakeActivityService;
+            if (activity != null) {
+                activity.onSyntheticPurchased(result.listing());
+            }
+        }
+        return result;
     }
 
     public PurchaseQuote quotePurchase(Player buyer, long listingId) {
@@ -546,6 +808,8 @@ public final class AuctionService {
                 removed.auctionId(),
                 removed.listingId(),
                 removed.sellerId(),
+                removed.sellerName(),
+                null,
                 null,
                 removed.price(),
                 0,
@@ -602,6 +866,8 @@ public final class AuctionService {
                     listing.auctionId(),
                     listing.listingId(),
                     listing.sellerId(),
+                    listing.sellerName(),
+                    null,
                     null,
                     listing.price(),
                     0,
@@ -617,6 +883,8 @@ public final class AuctionService {
                 listing.auctionId(),
                 listing.listingId(),
                 listing.sellerId(),
+                listing.sellerName(),
+                null,
                 null,
                 listing.price(),
                 0,
@@ -711,6 +979,23 @@ public final class AuctionService {
         return configSupplier.get().auctionDefinitions().stream()
                 .sorted(Comparator.comparing(definition -> definition.id.toLowerCase(Locale.ROOT)))
                 .toList();
+    }
+
+    public AuctionDefinitionSettings findAuctionDefinition(String auctionId) {
+        if (auctionId == null || auctionId.isBlank()) {
+            return null;
+        }
+        return findAuction(auctionId, configSupplier.get());
+    }
+
+    public int countAuctionsWithFakeActivity() {
+        int count = 0;
+        for (AuctionDefinitionSettings definition : sortedAuctionDefinitions()) {
+            if (definition.fakeActivityEnabled) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public int countActiveListings(String auctionId) {
@@ -847,6 +1132,8 @@ public final class AuctionService {
                 listing.auctionId(),
                 listing.listingId(),
                 listing.sellerId(),
+                listing.sellerName(),
+                null,
                 null,
                 newPrice,
                 0,

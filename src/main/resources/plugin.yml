@@ -4,7 +4,7 @@ main: bm.b0b0b0.soulAuction.SoulAuction
 api-version: '1.21'
 folia-supported: true
 authors: [ b0b0b0 ]
-softdepend: [ Vault, PlayerPoints, PlaceholderAPI, CoinsEngine ]
+softdepend: [ Vault, PlayerPoints, PlaceholderAPI, CoinsEngine, SkinsRestorer ]
 libraries:
   - net.elytrium:serializer:1.1.1
   - com.google.code.gson:gson:2.11.0
@@ -12,11 +12,6 @@ libraries:
   - com.mysql:mysql-connector-j:8.4.0
   - org.xerial:sqlite-jdbc:3.46.0.0
   - redis.clients:jedis:5.2.0
-commands:
-  ah:
-    description: Open auction menu
-    usage: /ah [auctionId|search|page|view|selling|expired|purchased|history|sell|my|claim|cancel|limit|purge|admin|reload]
-    aliases: [ax]
 permissions:
   soulauction.command.ah:
     default: true

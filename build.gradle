@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'bm.b0b0b0.SoulAuction'
-version = '1.2.1'
+version = '1.2.2'
 
 repositories {
     mavenCentral()

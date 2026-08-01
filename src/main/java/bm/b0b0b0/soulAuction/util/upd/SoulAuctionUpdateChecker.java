@@ -12,7 +12,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class SoulAuctionUpdateChecker {
 
     private static final String VERSION_URL = "https://b0b0b0.dev/pl/souls/soulauction.txt";
-    private static final String RESOURCE_URL = "https://github.com/b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0/SoulAuction/releases";
+    private static final String MODRINTH_URL = "https://modrinth.com/plugin/soulauction";
+    private static final String BLACK_MINECRAFT_URL = "https://black-minecraft.com/resources/11393/";
     private static final int CONNECT_TIMEOUT_MS = 5000;
     private static final int READ_TIMEOUT_MS = 5000;
 
@@ -48,7 +49,8 @@ public final class SoulAuctionUpdateChecker {
         SoulAuctionConsole.warn("A new SoulAuction version is available!");
         SoulAuctionConsole.line("  Current: " + SoulAuctionConsole.gray(currentVersion));
         SoulAuctionConsole.line("  Latest: " + SoulAuctionConsole.green(latestVersion));
-        SoulAuctionConsole.line("  Download: " + SoulAuctionConsole.gray(RESOURCE_URL));
+        SoulAuctionConsole.line("  Modrinth: " + SoulAuctionConsole.gray(MODRINTH_URL));
+        SoulAuctionConsole.line("  Black-Minecraft: " + SoulAuctionConsole.gray(BLACK_MINECRAFT_URL));
         SoulAuctionConsole.line(SoulAuctionConsole.border());
         SoulAuctionConsole.blank();
     }

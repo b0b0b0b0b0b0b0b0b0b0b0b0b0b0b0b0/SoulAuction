@@ -26,8 +26,34 @@ public interface AuctionRepository {
             String itemBase64,
             AuctionCategory category,
             String searchText,
-            String metadataJson
+            String metadataJson,
+            long createdAtEpochMillis
     );
+
+    default AuctionListing create(
+            String auctionId,
+            UUID sellerId,
+            String sellerName,
+            int price,
+            AuctionEconomyType economyType,
+            String itemBase64,
+            AuctionCategory category,
+            String searchText,
+            String metadataJson
+    ) {
+        return create(
+                auctionId,
+                sellerId,
+                sellerName,
+                price,
+                economyType,
+                itemBase64,
+                category,
+                searchText,
+                metadataJson,
+                System.currentTimeMillis()
+        );
+    }
 
     AuctionListing remove(long listingId);
 

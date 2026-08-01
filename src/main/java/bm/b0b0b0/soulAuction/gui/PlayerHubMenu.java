@@ -13,6 +13,8 @@ import org.bukkit.inventory.meta.ItemMeta;
 
 public final class PlayerHubMenu implements InventoryHolder {
 
+    private static final int FAVORITE_SELLERS_SLOT = 11;
+    private static final int FAVORITE_LISTINGS_SLOT = 15;
     private static final int SELLING_SLOT = 20;
     private static final int EXPIRED_SLOT = 22;
     private static final int PURCHASED_SLOT = 24;
@@ -76,8 +78,18 @@ public final class PlayerHubMenu implements InventoryHolder {
         return slot == BACK_SLOT;
     }
 
+    public boolean isFavoriteSellers(int slot) {
+        return slot == FAVORITE_SELLERS_SLOT;
+    }
+
+    public boolean isFavoriteListings(int slot) {
+        return slot == FAVORITE_LISTINGS_SLOT;
+    }
+
     private void refresh() {
         inventory.clear();
+        inventory.setItem(FAVORITE_SELLERS_SLOT, button(Material.NETHER_STAR, "hub-favorite-sellers", "hub-favorite-sellers-lore"));
+        inventory.setItem(FAVORITE_LISTINGS_SLOT, button(Material.GLOWSTONE, "hub-favorite-listings", "hub-favorite-listings-lore"));
         inventory.setItem(SELLING_SLOT, button(Material.LIME_DYE, "hub-selling", "hub-selling-lore"));
         inventory.setItem(EXPIRED_SLOT, button(Material.ORANGE_DYE, "hub-expired", "hub-expired-lore"));
         inventory.setItem(PURCHASED_SLOT, button(Material.DIAMOND, "hub-purchased", "hub-purchased-lore"));

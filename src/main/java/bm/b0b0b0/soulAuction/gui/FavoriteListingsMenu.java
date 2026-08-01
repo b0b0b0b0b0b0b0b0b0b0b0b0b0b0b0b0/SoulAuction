@@ -2,22 +2,24 @@ package bm.b0b0b0.soulAuction.gui;
 
 import bm.b0b0b0.soulAuction.config.settings.GuiGeneralSettings;
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.util.ItemStackCodec;
+import bm.b0b0b0.soulAuction.util.ListingItemPresentation;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
-import com.destroystokyo.paper.profile.PlayerProfile;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.SkullMeta;
 
-public final class FavoriteSellersMenu implements InventoryHolder {
+public final class FavoriteListingsMenu implements InventoryHolder {
 
     private static final int PAGE_SIZE = 45;
     private static final int PREV_SLOT = 45;
@@ -32,10 +34,10 @@ public final class FavoriteSellersMenu implements InventoryHolder {
     private final MessageService messageService;
     private final GuiGeneralSettings guiSettings;
     private final Inventory inventory;
-    private final Map<Integer, UUID> sellerBySlot = new HashMap<>();
+    private final Map<Integer, Long> listingBySlot = new HashMap<>();
     private int page;
 
-    public FavoriteSellersMenu(
+    public FavoriteListingsMenu(
             UUID viewerId,
             String auctionId,
             int page,
@@ -51,7 +53,7 @@ public final class FavoriteSellersMenu implements InventoryHolder {
         this.auctionService = auctionService;
         this.messageService = messageService;
         this.guiSettings = guiSettings;
-        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, "favorite-sellers-title"));
+        this.inventory = Bukkit.createInventory(this, 54, messageService.component(viewerId, "favorite-listings-title"));
         refresh();
     }
 
@@ -76,8 +78,8 @@ public final class FavoriteSellersMenu implements InventoryHolder {
         return page;
     }
 
-    public UUID sellerIdAt(int slot) {
-        return sellerBySlot.get(slot);
+    public Long listingIdAt(int slot) {
+        return listingBySlot.get(slot);
     }
 
     public boolean isPrev(int slot) {
@@ -100,7 +102,7 @@ public final class FavoriteSellersMenu implements InventoryHolder {
     }
 
     public void nextPage() {
-        List<UUID> all = auctionService.favoriteSellers(viewerId);
+        List<AuctionListing> all = auctionService.favoriteListingsForViewer(viewerId);
         int maxPage = Math.max(0, (all.size() - 1) / PAGE_SIZE);
         if (page < maxPage) {
             page++;
@@ -110,8 +112,8 @@ public final class FavoriteSellersMenu implements InventoryHolder {
 
     public void refresh() {
         inventory.clear();
-        sellerBySlot.clear();
-        List<UUID> all = auctionService.favoriteSellers(viewerId);
+        listingBySlot.clear();
+        List<AuctionListing> all = auctionService.favoriteListingsForViewer(viewerId);
         int maxPage = Math.max(0, (all.size() - 1) / PAGE_SIZE);
         if (page > maxPage) {
             page = maxPage;
@@ -120,63 +122,58 @@ public final class FavoriteSellersMenu implements InventoryHolder {
         int to = Math.min(from + PAGE_SIZE, all.size());
         if (from >= to) {
             inventory.setItem(EMPTY_SLOT, paper(
-                    messageService.component(viewerId, "favorite-sellers-empty-title"),
-                    messageService.components(viewerId, "favorite-sellers-empty-lore")
+                    messageService.component(viewerId, "favorite-listings-empty-title"),
+                    messageService.components(viewerId, "favorite-listings-empty-lore")
             ));
         } else {
             for (int i = from; i < to; i++) {
-                UUID sellerId = all.get(i);
+                AuctionListing listing = all.get(i);
                 int slot = i - from;
-                sellerBySlot.put(slot, sellerId);
-                inventory.setItem(slot, sellerHead(sellerId));
+                listingBySlot.put(slot, listing.listingId());
+                inventory.setItem(slot, listingItem(listing));
             }
         }
         if (page > 0) {
             inventory.setItem(PREV_SLOT, navItem(
                     guiSettings.previousPageMaterial,
                     "button-prev-page",
-                    "favorite-sellers-prev-lore"
+                    "favorite-listings-prev-lore"
             ));
         }
         if (page < maxPage) {
             inventory.setItem(NEXT_SLOT, navItem(
                     guiSettings.nextPageMaterial,
                     "button-next-page",
-                    "favorite-sellers-next-lore"
+                    "favorite-listings-next-lore"
             ));
         }
         Material backMaterial = Material.matchMaterial(guiSettings.backButtonMaterial);
         if (backMaterial == null) {
             backMaterial = Material.LIGHT_GRAY_DYE;
         }
+        String backTitleKey = returnTarget == GuiReturnTarget.HUB ? "favorite-listings-back-hub" : "favorite-listings-back";
+        String backLoreKey = returnTarget == GuiReturnTarget.HUB ? "favorite-listings-back-hub-lore" : "favorite-listings-back-lore";
         inventory.setItem(BACK_SLOT, actionItem(
                 backMaterial,
-                messageService.component(
-                        viewerId,
-                        returnTarget == GuiReturnTarget.HUB ? "favorite-sellers-back-hub" : "favorite-sellers-back"
-                ),
-                messageService.components(
-                        viewerId,
-                        returnTarget == GuiReturnTarget.HUB ? "favorite-sellers-back-hub-lore" : "favorite-sellers-back-lore"
-                )
+                messageService.component(viewerId, backTitleKey),
+                messageService.components(viewerId, backLoreKey)
         ));
         fillDecor();
-        org.bukkit.entity.Player viewer = Bukkit.getPlayer(viewerId);
-        if (viewer != null) {
-            auctionService.applySellerSkinsToMenu(viewer, inventory, sellerBySlot);
-        }
     }
 
-    private ItemStack sellerHead(UUID sellerId) {
-        String name = auctionService.resolveSellerDisplayName(sellerId);
-        ItemStack item = new ItemStack(Material.PLAYER_HEAD);
-        ItemMeta meta = item.getItemMeta();
-        if (meta instanceof SkullMeta skullMeta) {
-            PlayerProfile profile = Bukkit.createProfile(sellerId, name);
-            skullMeta.setPlayerProfile(profile);
-            skullMeta.displayName(messageService.component(viewerId, "favorite-sellers-entry-title", Map.of("seller", name)));
-            skullMeta.lore(messageService.components(viewerId, "favorite-sellers-entry-lore", Map.of("seller", name)));
-            item.setItemMeta(skullMeta);
+    private ItemStack listingItem(AuctionListing listing) {
+        ItemStack item = ItemStackCodec.decode(listing.itemBase64());
+        ListingItemPresentation.applyAuctionGuiName(item);
+        ItemMeta itemMeta = item.getItemMeta();
+        if (itemMeta != null) {
+            ArrayList<Component> lore = new ArrayList<>(messageService.components(
+                    viewerId,
+                    "listing-lore",
+                    auctionService.listingLorePlaceholders(listing, viewerId)
+            ));
+            lore.addAll(messageService.components(viewerId, "listing-lore-favorite-listing"));
+            itemMeta.lore(lore);
+            item.setItemMeta(itemMeta);
         }
         return item;
     }

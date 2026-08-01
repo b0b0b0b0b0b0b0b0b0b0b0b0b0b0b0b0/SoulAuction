@@ -1,8 +1,8 @@
 package bm.b0b0b0.soulAuction.command;
 
 import bm.b0b0b0.soulAuction.config.PluginConfig;
-import bm.b0b0b0.soulAuction.gui.admin.AdminAuctionsMenu;
 import bm.b0b0b0.soulAuction.gui.admin.AdminGuiAccess;
+import bm.b0b0b0.soulAuction.gui.admin.AdminAuctionsMenu;
 import bm.b0b0b0.soulAuction.gui.PlayerRecordsMenu;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.ClaimEntry;
@@ -16,6 +16,8 @@ import bm.b0b0b0.soulAuction.service.migration.AuctionStorageMigrator;
 import bm.b0b0b0.soulAuction.util.ItemInspectionFormatter;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -81,6 +83,7 @@ public final class AuctionAdminCommand {
             case "audit" -> audit(sender, subArgs);
             case "cache" -> cache(sender, subArgs);
             case "sellfor" -> sellFor(sender, subArgs);
+            case "fake" -> fakeListing(sender, subArgs);
             case "migrate" -> migrate(sender, subArgs);
             case "parse" -> parse(sender, subArgs);
             default -> {
@@ -299,6 +302,57 @@ public final class AuctionAdminCommand {
         return true;
     }
 
+    private boolean fakeListing(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player admin)) {
+            messageService.send(sender, "error-only-player");
+            return true;
+        }
+        if (args.length < 3) {
+            messageService.send(sender, "error-admin-fake-usage");
+            return true;
+        }
+        String sellerName = args[0].trim();
+        if (sellerName.isEmpty()) {
+            messageService.send(sender, "error-admin-fake-name-empty");
+            return true;
+        }
+        if (sellerName.length() > 16) {
+            messageService.send(sender, "error-admin-fake-name-too-long");
+            return true;
+        }
+        String auctionId = args[1];
+        int price;
+        try {
+            price = Integer.parseInt(args[2]);
+        } catch (NumberFormatException exception) {
+            messageService.send(sender, "error-admin-fake-usage");
+            return true;
+        }
+        ItemStack source = admin.getInventory().getItemInMainHand();
+        if (source == null || source.isEmpty()) {
+            messageService.send(sender, "error-main-hand-empty");
+            return true;
+        }
+        ItemStack escrow = source.clone();
+        admin.getInventory().setItemInMainHand(new ItemStack(org.bukkit.Material.AIR));
+        var result = auctionService.createAdminFakeListing(sellerName, auctionId, price, escrow);
+        if (!result.success()) {
+            Map<Integer, ItemStack> leftover = admin.getInventory().addItem(escrow);
+            if (!leftover.isEmpty()) {
+                leftover.values().forEach(stack -> admin.getWorld().dropItemNaturally(admin.getLocation(), stack));
+            }
+            messageService.send(admin, result.failure().messageKey());
+            return true;
+        }
+        messageService.send(
+                admin,
+                "success-admin-fake",
+                Map.of("seller", sellerName, "id", String.valueOf(result.listing().listingId()))
+        );
+        auctionService.audit(admin.getUniqueId(), admin.getName(), "ADMIN_FAKE", "seller=" + sellerName);
+        return true;
+    }
+
     private boolean adminGui(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             messageService.send(sender, "error-only-player");
@@ -475,6 +529,144 @@ public final class AuctionAdminCommand {
         }
         auctionService.audit(player.getUniqueId(), player.getName(), "ADMIN_PARSE_" + mode.toUpperCase(Locale.ROOT), ItemStackCodec.encode(item));
         return true;
+    }
+
+    public List<String> tabComplete(CommandSender sender, String[] args, String partial) {
+        if (args.length == 0 || args.length == 1) {
+            return CommandSuggestions.filter(partial, visibleSubcommands(sender));
+        }
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        if (sub.equals("gui") || sub.equals("create")) {
+            return tabGuiCreate(sub, args, partial);
+        }
+        if (!sender.hasPermission(PERMISSION_ADMIN)) {
+            return List.of();
+        }
+        return switch (sub) {
+            case "fake" -> tabFake(args, partial);
+            case "sellfor" -> tabSellFor(args, partial);
+            case "selling" -> tabSelling(args, partial);
+            case "history" -> tabHistory(args, partial);
+            case "blacklist" -> tabBlacklist(args, partial);
+            case "cache" -> tabCache(args, partial);
+            case "parse" -> tabParse(args, partial);
+            case "migrate" -> tabMigrate(args, partial);
+            case "recover", "audit" -> List.of();
+            default -> List.of();
+        };
+    }
+
+    private List<String> visibleSubcommands(CommandSender sender) {
+        List<String> subcommands = new ArrayList<>();
+        if (AdminGuiAccess.canOpenAdminGui(sender)) {
+            subcommands.add("gui");
+            subcommands.add("create");
+        }
+        if (sender.hasPermission(PERMISSION_ADMIN)) {
+            subcommands.add("history");
+            subcommands.add("selling");
+            subcommands.add("blacklist");
+            subcommands.add("recover");
+            subcommands.add("audit");
+            subcommands.add("cache");
+            subcommands.add("sellfor");
+            subcommands.add("fake");
+            subcommands.add("migrate");
+            subcommands.add("parse");
+        }
+        return subcommands;
+    }
+
+    private List<String> tabFake(String[] args, String partial) {
+        if (args.length == 2) {
+            LinkedHashSet<String> suggestions = new LinkedHashSet<>(auctionService.knownFakeSellerNames());
+            suggestions.addAll(CommandSuggestions.onlinePlayerNames());
+            return CommandSuggestions.filter(partial, suggestions);
+        }
+        if (args.length == 3) {
+            return CommandSuggestions.filter(partial, auctionIds());
+        }
+        return List.of();
+    }
+
+    private List<String> tabSellFor(String[] args, String partial) {
+        if (args.length == 2) {
+            return CommandSuggestions.filter(partial, CommandSuggestions.onlinePlayerNames());
+        }
+        if (args.length == 3) {
+            return CommandSuggestions.filter(partial, auctionIds());
+        }
+        return List.of();
+    }
+
+    private List<String> tabSelling(String[] args, String partial) {
+        if (args.length == 2) {
+            return CommandSuggestions.filter(partial, CommandSuggestions.onlinePlayerNames());
+        }
+        if (args.length == 3) {
+            return CommandSuggestions.filter(partial, auctionIds());
+        }
+        return List.of();
+    }
+
+    private List<String> tabHistory(String[] args, String partial) {
+        if (args.length == 2) {
+            return CommandSuggestions.filter(partial, CommandSuggestions.onlinePlayerNames());
+        }
+        if (args.length == 3) {
+            return CommandSuggestions.filter(partial, List.of("15", "30", "50", "100"));
+        }
+        return List.of();
+    }
+
+    private List<String> tabBlacklist(String[] args, String partial) {
+        if (args.length == 2) {
+            return CommandSuggestions.filter(partial, List.of("add", "remove"));
+        }
+        if (args.length == 3) {
+            return CommandSuggestions.filter(partial, CommandSuggestions.onlinePlayerNames());
+        }
+        return List.of();
+    }
+
+    private List<String> tabCache(String[] args, String partial) {
+        if (args.length == 2) {
+            return CommandSuggestions.filter(partial, List.of("stats", "rebuild", "invalidate"));
+        }
+        return List.of();
+    }
+
+    private List<String> tabParse(String[] args, String partial) {
+        if (args.length == 2) {
+            return CommandSuggestions.filter(partial, List.of("tags", "nbt"));
+        }
+        return List.of();
+    }
+
+    private List<String> tabMigrate(String[] args, String partial) {
+        if (args.length == 2) {
+            return CommandSuggestions.filter(partial, List.of("from"));
+        }
+        if (args.length == 3 && args[1].equalsIgnoreCase("from")) {
+            return CommandSuggestions.filter(partial, List.of("JSON", "YAML", "SQLITE", "MYSQL"));
+        }
+        if (args.length >= 3) {
+            return CommandSuggestions.filter(partial, List.of("dry-run", "archive"));
+        }
+        return List.of();
+    }
+
+    private List<String> tabGuiCreate(String sub, String[] args, String partial) {
+        if (!sub.equals("create") || args.length != 2) {
+            return List.of();
+        }
+        return CommandSuggestions.filter(partial, List.of("cancel", "later"));
+    }
+
+    private List<String> auctionIds() {
+        return auctionService.sortedAuctionDefinitions().stream()
+                .map(definition -> definition.id)
+                .toList();
     }
 
     private boolean audit(CommandSender sender, String[] args) {

@@ -34,9 +34,48 @@ admin-auctions-entry-lore:
   - "<color:#A1A1AA>Economy:</color> <color:#E879F9>{economy}</color>"
   - "<color:#A1A1AA>Listings:</color> <color:#34D399>{listings}</color>"
   - "<color:#A1A1AA>Buy:</color> <color:#F5D0FE>{buy}</color>  <color:#A1A1AA>Sell:</color> <color:#F5D0FE>{sell}</color>"
+  - "<color:#A1A1AA>Fake activity:</color> <color:#F5D0FE>{fake}</color>"
   - "<color:#A1A1AA>Default:</color> <color:#F5D0FE>{default}</color>"
   - " "
   - "<color:#6B7280>Left-click — open auction menu.</color>"
+  - "<color:#6B7280>Right-click — fake activity (slot 22 — toggle).</color>"
+admin-settings-title: "<gradient:#8B5CF6:#D946EF><bold>Fake activity · {auction}</bold></gradient>"
+admin-settings-missing-title: "<color:#FB7185>Auction not found</color>"
+admin-settings-missing-lore:
+  - " "
+  - "<color:#9CA3AF>ID:</color> <color:#F5D0FE>{id}</color>"
+  - "<color:#9CA3AF>Reload config or pick another auction.</color>"
+admin-settings-back-title: "<gradient:#A78BFA:#E879F9><bold>Back</bold></gradient>"
+admin-settings-back-lore:
+  - " "
+  - "<color:#9CA3AF>Return to the auction list.</color>"
+admin-settings-fake-toggle-title: "<gradient:#34D399:#6EE7B7><bold>Fake activity</bold></gradient> <color:#6B7280>({fake})</color>"
+admin-settings-fake-toggle-on-lore:
+  - " "
+  - "<color:#A1A1AA>Auction:</color> <color:#F5D0FE>{auction}</color> <color:#6B7280>({id})</color>"
+  - "<color:#34D399>Enabled</color> — synthetic listings: <color:#F5D0FE>{synthetic}</color>"
+  - " "
+  - "<gradient:#A78BFA:#E879F9>Click to disable</gradient>"
+admin-settings-fake-toggle-off-lore:
+  - " "
+  - "<color:#A1A1AA>Auction:</color> <color:#F5D0FE>{auction}</color> <color:#6B7280>({id})</color>"
+  - "<color:#FB7185>Disabled</color>"
+  - " "
+  - "<gradient:#A78BFA:#E879F9>Click to enable</gradient>"
+admin-settings-fake-info-title: "<gradient:#A78BFA:#E879F9><bold>Pool and limits</bold></gradient>"
+admin-settings-fake-info-lore:
+  - " "
+  - "<color:#A1A1AA>fake-activity-enabled:</color> <color:#F5D0FE>{fake}</color> <color:#6B7280>({auction_file})</color>"
+  - "<color:#A1A1AA>Synthetic listings:</color> <color:#F5D0FE>{synthetic}</color>"
+  - " "
+  - "<color:#A1A1AA>Pool</color> <color:#F5D0FE>{fake_file}/</color>"
+  - "<color:#A1A1AA>Sellers:</color> <color:#F5D0FE>{pool_sellers}</color>  <color:#A1A1AA>items:</color> <color:#F5D0FE>{pool_items}</color>"
+  - "<color:#A1A1AA>Max per auction:</color> <color:#F5D0FE>{fake_max_per_auction}</color>  <color:#A1A1AA>total:</color> <color:#F5D0FE>{fake_max_total}</color>"
+  - "<color:#A1A1AA>Tick:</color> <color:#F5D0FE>{fake_tick_seconds}s</color>"
+success-admin-settings-fake-enabled: "{prefix}<color:#34D399>Fake activity enabled for</color> <color:#F5D0FE>{auction}</color><color:#34D399>.</color>"
+success-admin-settings-fake-disabled: "{prefix}<color:#A1A1AA>Fake activity disabled for</color> <color:#F5D0FE>{auction}</color><color:#A1A1AA>.</color>"
+error-admin-settings-save-failed: "{prefix}<color:#FB7185>Could not save auction file.</color>"
+error-admin-settings-auction-missing: "{prefix}<color:#FB7185>Auction not found after reload.</color>"
 admin-label-yes: "yes"
 admin-label-no: "no"
 error-admin-gui-denied: "{prefix}<color:#FB7185>Admin GUI requires</color> <color:#F5D0FE>soulauction.command.admin</color> <color:#FB7185>or OP.</color>"
@@ -93,6 +132,20 @@ button-history-lore:
   - "<gradient:#A78BFA:#E879F9>Click to open</gradient>"
 button-refresh-search: "<gradient:#8B5CF6:#D946EF>Refresh</gradient> <color:#F5D0FE>({query})</color>"
 hub-title: "<gradient:#8B5CF6:#D946EF><bold>Player hub</bold></gradient>"
+hub-favorite-sellers: "<gradient:#A78BFA:#E879F9><bold>Favorite sellers</bold></gradient>"
+hub-favorite-sellers-lore:
+  - " "
+  - "<color:#9CA3AF>Sellers you marked with</color>"
+  - "<color:#9CA3AF>middle-click on a listing.</color>"
+  - " "
+  - "<gradient:#A78BFA:#E879F9>Click to open</gradient>"
+hub-favorite-listings: "<gradient:#A78BFA:#E879F9><bold>Favorite listings</bold></gradient>"
+hub-favorite-listings-lore:
+  - " "
+  - "<color:#9CA3AF>Listings added with</color>"
+  - "<color:#9CA3AF>shift + left-click in the auction.</color>"
+  - " "
+  - "<gradient:#A78BFA:#E879F9>Click to open</gradient>"
 hub-selling: "<gradient:#A78BFA:#E879F9><bold>My listings</bold></gradient>"
 hub-selling-lore:
   - " "
@@ -416,15 +469,17 @@ button-favorites-on-lore:
   - "<color:#9CA3AF>Only listings from sellers</color>"
   - "<color:#9CA3AF>on your favorites list.</color>"
   - " "
-  - "<gradient:#A78BFA:#E879F9>Left-click — turn off</gradient>"
-  - "<gradient:#A78BFA:#E879F9>Right-click — open list</gradient>"
-button-favorites-off: "<gradient:#A78BFA:#E879F9><bold>Favorite sellers</bold></gradient>"
+  - "<gradient:#A78BFA:#E879F9>LMB — sellers</gradient>"
+  - "<gradient:#A78BFA:#E879F9>RMB — listings</gradient>"
+  - "<gradient:#A78BFA:#E879F9>Shift+LMB — turn off filter</gradient>"
+button-favorites-off: "<gradient:#A78BFA:#E879F9><bold>Favorites</bold></gradient>"
 button-favorites-off-lore:
   - " "
-  - "<color:#9CA3AF>Show only favorite sellers' listings.</color>"
+  - "<color:#9CA3AF>Favorite sellers and listings.</color>"
   - " "
-  - "<gradient:#A78BFA:#E879F9>Left-click — filter</gradient>"
-  - "<gradient:#A78BFA:#E879F9>Right-click — open list</gradient>"
+  - "<gradient:#A78BFA:#E879F9>LMB — sellers</gradient>"
+  - "<gradient:#A78BFA:#E879F9>RMB — listings</gradient>"
+  - "<gradient:#A78BFA:#E879F9>Shift+LMB — seller filter</gradient>"
 favorite-sellers-title: "<gradient:#8B5CF6:#D946EF><bold>Favorite sellers</bold></gradient>"
 favorite-sellers-empty-title: "<gradient:#A78BFA:#E879F9><bold>Empty list</bold></gradient>"
 favorite-sellers-empty-lore:
@@ -443,6 +498,30 @@ favorite-sellers-back-lore:
   - "<color:#9CA3AF>Return to listings.</color>"
   - " "
   - "<gradient:#A78BFA:#E879F9>Click to leave</gradient>"
+favorite-sellers-back-hub: "<color:#9CA3AF><bold>Back to hub</bold></color>"
+favorite-sellers-back-hub-lore:
+  - " "
+  - "<color:#9CA3AF>Return to the player hub.</color>"
+favorite-listings-title: "<gradient:#8B5CF6:#D946EF><bold>Favorite listings</bold></gradient>"
+favorite-listings-empty-title: "<gradient:#A78BFA:#E879F9><bold>Empty list</bold></gradient>"
+favorite-listings-empty-lore:
+  - " "
+  - "<color:#9CA3AF>Add listings with</color>"
+  - "<color:#9CA3AF>shift + left-click in the auction.</color>"
+favorite-listings-back: "<color:#9CA3AF><bold>Back to auction</bold></color>"
+favorite-listings-back-lore:
+  - " "
+  - "<color:#9CA3AF>Return to the listing browser.</color>"
+favorite-listings-back-hub: "<color:#9CA3AF><bold>Back to hub</bold></color>"
+favorite-listings-back-hub-lore:
+  - " "
+  - "<color:#9CA3AF>Return to the player hub.</color>"
+favorite-listings-prev-lore:
+  - " "
+  - "<color:#9CA3AF>Previous page.</color>"
+favorite-listings-next-lore:
+  - " "
+  - "<color:#9CA3AF>Next page.</color>"
 favorite-sellers-prev-lore:
   - " "
   - "<color:#9CA3AF>Previous page.</color>"
@@ -556,7 +635,7 @@ error-purge-usage:
   - "<color:#9CA3AF>/ah purge <days></color>"
 error-admin-usage:
   - "{prefix}<color:#FB7185>Usage:</color>"
-  - "<color:#9CA3AF>/ah admin <gui|history|selling|blacklist|recover|audit|cache|sellfor|parse|migrate> ...</color>"
+  - "<color:#9CA3AF>/ah admin <gui|history|selling|blacklist|recover|audit|cache|sellfor|fake|parse|migrate> ...</color>"
 error-admin-parse-usage:
   - "{prefix}<color:#FB7185>Usage:</color>"
   - "<color:#9CA3AF>/ah admin parse <tags|nbt> (item in hand)</color>"
@@ -620,6 +699,14 @@ error-admin-sellfor-usage:
 success-admin-sellfor:
   - "{prefix}<color:#34D399>Listing #{id} listed.</color>"
   - "<color:#A1A1AA>On behalf of:</color> <color:#F5D0FE>{player}</color>"
+error-admin-fake-usage:
+  - "{prefix}<color:#FB7185>Usage:</color>"
+  - "<color:#9CA3AF>/ah admin fake <sellerName> <auctionId> <price> (item in hand)</color>"
+error-admin-fake-name-empty: "{prefix}<color:#FB7185>Seller name cannot be empty.</color>"
+error-admin-fake-name-too-long: "{prefix}<color:#FB7185>Seller name is too long (max 16).</color>"
+success-admin-fake:
+  - "{prefix}<color:#34D399>Listing #{id} listed.</color>"
+  - "<color:#A1A1AA>Shown seller:</color> <color:#F5D0FE>{seller}</color>"
 admin-migrate-started: "{prefix}<color:#FBBF24>Migrating listings from {source}…</color>"
 error-admin-migrate-usage:
   - "{prefix}<color:#FB7185>Usage:</color>"

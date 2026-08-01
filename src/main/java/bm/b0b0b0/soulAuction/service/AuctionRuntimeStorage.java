@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -40,6 +41,7 @@ public final class AuctionRuntimeStorage {
     private final Path runtimeBlacklistFile;
     private final Path auditFile;
     private final Path statsFile;
+    private final Path syntheticSellersFile;
     private final Gson gson;
     private final ExecutorService ioExecutor;
     private final List<ClaimEntry> claims;
@@ -49,6 +51,7 @@ public final class AuctionRuntimeStorage {
     private final List<PendingExpiredListingNotification> expiredListingNotifications;
     private final Map<UUID, List<UUID>> favoriteSellersByViewer;
     private final Map<UUID, List<Long>> favoriteListingsByViewer;
+    private final Map<UUID, String> syntheticSellerNames;
     private final Map<UUID, Long> lastSellEpochMillis;
     private final List<UUID> runtimeBlacklist;
     private final List<AuditLogEntry> auditLog;
@@ -71,6 +74,7 @@ public final class AuctionRuntimeStorage {
         this.runtimeBlacklistFile = dataDirectory.resolve("runtime-blacklist.json");
         this.auditFile = dataDirectory.resolve("audit.json");
         this.statsFile = dataDirectory.resolve("stats.json");
+        this.syntheticSellersFile = dataDirectory.resolve("synthetic-sellers.json");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
         this.ioExecutor = Executors.newSingleThreadExecutor();
         this.claims = new ArrayList<>();
@@ -80,6 +84,7 @@ public final class AuctionRuntimeStorage {
         this.expiredListingNotifications = new ArrayList<>();
         this.favoriteSellersByViewer = new HashMap<>();
         this.favoriteListingsByViewer = new HashMap<>();
+        this.syntheticSellerNames = new HashMap<>();
         this.lastSellEpochMillis = new HashMap<>();
         this.runtimeBlacklist = new ArrayList<>();
         this.auditLog = new ArrayList<>();
@@ -101,6 +106,7 @@ public final class AuctionRuntimeStorage {
                 loadNotificationsSync();
                 loadFavoritesSync();
                 loadFavoriteListingsSync();
+                loadSyntheticSellersSync();
                 loadCooldownsSync();
                 loadRuntimeBlacklistSync();
                 loadAuditSync();
@@ -190,7 +196,9 @@ public final class AuctionRuntimeStorage {
             String auctionId,
             long listingId,
             UUID sellerId,
+            String sellerName,
             UUID buyerId,
+            String buyerName,
             int price,
             int tax,
             AuctionEconomyType economyType,
@@ -207,7 +215,9 @@ public final class AuctionRuntimeStorage {
                 tax,
                 economyType,
                 System.currentTimeMillis(),
-                buyTax
+                buyTax,
+                sellerName,
+                buyerName
         );
         synchronized (history) {
             history.add(entry);
@@ -306,6 +316,34 @@ public final class AuctionRuntimeStorage {
         synchronized (favoriteSellersByViewer) {
             List<UUID> favorites = favoriteSellersByViewer.get(viewerId);
             return favorites != null && favorites.contains(sellerId);
+        }
+    }
+
+    public void rememberSyntheticSeller(UUID sellerId, String sellerName) {
+        if (sellerId == null || sellerName == null || sellerName.isBlank()) {
+            return;
+        }
+        synchronized (syntheticSellerNames) {
+            syntheticSellerNames.put(sellerId, sellerName.trim());
+        }
+        scheduleDebouncedFlush();
+    }
+
+    public String syntheticSellerName(UUID sellerId) {
+        if (sellerId == null) {
+            return null;
+        }
+        synchronized (syntheticSellerNames) {
+            return syntheticSellerNames.get(sellerId);
+        }
+    }
+
+    public List<String> knownSyntheticSellerNames() {
+        synchronized (syntheticSellerNames) {
+            if (syntheticSellerNames.isEmpty()) {
+                return List.of();
+            }
+            return List.copyOf(new LinkedHashSet<>(syntheticSellerNames.values()));
         }
     }
 
@@ -694,6 +732,27 @@ public final class AuctionRuntimeStorage {
         }
     }
 
+    private void loadSyntheticSellersSync() throws Exception {
+        synchronized (syntheticSellerNames) {
+            syntheticSellerNames.clear();
+            if (!Files.exists(syntheticSellersFile)) {
+                return;
+            }
+            try (Reader reader = Files.newBufferedReader(syntheticSellersFile)) {
+                SyntheticSellersPayload payload = gson.fromJson(reader, SyntheticSellersPayload.class);
+                if (payload == null || payload.entries == null) {
+                    return;
+                }
+                for (SyntheticSellerEntry entry : payload.entries) {
+                    if (entry.sellerId == null || entry.sellerName == null || entry.sellerName.isBlank()) {
+                        continue;
+                    }
+                    syntheticSellerNames.put(entry.sellerId, entry.sellerName.trim());
+                }
+            }
+        }
+    }
+
     private void loadFavoritesSync() throws Exception {
         synchronized (favoriteSellersByViewer) {
             favoriteSellersByViewer.clear();
@@ -864,6 +923,16 @@ public final class AuctionRuntimeStorage {
                 gson.toJson(favoriteListingsPayload, writer);
             }
         }
+        synchronized (syntheticSellerNames) {
+            SyntheticSellersPayload syntheticPayload = new SyntheticSellersPayload();
+            syntheticPayload.entries = new ArrayList<>();
+            for (Map.Entry<UUID, String> entry : syntheticSellerNames.entrySet()) {
+                syntheticPayload.entries.add(new SyntheticSellerEntry(entry.getKey(), entry.getValue()));
+            }
+            try (Writer writer = Files.newBufferedWriter(syntheticSellersFile)) {
+                gson.toJson(syntheticPayload, writer);
+            }
+        }
         synchronized (lastSellEpochMillis) {
             CooldownsPayload cooldownsPayload = new CooldownsPayload();
             cooldownsPayload.entries = new ArrayList<>();
@@ -943,6 +1012,20 @@ public final class AuctionRuntimeStorage {
             this.viewerId = viewerId;
             this.listingIds = listingIds;
         }
+    }
+
+    private static final class SyntheticSellerEntry {
+        private UUID sellerId;
+        private String sellerName;
+
+        private SyntheticSellerEntry(UUID sellerId, String sellerName) {
+            this.sellerId = sellerId;
+            this.sellerName = sellerName;
+        }
+    }
+
+    private static final class SyntheticSellersPayload {
+        private List<SyntheticSellerEntry> entries;
     }
 
     private static final class FavoriteListingsPayload {

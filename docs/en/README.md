@@ -45,6 +45,8 @@ On a proxy: **MYSQL + redis.enabled**. Buy/cancel/expiry go through listing clai
 - Large-sale broadcast, external notifications (Discord/Telegram).
 - **Sell GUI:** amount ±1, pull **matching** items from inventory (up to max stack); comparison by full serialization (NBT, name, enchants), not “similar” stacks. Escrow until confirm — returned on cancel/close.
 - **Per-auction price display:** custom currency symbol, before/after number, MiniMessage and optional PlaceholderAPI in the symbol (resource pack / ItemsAdder icons, etc.).
+- **Fake activity:** synthetic listings from a nick/item pool, enabled **per auction**; timer refill, manual `/ah admin fake`, toggle in admin GUI.
+- **Seller skins:** heads in “Favorite sellers” via SkinsRestorer / Mojang; fallback and one shared skin for all fake sellers (server logo).
 
 ## Price display (`auctions/*.yml`)
 
@@ -118,6 +120,143 @@ Persistent (`data/stats.json`); seeded once from existing history on first run. 
 | `%soulauction_items_sold_<currency>%` and similar | Same, per currency |
 | `%soulauction_total_items_sold%`, `%soulauction_total_money_made%`, etc. | Server-wide, including `_<currency>` |
 
+## Fake activity
+
+Synthetic listings keep the storefront busy: random nick from the pool, random item, random price in range. These are **not** real players — purchases work like normal listings (money is consumed, item is delivered). After a fake listing is bought, the plugin may list another one after a delay.
+
+### Per-auction enable
+
+There is no global on/off in `config.yml` — only per auction:
+
+| Where | Field / action |
+|-------|----------------|
+| `auctions/<id>.yml` | `fake-activity-enabled: true` / `false` (default `false`) |
+| `/ah admin` → **right-click** an auction | fake-activity menu |
+| Menu → **slot 22** | toggle (`LIME_DYE` / `RED_DYE`) → `auctions/<id>.yml` |
+| Menu → **slot 49** | pool, limits, tick (read-only) |
+
+Example in `auctions/global.yml`:
+
+```yaml
+fake-activity-enabled: true
+```
+
+### Pool (`plugins/SoulAuction/fake-activity/`)
+
+Path: `config.yml` → `fake-activity.directory` (default `fake-activity`). On first start three files are created:
+
+| File | Contents |
+|------|----------|
+| `settings.yml` | timers, limits, default prices, `admin-fake` |
+| `sellers.yml` | seller display names (max 16 chars) |
+| `items.yml` | item pool with weights and price ranges |
+
+Fresh install ships **~120** nicks and **~120** vanilla items (ores, food, tools, 1.21 rares) — edit in YAML anytime.
+
+#### `settings.yml` (main fields)
+
+| Field | Purpose |
+|-------|---------|
+| `initial-fill-listings` | listings to create on startup (`0` = up to `max-total-listings`) |
+| `initial-delay-seconds` | delay before the first refill tick |
+| `tick-interval-seconds` | how often to top up toward limits |
+| `after-purchase-delay-seconds` | delay after a fake buy before the same seller lists again |
+| `min-price` / `max-price` | default range when an item in `items.yml` has min/max = 0 |
+| `price-variance-percent` | random ±% on the chosen price |
+| `max-listings-per-auction` | fake cap per `auctionId` |
+| `max-total-listings` | fake cap server-wide |
+| `listing-age-spread-seconds` | random listing age on create (varied TTL timers) |
+| `listings-per-tick` | listings to attempt per tick |
+| `auction-ids` | only these auctions (`[]` = all with `fake-activity-enabled`) |
+| `admin-fake.register-seller` | after `/ah admin fake`, append nick to `sellers.yml` |
+| `admin-fake.register-item` | after `/ah admin fake`, append hand item to `items.yml` |
+
+#### `items.yml` entry fields
+
+- `id` — label for yourself
+- `material` / `amount` — vanilla stack (ignored when `item-base64` is set)
+- `item-base64` — full item snapshot (NBT, custom items)
+- `min-price` / `max-price` — `0` = from `settings.yml`
+- `auction-ids` — empty = any auction; otherwise only listed ids
+- `weight` — relative pick chance (higher = more often)
+
+### Manual fake listing
+
+```
+/ah admin fake <nick> <auctionId> <price>
+```
+
+Item must be in the **main hand**. Listing is created as synthetic immediately. With `admin-fake.*` enabled, nick and/or item are appended to the pool async.
+
+### Behaviour
+
+- Fakes appear in sorting, search, and filters like normal listings.
+- Only an admin with `soulauction.command.cancel.any` can `/ah cancel` them (seller is a synthetic UUID).
+- On a proxy with MySQL+Redis, fakes sync like any other listing.
+
+## Seller skins (`config.yml` → `seller-skins`)
+
+Textures for **seller heads** in the “Favorite sellers” GUI (hub → star). Browser listings show the item itself, not a head.
+
+SkinsRestorer is a **soft dependency**; on offline/cracked servers Mojang lookup by nick often fails without it.
+
+### `source`
+
+| Value | Behaviour |
+|-------|-----------|
+| `auto` | SkinsRestorer when installed; otherwise Mojang API |
+| `skins-restorer` | SkinsRestorer only |
+| `mojang` | Mojang only (online-mode, real nicks) |
+| `off` | default Steve/Alex heads, no lookup |
+
+### `fallback-skin` and `fake-seller-skin`
+
+```yaml
+seller-skins:
+  source: skins-restorer
+  fallback-skin: "DefaultHead"
+  fake-seller-skin: "ServerLogo"
+```
+
+| Field | When |
+|-------|------|
+| `fallback-skin` | seller nick lookup failed → SR resolves this custom skin / nick / URL |
+| `fake-seller-skin` | **all** synthetic/fake sellers use this skin; **nick is ignored** |
+
+Values are SkinsRestorer skin names (`/sr set skin ServerLogo <url>`, etc.).
+
+### Lookup chain (SkinsRestorer)
+
+1. `findOrCreateSkinData(nick)` — or `fake-seller-skin` when the seller is synthetic and the field is set  
+2. `findSkinData(fallback-skin)` — when configured  
+3. `getSkinForPlayer(uuid, nick)` — SR `defaultSkins` from SkinsRestorer config  
+
+With `source: mojang`, fallback uses the Mojang API by name.
+
+### Startup warmup
+
+Async prefetch into SkinsRestorer cache (~100 ms pause between requests):
+
+- if `fake-seller-skin` is set — warmup that skin (+ `fallback-skin` when set);
+- otherwise — all fake pool nicks + `fallback-skin`.
+
+Console: `SkinsRestorer — prefetched X/Y fake seller skins`.
+
+GUI lookup is async; the head updates when the texture arrives (no in-memory cache in SoulAuction).
+
+## Admin GUI
+
+`/ah admin` or `/ah admin gui [page]` — requires `soulauction.command.admin` or OP.
+
+| Action | Result |
+|--------|--------|
+| **Left-click** an auction | open storefront as a player |
+| **Right-click** an auction | fake-activity menu |
+| **Slot 22** | toggle fake activity (wool) |
+| **Slot 49** | pool, limits, tick (read-only) |
+| **Slot 45** | back to auction list |
+| Book in the bottom row | create a new auction (chat wizard) |
+
 ## Commands
 
 ### Players
@@ -151,6 +290,8 @@ Persistent (`data/stats.json`); seeded once from existing history on first run. 
 - `/ah admin audit [limit]` — recent audit entries.
 - `/ah admin cache stats|rebuild|invalidate` — catalog cache.
 - `/ah admin sellfor <player> <auctionId> <price>` — list on behalf of a player (item in hand).
+- `/ah admin fake <nick> <auctionId> <price>` — synthetic listing under the given nick (item in hand; see fake activity).
+- `/ah admin gui [page]` — auction list GUI (right-click an auction for fake activity).
 - `/ah admin parse tags|nbt` — parse NBT/tags of item in hand (custom items).
 - `/ah view <player> [auctionId]` — player's listings GUI.
 

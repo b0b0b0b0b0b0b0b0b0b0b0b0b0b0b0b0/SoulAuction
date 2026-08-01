@@ -35,8 +35,8 @@ public final class AuctionSettings extends YamlSerializable {
     public String defaultAuctionId = "global";
 
     @Comment({
-            @CommentValue("Subfolder (under plugins/SoulAuction/) with one YAML per auction house."),
-            @CommentValue("Example file: auctions/global.yml defines auction id global."),
+            @CommentValue("Subfolder with one YAML per auction house."),
+            @CommentValue("Example: auctions/global.yml → auction id global."),
     })
     public String auctionsDirectory = "auctions";
 
@@ -95,6 +95,19 @@ public final class AuctionSettings extends YamlSerializable {
     @NewLine
     @Comment({@CommentValue("Feature toggles")})
     public FeatureSettings features = new FeatureSettings();
+
+    @NewLine
+    @Comment({
+            @CommentValue("Seller skull textures in GUI (favorite sellers, etc.)."),
+    })
+    public SellerSkinSettings sellerSkins = new SellerSkinSettings();
+
+    @NewLine
+    @Comment({
+            @CommentValue("Fake activity pool (sellers, items, timers) — see fake-activity.directory."),
+            @CommentValue("Enable fake listings per auction in auctions/*.yml → fake-activity-enabled."),
+    })
+    public FakeActivityRootSettings fakeActivity = new FakeActivityRootSettings();
 
     @NewLine
     public MessagesSettings messages = new MessagesSettings();
@@ -209,7 +222,7 @@ public final class AuctionSettings extends YamlSerializable {
 
         @Comment({
                 @CommentValue("=== Plugin language (GUI, button lore, chat, command errors) ==="),
-                @CommentValue("Strings live in plugins/SoulAuction/lang/messages_<code>.yml"),
+                @CommentValue("Strings live in lang/messages_<code>.yml"),
                 @CommentValue("The plugin does not translate for you — it picks the matching file."),
                 @CommentValue("Edit YAML or copy messages_en.yml to your own messages_xx.yml."),
                 @CommentValue("After lang changes: /ah reload (or restart the server)."),
@@ -230,7 +243,7 @@ public final class AuctionSettings extends YamlSerializable {
                 @CommentValue("Allowed locale-mode: CLIENT or SERVER (case-insensitive)."),
                 @CommentValue(""),
                 @CommentValue("Server-wide locale (server-locale). Only used when locale-mode: SERVER."),
-                @CommentValue("Code = file suffix: plugins/SoulAuction/lang/messages_<code>.yml"),
+                @CommentValue("Code = file suffix: lang/messages_<code>.yml"),
                 @CommentValue("Bundled in JAR: en, ru. Any messages_*.yml in lang/ is loaded on startup and /ah reload."),
                 @CommentValue(""),
                 @CommentValue("Example — Russian for everyone:"),
@@ -266,6 +279,32 @@ public final class AuctionSettings extends YamlSerializable {
         public boolean preSortedBrowseCache = true;
     }
 
+    public static final class SellerSkinSettings {
+
+        @Comment({
+                @CommentValue("Where to load seller head textures from."),
+                @CommentValue("On offline-mode (cracked) servers prefer skins-restorer over mojang/auto."),
+                @CommentValue("auto — SkinsRestorer when installed, otherwise Mojang API by nickname"),
+                @CommentValue("skins-restorer — only SkinsRestorer (recommended for offline-mode)"),
+                @CommentValue("mojang — Mojang session server (online-mode; real Mojang nicks only)"),
+                @CommentValue("off — default heads, no lookups"),
+        })
+        public String source = "auto";
+
+        @Comment({
+                @CommentValue("SkinsRestorer skin id when lookup by seller nick fails."),
+                @CommentValue("Custom skin name from SR, another player nick, or URL already in SR."),
+                @CommentValue("Empty = keep Steve/Alex head or use SR defaultSkins via player lookup."),
+        })
+        public String fallbackSkin = "";
+
+        @Comment({
+                @CommentValue("Force this skin for all fake/synthetic seller heads (ignore nick)."),
+                @CommentValue("Use a SkinsRestorer custom skin (e.g. server logo). Empty = resolve by nick."),
+        })
+        public String fakeSellerSkin = "";
+    }
+
     public static final class StorageSettings {
 
         @Comment({
@@ -273,16 +312,16 @@ public final class AuctionSettings extends YamlSerializable {
                 @CommentValue("!!! DO NOT USE /ah reload — SHUT DOWN THE SERVER, EDIT CONFIG, START AGAIN !!!"),
                 @CommentValue(""),
                 @CommentValue("Where listings are stored on disk / database."),
-                @CommentValue("JSON — one .json file per listing (simple, good for small servers)"),
+                @CommentValue("SQLITE — single sqlite file (default; good for most servers)"),
+                @CommentValue("JSON — one .json file per listing (tiny servers / debugging only)"),
                 @CommentValue("YAML — one .yml file per listing"),
-                @CommentValue("SQLITE — single sqlite file (medium traffic)"),
                 @CommentValue("MYSQL — shared database (networks, large catalogs); pair with redis sell lock"),
                 @CommentValue(""),
                 @CommentValue("Changing mode does NOT auto-move data. After switch: start server, then"),
                 @CommentValue("/ah admin migrate from JSON|YAML|SQLITE (target = mode above)."),
                 @CommentValue("Optional flags: dry-run, archive (renames old flat folder / sqlite file after success)."),
         })
-        public String mode = "JSON";
+        public String mode = "SQLITE";
         @Comment({
                 @CommentValue("Directory for JSON/YAML flat storage, relative to plugin folder."),
                 @CommentValue("Ignored when mode is SQLITE or MYSQL."),
@@ -432,5 +471,13 @@ public final class AuctionSettings extends YamlSerializable {
         public String botToken = "";
         @Comment({@CommentValue("Chat id: user, group or channel (often negative for groups)")})
         public String chatId = "";
+    }
+
+    public static final class FakeActivityRootSettings {
+
+        @Comment({
+                @CommentValue("Subfolder: settings.yml, sellers.yml, items.yml"),
+        })
+        public String directory = "fake-activity";
     }
 }

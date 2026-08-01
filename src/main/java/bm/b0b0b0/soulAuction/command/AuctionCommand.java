@@ -24,10 +24,11 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class AuctionCommand implements CommandExecutor {
+public final class AuctionCommand implements CommandExecutor, TabCompleter {
 
     private static final String PERMISSION_AH = "soulauction.command.ah";
     private static final String PERMISSION_SELL = "soulauction.command.sell";
@@ -45,6 +46,7 @@ public final class AuctionCommand implements CommandExecutor {
     private final AuctionService auctionService;
     private final Runnable reloadAction;
     private final AuctionAdminCommand adminCommand;
+    private final AuctionTabCompleter tabCompleter;
 
     public AuctionCommand(
             JavaPlugin plugin,
@@ -66,6 +68,16 @@ public final class AuctionCommand implements CommandExecutor {
                 auctionService,
                 adminAuctionCreateService
         );
+        this.tabCompleter = new AuctionTabCompleter(auctionService, adminCommand);
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        return complete(sender, alias, args);
+    }
+
+    public List<String> complete(CommandSender sender, String alias, String[] args) {
+        return tabCompleter.complete(sender, args);
     }
 
     @Override

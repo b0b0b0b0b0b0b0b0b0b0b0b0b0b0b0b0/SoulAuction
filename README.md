@@ -45,6 +45,8 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 - Broadcast крупных продаж, внешние уведомления (Discord/Telegram).
 - **Sell-GUI:** количество ±1, добор **таких же** предметов из инвентаря (до max stack); сравнение по полной сериализации (NBT, имя, чары), не «похожие» стаки. Escrow до подтверждения — возврат при отмене/закрытии.
 - **Отображение цены per-auction:** свой знак валюты, до/после числа, MiniMessage и опционально PlaceholderAPI в символе (иконки из ресурспака / ItemsAdder и т.п.).
+- **Автофейки (fake activity):** синтетические лоты от пула ников и предметов, включаются **per-auction**; пополнение по таймеру, ручной `/ah admin fake`, toggle в админ-GUI.
+- **Скины продавцов:** головы в «Избранные продавцы» через SkinsRestorer / Mojang; fallback и общий скин для всех фейков (логотип сервера).
 
 ## Отображение цен (`auctions/*.yml`)
 
@@ -118,6 +120,143 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 | `%soulauction_items_sold_<currency>%` и аналоги | То же, по конкретной валюте |
 | `%soulauction_total_items_sold%`, `%soulauction_total_money_made%` и т.д. | Глобально по серверу, включая `_<currency>` |
 
+## Автофейки (fake activity)
+
+Синтетические лоты «оживляют» витрину: случайный ник из пула, случайный предмет, случайная цена в заданном диапазоне. Это **не** реальные игроки — покупка проходит как у обычного лота (деньги уходят «в никуда», предмет выдаётся покупателю). После покупки фейкового лота плагин через паузу может выставить новый.
+
+### Включение per-auction
+
+Глобального «вкл/выкл» в `config.yml` нет — только per-auction:
+
+| Где | Поле / действие |
+|-----|-----------------|
+| `auctions/<id>.yml` | `fake-activity-enabled: true` / `false` (дефолт `false`) |
+| `/ah admin` → **ПКМ** по аукциону | меню автофейков |
+| Меню → **слот 22** | вкл/выкл (`LIME_DYE` / `RED_DYE`) → `auctions/<id>.yml` |
+| Меню → **слот 49** | пул, лимиты, тик (read-only) |
+
+Пример в `auctions/global.yml`:
+
+```yaml
+fake-activity-enabled: true
+```
+
+### Пул (`plugins/SoulAuction/fake-activity/`)
+
+Путь задаётся в `config.yml` → `fake-activity.directory` (дефолт `fake-activity`). После первого старта создаются три файла:
+
+| Файл | Содержимое |
+|------|------------|
+| `settings.yml` | таймеры, лимиты, цены по умолчанию, `admin-fake` |
+| `sellers.yml` | список ников-продавцов (до 16 символов) |
+| `items.yml` | пул предметов с весами и диапазонами цен |
+
+На fresh install в пул попадает **~120** ников и **~120** vanilla-предметов (руды, еда, инструменты, редкости 1.21) — править можно сразу в YAML.
+
+#### `settings.yml` (главное)
+
+| Поле | Назначение |
+|------|------------|
+| `initial-fill-listings` | сколько лотов создать сразу при старте (`0` = до `max-total-listings`) |
+| `initial-delay-seconds` | пауза перед первым tick пополнения |
+| `tick-interval-seconds` | как часто добивать лоты до лимитов |
+| `after-purchase-delay-seconds` | пауза после покупки фейка перед новым лотом того же продавца |
+| `min-price` / `max-price` | дефолтный диапазон, если у предмета в `items.yml` min/max = 0 |
+| `price-variance-percent` | случайный разброс ±% к выбранной цене |
+| `max-listings-per-auction` | потолок фейков на один `auctionId` |
+| `max-total-listings` | потолок фейков на весь сервер |
+| `listing-age-spread-seconds` | случайный «возраст» лота при создании (разные таймеры TTL) |
+| `listings-per-tick` | сколько лотов пытаться создать за один tick |
+| `auction-ids` | только эти аукционы (`[]` = все с `fake-activity-enabled`) |
+| `admin-fake.register-seller` | после `/ah admin fake` дописать ник в `sellers.yml` |
+| `admin-fake.register-item` | после `/ah admin fake` дописать предмет из руки в `items.yml` |
+
+#### `items.yml` — поля записи
+
+- `id` — имя для себя
+- `material` / `amount` — vanilla-стек (игнорируется, если задан `item-base64`)
+- `item-base64` — полный снимок предмета (NBT, custom items)
+- `min-price` / `max-price` — `0` = из `settings.yml`
+- `auction-ids` — пусто = любой аукцион; иначе только перечисленные
+- `weight` — относительный шанс выбора (больше = чаще)
+
+### Ручной фейк
+
+```
+/ah admin fake <ник> <auctionId> <цена>
+```
+
+Предмет — в **главной руке**. Лот создаётся сразу как synthetic. При включённых `admin-fake.*` ник и/или предмет дописываются в пул async.
+
+### Поведение
+
+- Фейки участвуют в сортировке, поиске, фильтрах как обычные лоты.
+- Снять `/ah cancel` может только админ с `soulauction.command.cancel.any` (продавец — synthetic UUID).
+- На прокси с MySQL+Redis фейки синхронизируются как обычные listing records.
+
+## Скины продавцов (`config.yml` → `seller-skins`)
+
+Текстуры **голов продавцов** в GUI «Избранные продавцы» (hub → звезда). Лоты в витрине показывают сам предмет, не голову.
+
+SkinsRestorer — **softdepend**; без него на offline/cracked серверах Mojang по нику часто не сработает.
+
+### `source`
+
+| Значение | Поведение |
+|----------|-----------|
+| `auto` | SkinsRestorer, если установлен; иначе Mojang API |
+| `skins-restorer` | только SkinsRestorer |
+| `mojang` | только Mojang (online-mode, реальные ники) |
+| `off` | дефолтные головы Steve/Alex, без lookup |
+
+### `fallback-skin` и `fake-seller-skin`
+
+```yaml
+seller-skins:
+  source: skins-restorer
+  fallback-skin: "DefaultHead"
+  fake-seller-skin: "ServerLogo"
+```
+
+| Поле | Когда |
+|------|--------|
+| `fallback-skin` | lookup по нику продавца не дал текстуру → SR ищет этот custom skin / nick / URL |
+| `fake-seller-skin` | **все** synthetic/fake продавцы получают этот скин; **ник игнорируется** |
+
+Значения — имена скинов из SkinsRestorer (`/sr set skin ServerLogo <url>` и т.п.).
+
+### Цепочка lookup (SkinsRestorer)
+
+1. `findOrCreateSkinData(ник)` — или `fake-seller-skin`, если продавец synthetic и поле задано  
+2. `findSkinData(fallback-skin)` — если указан  
+3. `getSkinForPlayer(uuid, nick)` — SR `defaultSkins` из конфига SkinsRestorer  
+
+При `source: mojang` fallback тоже работает, но через Mojang API по имени.
+
+### Прогрев при старте
+
+Async prefetch в кэш SkinsRestorer (пауза ~100 ms между запросами):
+
+- если задан `fake-seller-skin` — прогревается он (+ `fallback-skin`, если указан);
+- иначе — все ники из пула фейков + `fallback-skin`.
+
+В консоли: `SkinsRestorer — prefetched X/Y fake seller skins`.
+
+Lookup при открытии GUI — async; голова обновляется, когда текстура пришла (без RAM-кеша в SoulAuction).
+
+## Админ-GUI
+
+`/ah admin` или `/ah admin gui [страница]` — нужен `soulauction.command.admin` или OP.
+
+| Действие | Результат |
+|----------|-----------|
+| **ЛКМ** по аукциону | открыть витрину как игрок |
+| **ПКМ** по аукциону | меню автофейков |
+| **Слот 22** | вкл/выкл автофейки (краситель) |
+| **Слот 49** | настройки пула и лимиты (просмотр) |
+| **Слот 45** | назад в список |
+| Книга в нижнем ряду | создать новый аукцион |
+
 ## Команды
 
 ### Игроки
@@ -150,6 +289,8 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 - `/ah admin audit [limit]` — последние audit-записи.
 - `/ah admin cache stats|rebuild|invalidate` — кэш каталога.
 - `/ah admin sellfor <player> <auctionId> <price>` — выставить лот от имени игрока (предмет в руке).
+- `/ah admin fake <ник> <auctionId> <цена>` — synthetic-лот от указанного ника (предмет в руке; см. автофейки).
+- `/ah admin gui [страница]` — GUI списка аукционов (ПКМ по аукциону — автофейки).
 - `/ah admin parse tags|nbt` — разбор NBT/тегов предмета в руке (custom items).
 - `/ah view <player> [auctionId]` — GUI лотов игрока.
 

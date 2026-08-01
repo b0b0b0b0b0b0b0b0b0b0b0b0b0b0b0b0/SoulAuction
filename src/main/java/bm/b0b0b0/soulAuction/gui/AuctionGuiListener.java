@@ -1,8 +1,11 @@
 package bm.b0b0b0.soulAuction.gui;
 
 import bm.b0b0b0.soulAuction.config.PluginConfig;
+import bm.b0b0b0.soulAuction.config.FakeActivityConfig;
+import bm.b0b0b0.soulAuction.gui.admin.AdminAuctionSettingsMenu;
 import bm.b0b0b0.soulAuction.gui.admin.AdminAuctionsMenu;
 import bm.b0b0b0.soulAuction.gui.admin.AdminGuiAccess;
+import bm.b0b0b0.soulAuction.service.admin.AdminAuctionSettingsService;
 import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.util.ListingItemEquality;
@@ -44,6 +47,8 @@ public final class AuctionGuiListener implements Listener {
     private final AuctionService auctionService;
     private final MessageService messageService;
     private final AdminAuctionCreateService adminAuctionCreateService;
+    private final AdminAuctionSettingsService adminAuctionSettingsService;
+    private final Supplier<FakeActivityConfig> fakeActivityConfigSupplier;
     private final ConcurrentHashMap<UUID, BukkitTask> browserExpiryRefreshTasks = new ConcurrentHashMap<>();
 
     public AuctionGuiListener(
@@ -51,13 +56,17 @@ public final class AuctionGuiListener implements Listener {
             Supplier<PluginConfig> configSupplier,
             AuctionService auctionService,
             MessageService messageService,
-            AdminAuctionCreateService adminAuctionCreateService
+            AdminAuctionCreateService adminAuctionCreateService,
+            AdminAuctionSettingsService adminAuctionSettingsService,
+            Supplier<FakeActivityConfig> fakeActivityConfigSupplier
     ) {
         this.plugin = plugin;
         this.configSupplier = configSupplier;
         this.auctionService = auctionService;
         this.messageService = messageService;
         this.adminAuctionCreateService = adminAuctionCreateService;
+        this.adminAuctionSettingsService = adminAuctionSettingsService;
+        this.fakeActivityConfigSupplier = fakeActivityConfigSupplier;
     }
 
     @EventHandler
@@ -80,6 +89,10 @@ public final class AuctionGuiListener implements Listener {
         }
         if (event.getView().getTopInventory().getHolder(false) instanceof FavoriteSellersMenu favoriteSellersMenu) {
             handleFavoriteSellersClick(event, player, favoriteSellersMenu);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder(false) instanceof FavoriteListingsMenu favoriteListingsMenu) {
+            handleFavoriteListingsClick(event, player, favoriteListingsMenu);
             return;
         }
         if (event.getView().getTopInventory().getHolder(false) instanceof AuctionPriceFilterMenu priceFilterMenu) {
@@ -121,6 +134,10 @@ public final class AuctionGuiListener implements Listener {
             handleAdminAuctionsClick(event, player, adminAuctionsMenu);
             return;
         }
+        if (event.getView().getTopInventory().getHolder(false) instanceof AdminAuctionSettingsMenu adminSettingsMenu) {
+            handleAdminAuctionSettingsClick(event, player, adminSettingsMenu);
+            return;
+        }
         if (event.getView().getTopInventory().getHolder(false) instanceof ContainerPreviewMenu) {
             if (!(event.getClickedInventory() instanceof PlayerInventory)) {
                 event.setCancelled(true);
@@ -138,7 +155,15 @@ public final class AuctionGuiListener implements Listener {
             event.setCancelled(true);
             return;
         }
+        if (event.getView().getTopInventory().getHolder(false) instanceof FavoriteListingsMenu) {
+            event.setCancelled(true);
+            return;
+        }
         if (event.getView().getTopInventory().getHolder(false) instanceof AdminAuctionsMenu) {
+            event.setCancelled(true);
+            return;
+        }
+        if (event.getView().getTopInventory().getHolder(false) instanceof AdminAuctionSettingsMenu) {
             event.setCancelled(true);
             return;
         }
@@ -300,16 +325,16 @@ public final class AuctionGuiListener implements Listener {
         event.setCancelled(true);
         int slot = event.getSlot();
         int favoritesSlot = configSupplier.get().guiGeneralSettings().favoritesSlot;
-        if (slot == favoritesSlot && event.isRightClick()) {
-            FavoriteSellersMenu favoriteMenu = new FavoriteSellersMenu(
-                    player.getUniqueId(),
-                    menu.auctionId(),
-                    0,
-                    auctionService,
-                    messageService,
-                    configSupplier.get().guiGeneralSettings()
-            );
-            PluginSchedulers.run(plugin, player, () -> player.openInventory(favoriteMenu.getInventory()));
+        if (slot == favoritesSlot) {
+            if (event.isShiftClick() && event.isLeftClick()) {
+                menu.click(slot);
+                return;
+            }
+            if (event.isRightClick()) {
+                openFavoriteListingsMenu(player, menu.auctionId(), GuiReturnTarget.BROWSER);
+                return;
+            }
+            openFavoriteSellersMenu(player, menu.auctionId(), GuiReturnTarget.BROWSER);
             return;
         }
         if (slot == configSupplier.get().guiGeneralSettings().historySlot) {
@@ -389,7 +414,11 @@ public final class AuctionGuiListener implements Listener {
         event.setCancelled(true);
         int slot = event.getSlot();
         if (menu.isBack(slot)) {
-            openBrowser(player, menu.auctionId());
+            if (menu.returnTarget() == GuiReturnTarget.HUB) {
+                openHub(player, menu.auctionId());
+            } else {
+                openBrowser(player, menu.auctionId());
+            }
             return;
         }
         if (menu.isPrev(slot)) {
@@ -406,11 +435,69 @@ public final class AuctionGuiListener implements Listener {
         }
         if (auctionService.isFavoriteSeller(player.getUniqueId(), sellerId)) {
             auctionService.toggleFavoriteSeller(player.getUniqueId(), sellerId);
-            OfflinePlayer offline = org.bukkit.Bukkit.getOfflinePlayer(sellerId);
-            String name = offline.getName() == null ? sellerId.toString() : offline.getName();
+            String name = auctionService.resolveSellerDisplayName(sellerId);
             messageService.send(player, "favorite-removed", Map.of("seller", name));
         }
         menu.refresh();
+    }
+
+    private void handleFavoriteListingsClick(InventoryClickEvent event, Player player, FavoriteListingsMenu menu) {
+        if (event.getClickedInventory() instanceof PlayerInventory) {
+            return;
+        }
+        event.setCancelled(true);
+        int slot = event.getSlot();
+        if (menu.isBack(slot)) {
+            if (menu.returnTarget() == GuiReturnTarget.HUB) {
+                openHub(player, menu.auctionId());
+            } else {
+                openBrowser(player, menu.auctionId());
+            }
+            return;
+        }
+        if (menu.isPrev(slot)) {
+            menu.previousPage();
+            return;
+        }
+        if (menu.isNext(slot)) {
+            menu.nextPage();
+            return;
+        }
+        Long listingId = menu.listingIdAt(slot);
+        if (listingId == null) {
+            return;
+        }
+        var listing = auctionService.listingById(listingId);
+        if (listing == null) {
+            messageService.send(player, "error-listing-unavailable");
+            menu.refresh();
+            return;
+        }
+        if (event.isShiftClick() && event.isLeftClick()) {
+            auctionService.toggleFavoriteListing(player.getUniqueId(), listingId);
+            messageService.send(player, "favorite-listing-removed", Map.of("id", String.valueOf(listingId)));
+            menu.refresh();
+            return;
+        }
+        if (listing.sellerId().equals(player.getUniqueId())) {
+            OwnerListingMenu ownerMenu = new OwnerListingMenu(
+                    player.getUniqueId(),
+                    listing.auctionId(),
+                    listingId,
+                    auctionService,
+                    messageService
+            );
+            PluginSchedulers.run(plugin, player, () -> player.openInventory(ownerMenu.getInventory()));
+            return;
+        }
+        PurchaseConfirmMenu confirmMenu = new PurchaseConfirmMenu(
+                player.getUniqueId(),
+                listing.auctionId(),
+                listingId,
+                auctionService,
+                messageService
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(confirmMenu.getInventory()));
     }
 
     private void handlePurchaseConfirmClick(InventoryClickEvent event, Player player, PurchaseConfirmMenu menu) {
@@ -520,6 +607,14 @@ public final class AuctionGuiListener implements Listener {
             openBrowser(player, menu.auctionId());
             return;
         }
+        if (menu.isFavoriteSellers(event.getSlot())) {
+            openFavoriteSellersMenu(player, menu.auctionId(), GuiReturnTarget.HUB);
+            return;
+        }
+        if (menu.isFavoriteListings(event.getSlot())) {
+            openFavoriteListingsMenu(player, menu.auctionId(), GuiReturnTarget.HUB);
+            return;
+        }
         var view = menu.viewAt(event.getSlot());
         if (view == null) {
             return;
@@ -613,12 +708,59 @@ public final class AuctionGuiListener implements Listener {
         }
         String auctionId = menu.auctionIdAt(slot);
         if (auctionId != null) {
-            if (!event.isLeftClick() || event.isShiftClick() || event.isRightClick()) {
+            if (event.isRightClick() && !event.isShiftClick()) {
+                openAdminAuctionSettings(player, auctionId, menu.page());
+                return;
+            }
+            if (!event.isLeftClick() || event.isShiftClick()) {
                 return;
             }
             player.closeInventory();
             openBrowser(player, auctionId);
         }
+    }
+
+    private void handleAdminAuctionSettingsClick(InventoryClickEvent event, Player player, AdminAuctionSettingsMenu menu) {
+        if (!player.getUniqueId().equals(menu.viewerId())) {
+            event.setCancelled(true);
+            return;
+        }
+        if (!AdminGuiAccess.canOpenAdminGui(player)) {
+            event.setCancelled(true);
+            player.closeInventory();
+            messageService.send(player, "error-admin-gui-denied");
+            return;
+        }
+        if (event.getClickedInventory() instanceof PlayerInventory) {
+            return;
+        }
+        event.setCancelled(true);
+        int slot = event.getSlot();
+        if (menu.isBack(slot)) {
+            reopenAdminAuctions(player, menu.adminListPage());
+            return;
+        }
+        if (menu.isFakeToggle(slot)) {
+            String auctionId = menu.auctionId();
+            adminAuctionSettingsService.toggleFakeActivity(player, auctionId, () -> {
+                openAdminAuctionSettings(player, auctionId, menu.adminListPage());
+            });
+            openAdminAuctionSettings(player, auctionId, menu.adminListPage());
+        }
+    }
+
+    private void openAdminAuctionSettings(Player player, String auctionId, int adminListPage) {
+        AdminAuctionSettingsMenu settingsMenu = new AdminAuctionSettingsMenu(
+                player.getUniqueId(),
+                auctionId,
+                adminListPage,
+                auctionService,
+                messageService,
+                configSupplier.get().guiGeneralSettings(),
+                fakeActivityConfigSupplier,
+                configSupplier
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(settingsMenu.getInventory()));
     }
 
     private void reopenAdminAuctions(Player player, int page) {
@@ -662,6 +804,37 @@ public final class AuctionGuiListener implements Listener {
         previewMenu.fillFrom(container);
         PluginSchedulers.run(plugin, player, () -> player.openInventory(previewMenu.getInventory()));
         return true;
+    }
+
+    private void openHub(Player player, String auctionId) {
+        PlayerHubMenu hubMenu = new PlayerHubMenu(player.getUniqueId(), auctionId, auctionService, messageService);
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(hubMenu.getInventory()));
+    }
+
+    private void openFavoriteSellersMenu(Player player, String auctionId, GuiReturnTarget returnTarget) {
+        FavoriteSellersMenu favoriteMenu = new FavoriteSellersMenu(
+                player.getUniqueId(),
+                auctionId,
+                0,
+                returnTarget,
+                auctionService,
+                messageService,
+                configSupplier.get().guiGeneralSettings()
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(favoriteMenu.getInventory()));
+    }
+
+    private void openFavoriteListingsMenu(Player player, String auctionId, GuiReturnTarget returnTarget) {
+        FavoriteListingsMenu favoriteMenu = new FavoriteListingsMenu(
+                player.getUniqueId(),
+                auctionId,
+                0,
+                returnTarget,
+                auctionService,
+                messageService,
+                configSupplier.get().guiGeneralSettings()
+        );
+        PluginSchedulers.run(plugin, player, () -> player.openInventory(favoriteMenu.getInventory()));
     }
 
     private void openBrowser(Player player, String auctionId) {

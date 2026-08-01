@@ -9,9 +9,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import bm.b0b0b0.soulAuction.util.PlayerDisplayNames;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -84,8 +84,8 @@ public final class RecentSalesMenu implements InventoryHolder {
         List<DealHistoryEntry> sales = auctionService.recentSales(auctionId, 45);
         for (int i = 0; i < sales.size() && i < 45; i++) {
             DealHistoryEntry sale = sales.get(i);
-            String sellerName = offlineName(sale.sellerId());
-            String buyerName = sale.buyerId() == null ? "-" : offlineName(sale.buyerId());
+            String sellerName = PlayerDisplayNames.resolve(sale.sellerId(), sale.sellerName());
+            String buyerName = PlayerDisplayNames.resolve(sale.buyerId(), sale.buyerName());
             String price = auctionService.formatPrice(sale.price(), sale.auctionId(), viewerId);
             String tax = auctionService.formatPrice(sale.tax(), sale.auctionId(), viewerId);
             String time = TIME_FORMAT.format(Instant.ofEpochMilli(sale.createdAtEpochMillis()).atZone(ZoneId.systemDefault()));
@@ -130,13 +130,5 @@ public final class RecentSalesMenu implements InventoryHolder {
             item.setItemMeta(itemMeta);
         }
         return item;
-    }
-
-    private String offlineName(UUID uuid) {
-        OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid);
-        if (offlinePlayer.getName() != null) {
-            return offlinePlayer.getName();
-        }
-        return uuid.toString();
     }
 }

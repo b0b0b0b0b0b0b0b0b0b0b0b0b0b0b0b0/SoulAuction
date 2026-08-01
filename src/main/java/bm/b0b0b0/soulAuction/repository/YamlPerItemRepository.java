@@ -93,7 +93,8 @@ public final class YamlPerItemRepository implements AuctionRepository {
             String itemBase64,
             AuctionCategory category,
             String searchText,
-            String metadataJson
+            String metadataJson,
+            long createdAtEpochMillis
     ) {
         long listingId = nextId.getAndIncrement();
         AuctionListing listing = new AuctionListing(
@@ -103,7 +104,7 @@ public final class YamlPerItemRepository implements AuctionRepository {
                 sellerName,
                 price,
                 economyType,
-                System.currentTimeMillis(),
+                createdAtEpochMillis,
                 itemBase64,
                 category,
                 searchText,

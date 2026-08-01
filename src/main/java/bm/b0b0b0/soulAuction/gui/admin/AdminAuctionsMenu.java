@@ -183,6 +183,7 @@ public final class AdminAuctionsMenu implements InventoryHolder {
                 "listings", String.valueOf(listings),
                 "buy", definition.buyEnabled ? yesLabel() : noLabel(),
                 "sell", definition.sellEnabled ? yesLabel() : noLabel(),
+                "fake", definition.fakeActivityEnabled ? yesLabel() : noLabel(),
                 "default", isDefault ? yesLabel() : noLabel()
         );
         return actionItem(
