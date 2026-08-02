@@ -98,6 +98,13 @@ public final class AuctionSettings extends YamlSerializable {
 
     @NewLine
     @Comment({
+            @CommentValue("WorldGuard region marketplace (requires WorldGuard plugin)."),
+            @CommentValue("Separate /ah regions menu — sale transfers region ownership, no fake activity."),
+    })
+    public RegionMarketSettings regionMarket = new RegionMarketSettings();
+
+    @NewLine
+    @Comment({
             @CommentValue("Seller skull textures in GUI (favorite sellers, etc.)."),
     })
     public SellerSkinSettings sellerSkins = new SellerSkinSettings();
@@ -496,5 +503,35 @@ public final class AuctionSettings extends YamlSerializable {
                 @CommentValue("Subfolder: settings.yml, sellers.yml, items.yml"),
         })
         public String directory = "fake-activity";
+    }
+
+    public static final class RegionMarketSettings {
+
+        @Comment({@CommentValue("Enable /ah regions and WorldGuard integration")})
+        public boolean enabled = true;
+
+        @Comment({@CommentValue("Permission for /ah regions")})
+        public String commandPermission = "soulauction.command.regions";
+
+        @Comment({@CommentValue("Permission to list a region for sale")})
+        public String sellPermission = "soulauction.region.sell";
+
+        @Comment({@CommentValue("Permission to buy a listed region")})
+        public String buyPermission = "soulauction.region.buy";
+
+        @Comment({
+                @CommentValue("Auction ids allowed for region sales (economy per auction)."),
+                @CommentValue("Empty = every auction with sell-enabled in auctions/*.yml."),
+        })
+        public List<String> allowedAuctionIds = List.of();
+
+        @Comment({@CommentValue("Icon material for region listings in GUI")})
+        public String listIconMaterial = "MAP";
+
+        @Comment({@CommentValue("GUI slot for «Sell region» button (0–53)")})
+        public int sellButtonSlot = 47;
+
+        @Comment({@CommentValue("Max active region listings per player, 0 = use global listing limits")})
+        public int maxListingsPerPlayer = 0;
     }
 }

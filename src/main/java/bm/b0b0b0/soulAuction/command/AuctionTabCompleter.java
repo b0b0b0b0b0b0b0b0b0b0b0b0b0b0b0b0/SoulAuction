@@ -23,10 +23,12 @@ public final class AuctionTabCompleter implements TabCompleter {
 
     private final AuctionService auctionService;
     private final AuctionAdminCommand adminCommand;
+    private final RegionMarketCommandHandler regionMarketCommandHandler;
 
-    public AuctionTabCompleter(AuctionService auctionService, AuctionAdminCommand adminCommand) {
+    public AuctionTabCompleter(AuctionService auctionService, AuctionAdminCommand adminCommand, RegionMarketCommandHandler regionMarketCommandHandler) {
         this.auctionService = auctionService;
         this.adminCommand = adminCommand;
+        this.regionMarketCommandHandler = regionMarketCommandHandler;
     }
 
     @Override
@@ -60,6 +62,9 @@ public final class AuctionTabCompleter implements TabCompleter {
                 return List.of();
             }
             return adminCommand.tabComplete(sender, copyFrom(args, 1), partial);
+        }
+        if (root.equals("regions") && regionMarketCommandHandler != null) {
+            return regionMarketCommandHandler.tabComplete(sender, copyFrom(args, 1));
         }
         if (!(sender instanceof Player player)) {
             return List.of();
@@ -183,6 +188,9 @@ public final class AuctionTabCompleter implements TabCompleter {
                 suggestions.add("page");
                 if (player.hasPermission(PERMISSION_VIEW)) {
                     suggestions.add("view");
+                }
+                if (regionMarketCommandHandler != null && player.hasPermission("soulauction.command.regions")) {
+                    suggestions.add("regions");
                 }
             }
         } else {

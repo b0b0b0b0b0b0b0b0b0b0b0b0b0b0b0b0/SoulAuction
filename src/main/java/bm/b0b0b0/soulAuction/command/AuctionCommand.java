@@ -48,6 +48,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
     private final Runnable reloadAction;
     private final AuctionAdminCommand adminCommand;
     private final AuctionTabCompleter tabCompleter;
+    private final RegionMarketCommandHandler regionMarketCommandHandler;
 
     public AuctionCommand(
             JavaPlugin plugin,
@@ -55,13 +56,15 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
             MessageService messageService,
             AuctionService auctionService,
             Runnable reloadAction,
-            AdminAuctionCreateService adminAuctionCreateService
+            AdminAuctionCreateService adminAuctionCreateService,
+            RegionMarketCommandHandler regionMarketCommandHandler
     ) {
         this.plugin = plugin;
         this.configSupplier = configSupplier;
         this.messageService = messageService;
         this.auctionService = auctionService;
         this.reloadAction = reloadAction;
+        this.regionMarketCommandHandler = regionMarketCommandHandler;
         this.adminCommand = new AuctionAdminCommand(
                 plugin,
                 configSupplier,
@@ -69,7 +72,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
                 auctionService,
                 adminAuctionCreateService
         );
-        this.tabCompleter = new AuctionTabCompleter(auctionService, adminCommand);
+        this.tabCompleter = new AuctionTabCompleter(auctionService, adminCommand, regionMarketCommandHandler);
     }
 
     @Override
@@ -114,6 +117,9 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         if (!auctionService.isLoaded()) {
             messageService.send(player, "error-still-loading");
             return true;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("regions") && regionMarketCommandHandler != null) {
+            return regionMarketCommandHandler.handle(player, java.util.Arrays.copyOfRange(args, 1, args.length));
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("sell")) {
             return handleSell(player, args);

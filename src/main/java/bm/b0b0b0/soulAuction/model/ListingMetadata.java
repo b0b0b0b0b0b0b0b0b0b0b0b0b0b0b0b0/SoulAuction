@@ -14,6 +14,8 @@ public final class ListingMetadata {
     public ListingKind kind = ListingKind.FIXED_PRICE;
     public List<String> bundleItemsBase64 = new ArrayList<>();
     public String removalReason = "";
+    public String regionWorld = "";
+    public String regionId = "";
 
     public static ListingMetadata empty() {
         return new ListingMetadata();
@@ -39,6 +41,7 @@ public final class ListingMetadata {
         FIXED_PRICE,
         BUNDLE,
         BID,
-        RENT
+        RENT,
+        REGION
     }
 }

@@ -4,7 +4,7 @@ main: bm.b0b0b0.soulAuction.SoulAuction
 api-version: '1.21'
 folia-supported: true
 authors: [ b0b0b0 ]
-softdepend: [ Vault, PlayerPoints, PlaceholderAPI, CoinsEngine, SkinsRestorer ]
+softdepend: [ Vault, PlayerPoints, PlaceholderAPI, CoinsEngine, SkinsRestorer, WorldGuard ]
 libraries:
   - net.elytrium:serializer:1.1.1
   - com.google.code.gson:gson:2.14.0
@@ -31,6 +31,12 @@ permissions:
     default: op
   soulauction.command.admin:
     default: op
+  soulauction.command.regions:
+    default: true
+  soulauction.region.sell:
+    default: true
+  soulauction.region.buy:
+    default: true
   soulauction.priority.1:
     default: false
     description: Higher listing sort priority (use soulauction.priority.N)

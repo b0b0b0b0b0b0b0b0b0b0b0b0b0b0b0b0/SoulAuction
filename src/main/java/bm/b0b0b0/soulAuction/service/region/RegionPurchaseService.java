@@ -1,20 +1,24 @@
-package bm.b0b0b0.soulAuction.service.listing;
+package bm.b0b0b0.soulAuction.service.region;
 
 import bm.b0b0b0.soulAuction.api.event.AuctionListingSoldEvent;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.config.settings.AuctionDefinitionSettings;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
+import bm.b0b0b0.soulAuction.integration.worldguard.WorldGuardBridge;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
-import bm.b0b0b0.soulAuction.model.result.PurchaseFailure;
-import bm.b0b0b0.soulAuction.model.result.PurchaseResult;
+import bm.b0b0b0.soulAuction.model.region.RegionRef;
+import bm.b0b0b0.soulAuction.model.result.PurchaseQuote;
+import bm.b0b0b0.soulAuction.model.result.RegionPurchaseFailure;
+import bm.b0b0b0.soulAuction.model.result.RegionPurchaseResult;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
 import bm.b0b0b0.soulAuction.service.AuctionExternalNotifier;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
-import bm.b0b0b0.soulAuction.service.region.RegionListingHelper;
+import bm.b0b0b0.soulAuction.service.listing.ListingLockRunner;
+import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import java.util.Map;
 import java.util.Optional;
@@ -23,7 +27,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
-public final class AuctionPurchaseService {
+public final class RegionPurchaseService {
 
     private final AuctionRepository repository;
     private final Supplier<PluginConfig> configSupplier;
@@ -33,11 +37,12 @@ public final class AuctionPurchaseService {
     private final AuctionExternalNotifier externalNotifier;
     private final ListingLockRunner listingLocks;
     private final ListingSaleClaimer saleClaimer;
+    private final WorldGuardBridge worldGuardBridge;
     private final java.util.function.Consumer<String> invalidateCacheForAuction;
     private final java.util.function.BiConsumer<String, AuctionListing> publishListingChange;
     private final MessageService messageService;
 
-    public AuctionPurchaseService(
+    public RegionPurchaseService(
             AuctionRepository repository,
             Supplier<PluginConfig> configSupplier,
             AuctionEconomyService economy,
@@ -46,6 +51,7 @@ public final class AuctionPurchaseService {
             AuctionExternalNotifier externalNotifier,
             ListingLockRunner listingLocks,
             ListingSaleClaimer saleClaimer,
+            WorldGuardBridge worldGuardBridge,
             java.util.function.Consumer<String> invalidateCacheForAuction,
             java.util.function.BiConsumer<String, AuctionListing> publishListingChange,
             MessageService messageService
@@ -58,49 +64,92 @@ public final class AuctionPurchaseService {
         this.externalNotifier = externalNotifier;
         this.listingLocks = listingLocks;
         this.saleClaimer = saleClaimer;
+        this.worldGuardBridge = worldGuardBridge;
         this.invalidateCacheForAuction = invalidateCacheForAuction;
         this.publishListingChange = publishListingChange;
         this.messageService = messageService;
     }
 
-    public PurchaseResult purchase(Player buyer, long listingId, ListingDefinitionLookup definitions) {
-        return listingLocks.withLock(listingId, () -> purchaseLocked(buyer, listingId, definitions));
+    public PurchaseQuote quote(Player buyer, long listingId) {
+        AuctionListing listing = repository.findById(listingId);
+        if (listing == null || !RegionListingHelper.isRegionListing(listing)) {
+            return null;
+        }
+        AuctionDefinitionSettings definition = findDefinition(listing.auctionId());
+        if (definition == null || buyer == null) {
+            return null;
+        }
+        ItemStack placeholder = ItemStackCodec.decode(listing.itemBase64());
+        Player sellerOnline = Bukkit.getPlayer(listing.sellerId());
+        TaxPolicyResolver.TaxAmounts taxes = taxPolicyResolver.resolve(
+                buyer,
+                sellerOnline,
+                definition,
+                configSupplier.get().auctionSettings(),
+                listing.price(),
+                placeholder
+        );
+        return new PurchaseQuote(listing, taxes.buyerCharge(listing.price()), taxes.saleTax(), taxes.buyTax());
     }
 
-    private PurchaseResult purchaseLocked(Player buyer, long listingId, ListingDefinitionLookup definitions) {
+    public RegionPurchaseResult purchase(Player buyer, long listingId, boolean loaded) {
+        AuctionSettings settings = configSupplier.get().auctionSettings();
+        AuctionSettings.RegionMarketSettings regionSettings = settings.regionMarket;
+        if (regionSettings == null || !regionSettings.enabled) {
+            return RegionPurchaseResult.failure(RegionPurchaseFailure.DISABLED);
+        }
+        if (!loaded) {
+            return RegionPurchaseResult.failure(RegionPurchaseFailure.STORAGE_NOT_READY);
+        }
+        if (!buyer.hasPermission(regionSettings.buyPermission)) {
+            return RegionPurchaseResult.failure(RegionPurchaseFailure.BUY_PERMISSION_DENIED);
+        }
+        return listingLocks.withLock(listingId, () -> purchaseLocked(buyer, listingId, settings, regionSettings));
+    }
+
+    private RegionPurchaseResult purchaseLocked(
+            Player buyer,
+            long listingId,
+            AuctionSettings settings,
+            AuctionSettings.RegionMarketSettings regionSettings
+    ) {
         Optional<AuctionListing> claimed = saleClaimer.claim(listingId);
         if (claimed.isEmpty()) {
-            return PurchaseResult.failure(PurchaseFailure.LISTING_UNAVAILABLE);
+            return RegionPurchaseResult.failure(RegionPurchaseFailure.LISTING_UNAVAILABLE);
         }
         AuctionListing listing = claimed.get();
-        if (RegionListingHelper.isRegionListing(listing)) {
+        if (!RegionListingHelper.isRegionListing(listing)) {
             saleClaimer.rollback(listing);
-            return PurchaseResult.failure(PurchaseFailure.LISTING_UNAVAILABLE);
+            return RegionPurchaseResult.failure(RegionPurchaseFailure.NOT_REGION_LISTING);
         }
-        AuctionSettings settings = configSupplier.get().auctionSettings();
+        RegionRef region = RegionListingHelper.regionRef(listing);
         try {
-            AuctionDefinitionSettings definition = definitions.find(listing.auctionId());
+            AuctionDefinitionSettings definition = findDefinition(listing.auctionId());
             if (definition == null) {
                 saleClaimer.rollback(listing);
-                return PurchaseResult.failure(PurchaseFailure.AUCTION_NOT_FOUND);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.AUCTION_NOT_FOUND);
             }
             if (!definition.buyEnabled) {
                 saleClaimer.rollback(listing);
-                return PurchaseResult.failure(PurchaseFailure.BUY_DISABLED_IN_AUCTION);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.BUY_DISABLED_IN_AUCTION);
             }
-            if (!definitions.hasPermission(buyer, definition.buyPermission)) {
+            if (!buyer.hasPermission(definition.buyPermission)) {
                 saleClaimer.rollback(listing);
-                return PurchaseResult.failure(PurchaseFailure.BUY_PERMISSION_DENIED);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.BUY_PERMISSION_DENIED);
             }
             if (!economy.isAvailable(listing.economyType(), definition)) {
                 saleClaimer.rollback(listing);
-                return PurchaseResult.failure(PurchaseFailure.ECONOMY_UNAVAILABLE);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.ECONOMY_UNAVAILABLE);
             }
             if (!settings.limits.allowSelfBuy && listing.sellerId().equals(buyer.getUniqueId())) {
                 saleClaimer.rollback(listing);
-                return PurchaseResult.failure(PurchaseFailure.OWN_LISTING);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.OWN_LISTING);
             }
-            ItemStack item = ItemStackCodec.decode(listing.itemBase64());
+            if (!worldGuardBridge.regionExists(region) || !worldGuardBridge.isOwner(listing.sellerId(), region)) {
+                saleClaimer.rollback(listing);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.REGION_UNAVAILABLE);
+            }
+            ItemStack placeholder = ItemStackCodec.decode(listing.itemBase64());
             Player sellerOnline = Bukkit.getPlayer(listing.sellerId());
             TaxPolicyResolver.TaxAmounts taxes = taxPolicyResolver.resolve(
                     buyer,
@@ -108,29 +157,27 @@ public final class AuctionPurchaseService {
                     definition,
                     settings,
                     listing.price(),
-                    item
+                    placeholder
             );
             int charge = taxes.buyerCharge(listing.price());
             if (!economy.has(buyer.getUniqueId(), charge, listing.economyType(), definition)) {
                 saleClaimer.rollback(listing);
-                return PurchaseResult.failure(PurchaseFailure.NOT_ENOUGH_MONEY);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.NOT_ENOUGH_MONEY);
             }
             if (!economy.withdraw(buyer.getUniqueId(), charge, listing.economyType(), definition)) {
                 saleClaimer.rollback(listing);
-                return PurchaseResult.failure(PurchaseFailure.NOT_ENOUGH_MONEY);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.NOT_ENOUGH_MONEY);
             }
-            Map<Integer, ItemStack> leftovers = buyer.getInventory().addItem(item);
-            if (!leftovers.isEmpty()) {
+            if (!worldGuardBridge.transferOwnership(region, listing.sellerId(), buyer.getUniqueId())) {
                 economy.deposit(buyer.getUniqueId(), charge, listing.economyType(), definition);
                 saleClaimer.rollback(listing);
-                return PurchaseResult.failure(PurchaseFailure.INVENTORY_FULL);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.TRANSFER_FAILED);
             }
             int saleTax = taxes.saleTax();
             int buyTax = taxes.buyTax();
             int payout = taxes.sellerPayout(listing.price());
-            boolean syntheticSeller = listing.metadata().syntheticSeller;
-            boolean sellerPaid = syntheticSeller;
-            if (!syntheticSeller && sellerOnline != null && settings.limits.autoClaimMoneyWhenOnline) {
+            boolean sellerPaid = false;
+            if (sellerOnline != null && settings.limits.autoClaimMoneyWhenOnline) {
                 sellerPaid = economy.deposit(listing.sellerId(), payout, listing.economyType(), definition);
             }
             saleClaimer.commit(listing.listingId());
@@ -169,8 +216,13 @@ public final class AuctionPurchaseService {
             }
             Bukkit.getPluginManager().callEvent(new AuctionListingSoldEvent(listing, buyer, payout, saleTax, buyTax));
             maybeAnnounceSale(listing, buyer.getName(), definition);
-            externalNotifier.sold(listing, buyer.getName(), buyer.getUniqueId(), economy.format(listing.price(), listing.economyType(), definition));
-            return PurchaseResult.success(listing, sellerOnline, payout, saleTax, buyTax, charge);
+            externalNotifier.sold(
+                    listing,
+                    buyer.getName(),
+                    buyer.getUniqueId(),
+                    economy.format(listing.price(), listing.economyType(), definition)
+            );
+            return RegionPurchaseResult.success(listing, sellerOnline, payout, saleTax, buyTax, charge);
         } catch (RuntimeException exception) {
             saleClaimer.rollback(listing);
             throw exception;
@@ -183,20 +235,26 @@ public final class AuctionPurchaseService {
             return;
         }
         messageService.broadcast(
-                "announce-sale",
+                "region-announce-sale",
                 Map.of(
                         "buyer", buyerName,
                         "seller", listing.sellerName(),
                         "price", economy.format(listing.price(), listing.economyType(), definition),
-                        "auction", definition.displayName
+                        "region", RegionListingHelper.regionRef(listing).regionId(),
+                        "world", RegionListingHelper.regionRef(listing).worldName()
                 )
         );
     }
 
-    public interface ListingDefinitionLookup {
-
-        AuctionDefinitionSettings find(String auctionId);
-
-        boolean hasPermission(Player player, String permission);
+    private AuctionDefinitionSettings findDefinition(String auctionId) {
+        if (auctionId == null || auctionId.isBlank()) {
+            return null;
+        }
+        for (AuctionDefinitionSettings definition : configSupplier.get().auctionDefinitions()) {
+            if (definition != null && definition.id != null && definition.id.equalsIgnoreCase(auctionId)) {
+                return definition;
+            }
+        }
+        return null;
     }
 }

@@ -8,6 +8,7 @@ import bm.b0b0b0.soulAuction.repository.AuctionRepository;
 import bm.b0b0b0.soulAuction.service.AuctionListingCache;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
 import bm.b0b0b0.soulAuction.service.PermissionPriorityResolver;
+import bm.b0b0b0.soulAuction.service.region.RegionListingHelper;
 import bm.b0b0b0.soulAuction.util.ListingSearchText;
 import java.util.ArrayList;
 import java.util.List;
@@ -128,6 +129,9 @@ public final class AuctionBrowseService {
         );
         List<AuctionListing> filtered = new ArrayList<>();
         for (AuctionListing listing : source) {
+            if (RegionListingHelper.isRegionListing(listing)) {
+                continue;
+            }
             if (category != AuctionCategory.ALL && listing.category() != category) {
                 continue;
             }

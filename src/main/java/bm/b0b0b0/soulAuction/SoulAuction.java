@@ -17,7 +17,9 @@ import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.listener.AdminAuctionCreateChatListener;
 import bm.b0b0b0.soulAuction.listener.AuctionSearchChatListener;
 import bm.b0b0b0.soulAuction.listener.PlayerSaleNotificationListener;
+import bm.b0b0b0.soulAuction.listener.RegionSellChatListener;
 import bm.b0b0b0.soulAuction.model.StorageMode;
+import bm.b0b0b0.soulAuction.region.RegionMarketModule;
 import bm.b0b0b0.soulAuction.service.migration.AuctionStorageMigrator;
 import bm.b0b0b0.soulAuction.placeholder.SoulAuctionPlaceholderExpansion;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
@@ -40,6 +42,7 @@ import bm.b0b0b0.soulAuction.service.SellerSkinSource;
 import bm.b0b0b0.soulAuction.service.SkinRestorerBridge;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.service.fakeactivity.FakeActivityService;
+import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
 import bm.b0b0b0.soulAuction.util.ItemTranslationCache;
 import bm.b0b0b0.soulAuction.util.ListingSearchResolveCache;
 import bm.b0b0b0.soulAuction.util.ListingSearchText;
@@ -68,6 +71,7 @@ public final class SoulAuction extends JavaPlugin {
     private FakeActivityConfig fakeActivityConfig;
     private FakeActivityService fakeActivityService;
     private AuctionCommand auctionCommand;
+    private RegionMarketModule regionMarketModule;
 
     @Override
     public void onEnable() {
@@ -192,13 +196,36 @@ public final class SoulAuction extends JavaPlugin {
                     ),
                     this
             );
+            AuctionSellPolicy regionSellPolicy = new AuctionSellPolicy(runtimeStorage);
+            regionMarketModule = RegionMarketModule.create(
+                    this,
+                    this::pluginConfig,
+                    messageService,
+                    auctionService,
+                    repository,
+                    listingCache,
+                    auctionService.economyService(),
+                    permissionLimitResolver,
+                    priorityResolver,
+                    priceLimitResolver,
+                    redisSellGuard,
+                    runtimeStorage,
+                    regionSellPolicy,
+                    externalNotifier,
+                    taxPolicyResolver,
+                    auctionService.listingLocks(),
+                    auctionService.listingSaleClaimer()
+            );
+            getServer().getPluginManager().registerEvents(regionMarketModule.guiListener(), this);
+            getServer().getPluginManager().registerEvents(regionMarketModule.chatListener(), this);
             auctionCommand = new AuctionCommand(
                     this,
                     this::pluginConfig,
                     messageService,
                     auctionService,
                     this::reloadAll,
-                    adminAuctionCreateService
+                    adminAuctionCreateService,
+                    regionMarketModule.commandHandler()
             );
             PluginSchedulers.runGlobalTimer(
                     this,
@@ -262,6 +289,7 @@ public final class SoulAuction extends JavaPlugin {
         }
         startFakeActivityIfEnabled();
         scheduleSellerSkinWarmup();
+        logRegionMarketIntegration();
         startupLog.bannerSuccess();
         if (pluginConfig.auctionSettings().checkForUpdates) {
             SoulAuctionUpdateChecker.schedule(this, getPluginMeta().getVersion());
@@ -333,6 +361,18 @@ public final class SoulAuction extends JavaPlugin {
             startupLog.stepSkipped("SkinsRestorer — not found");
         }
         logSellerSkins();
+    }
+
+    private void logRegionMarketIntegration() {
+        if (regionMarketModule != null && regionMarketModule.marketService().isOperational()) {
+            startupLog.stepOk("WorldGuard — region market enabled");
+            return;
+        }
+        if (getServer().getPluginManager().getPlugin("WorldGuard") != null) {
+            startupLog.stepSkipped("WorldGuard — present, region market disabled in config");
+            return;
+        }
+        startupLog.stepSkipped("WorldGuard — not found");
     }
 
     @Override
