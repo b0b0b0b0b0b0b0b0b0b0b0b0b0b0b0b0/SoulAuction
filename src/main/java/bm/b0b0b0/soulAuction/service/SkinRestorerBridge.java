@@ -159,13 +159,13 @@ public final class SkinRestorerBridge {
             UUID sellerId,
             String fallbackSkin
     ) {
-        Optional<SkinTexture> primary = resolveStoredSkin(storage, playerName, true);
+        Optional<SkinTexture> primary = resolveStoredSkin(storage, playerName);
         if (primary.isPresent()) {
             return primary;
         }
         String fallback = blankToNull(fallbackSkin);
         if (fallback != null) {
-            Optional<SkinTexture> fallbackTexture = resolveStoredSkin(storage, fallback, false);
+            Optional<SkinTexture> fallbackTexture = resolveStoredSkin(storage, fallback);
             if (fallbackTexture.isPresent()) {
                 return fallbackTexture;
             }
@@ -179,12 +179,9 @@ public final class SkinRestorerBridge {
         return Optional.empty();
     }
 
-    private Optional<SkinTexture> resolveStoredSkin(Object storage, String input, boolean createIfMissing) {
+    private Optional<SkinTexture> resolveStoredSkin(Object storage, String input) {
         try {
-            Method findMethod = storage.getClass().getMethod(
-                    createIfMissing ? "findOrCreateSkinData" : "findSkinData",
-                    String.class
-            );
+            Method findMethod = storage.getClass().getMethod("findSkinData", String.class);
             Object optionalResult = findMethod.invoke(storage, input);
             return optionalToTexture(optionalResult);
         } catch (Throwable ignored) {

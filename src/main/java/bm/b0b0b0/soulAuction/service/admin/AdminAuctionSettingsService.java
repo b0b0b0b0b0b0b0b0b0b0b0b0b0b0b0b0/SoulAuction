@@ -6,6 +6,7 @@ import bm.b0b0b0.soulAuction.config.settings.AuctionDefinitionSettings;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.service.AuctionService;
+import bm.b0b0b0.soulAuction.service.fakeactivity.FakeActivityService;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.Map;
 import java.util.UUID;
@@ -19,7 +20,7 @@ public final class AdminAuctionSettingsService {
     private final JavaPlugin plugin;
     private final Supplier<PluginConfig> configSupplier;
     private final AuctionDefinitionWriter definitionWriter;
-    private final Runnable reloadConfig;
+    private final FakeActivityService fakeActivityService;
     private final AuctionService auctionService;
     private final MessageService messageService;
     private final ConcurrentHashMap<UUID, Boolean> toggleInFlight = new ConcurrentHashMap<>();
@@ -28,14 +29,14 @@ public final class AdminAuctionSettingsService {
             JavaPlugin plugin,
             Supplier<PluginConfig> configSupplier,
             AuctionDefinitionWriter definitionWriter,
-            Runnable reloadConfig,
+            FakeActivityService fakeActivityService,
             AuctionService auctionService,
             MessageService messageService
     ) {
         this.plugin = plugin;
         this.configSupplier = configSupplier;
         this.definitionWriter = definitionWriter;
-        this.reloadConfig = reloadConfig;
+        this.fakeActivityService = fakeActivityService;
         this.auctionService = auctionService;
         this.messageService = messageService;
     }
@@ -63,7 +64,7 @@ public final class AdminAuctionSettingsService {
             boolean finalSaved = saved;
             PluginSchedulers.runGlobal(plugin, () -> {
                 if (finalSaved) {
-                    reloadConfig.run();
+                    fakeActivityService.onAuctionFakeToggled(definition.id, enabled);
                 }
                 PluginSchedulers.run(plugin, player, () -> {
                     toggleInFlight.remove(player.getUniqueId());

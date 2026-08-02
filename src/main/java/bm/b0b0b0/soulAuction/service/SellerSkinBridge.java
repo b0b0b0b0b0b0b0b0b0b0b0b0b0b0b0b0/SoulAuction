@@ -66,10 +66,15 @@ public final class SellerSkinBridge {
         boolean resolvedSynthetic = syntheticSeller;
         if (syntheticSeller) {
             String forced = blankToNull(settings.fakeSellerSkin);
-            if (forced != null) {
-                lookupName = forced;
-                resolvedSynthetic = false;
+            if (forced == null) {
+                String fallback = blankToNull(settings.fallbackSkin);
+                if (fallback != null) {
+                    return resolveRemote(fallback, null, false, settings);
+                }
+                return CompletableFuture.completedFuture(Optional.empty());
             }
+            lookupName = forced;
+            resolvedSynthetic = false;
         }
         String key = inFlightKey(lookupName, sellerId, resolvedSynthetic, settings);
         String resolvedLookupName = lookupName;

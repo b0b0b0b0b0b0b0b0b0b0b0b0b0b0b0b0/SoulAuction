@@ -40,9 +40,15 @@ import bm.b0b0b0.soulAuction.service.SellerSkinSource;
 import bm.b0b0b0.soulAuction.service.SkinRestorerBridge;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.service.fakeactivity.FakeActivityService;
+import bm.b0b0b0.soulAuction.util.ItemTranslationCache;
+import bm.b0b0b0.soulAuction.util.ListingSearchResolveCache;
+import bm.b0b0b0.soulAuction.util.ListingSearchText;
+import bm.b0b0b0.soulAuction.util.MinecraftLangAssetFetcher;
+import bm.b0b0b0.soulAuction.util.MinecraftLangCatalog;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import bm.b0b0b0.soulAuction.util.upd.SoulAuctionUpdateChecker;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -85,6 +91,8 @@ public final class SoulAuction extends JavaPlugin {
             logStorageConfigChange();
             messageService = new MessageService(this);
             wireMessageServiceConfig();
+            configureSearchLangCatalog();
+            prefetchSearchLangCatalogsAsync();
             startupLog.stepOk("Messages — lang: " + String.join(", ", messageService.loadedLocaleIds()));
             repository = AuctionRepositoryFactory.create(this, pluginConfig.auctionSettings());
             runtimeStorage = new AuctionRuntimeStorage(getDataFolder().toPath());
@@ -128,7 +136,7 @@ public final class SoulAuction extends JavaPlugin {
                     this,
                     auctionService,
                     this::pluginConfig,
-                    this::fakeActivityConfig,
+                    () -> fakeActivityConfig,
                     fakeActivityConfigLoader,
                     () -> fakeActivityConfig = fakeActivityConfigLoader.load(pluginConfig.auctionSettings())
             );
@@ -146,7 +154,7 @@ public final class SoulAuction extends JavaPlugin {
                     this,
                     this::pluginConfig,
                     definitionWriter,
-                    this::reloadAll,
+                    fakeActivityService,
                     auctionService,
                     messageService
             );
@@ -158,7 +166,7 @@ public final class SoulAuction extends JavaPlugin {
                             messageService,
                             adminAuctionCreateService,
                             adminAuctionSettingsService,
-                            this::fakeActivityConfig
+                            () -> fakeActivityConfig
                     ),
                     this
             );
@@ -252,7 +260,7 @@ public final class SoulAuction extends JavaPlugin {
         } else {
             startupLog.stepSkipped("PlaceholderAPI — not found");
         }
-        logFakeActivity();
+        startFakeActivityIfEnabled();
         scheduleSellerSkinWarmup();
         startupLog.bannerSuccess();
         if (pluginConfig.auctionSettings().checkForUpdates) {
@@ -353,15 +361,47 @@ public final class SoulAuction extends JavaPlugin {
         fakeActivityConfig = fakeActivityConfigLoader.load(pluginConfig.auctionSettings());
         wireMessageServiceConfig();
         messageService.reload();
-        if (fakeActivityService != null) {
-            fakeActivityService.reload();
-        }
+        configureSearchLangCatalog();
+        clearSearchTranslationCaches();
+        prefetchSearchLangCatalogsAsync();
         if (fakeActivityService != null) {
             fakeActivityService.reload();
         }
         if (auctionService != null) {
             scheduleSellerSkinWarmup();
         }
+    }
+
+    private void configureSearchLangCatalog() {
+        if (getServer() == null) {
+            return;
+        }
+        MinecraftLangCatalog.configure(
+                getDataFolder().toPath().resolve("lang-cache"),
+                getServer().getMinecraftVersion()
+        );
+    }
+
+    private void prefetchSearchLangCatalogsAsync() {
+        if (pluginConfig == null || getServer() == null) {
+            return;
+        }
+        Locale[] locales = ListingSearchText.parseSearchLocales(
+                pluginConfig.auctionSettings().features.searchLocales
+        );
+        String version = getServer().getMinecraftVersion();
+        PluginSchedulers.runAsync(this, () -> {
+            boolean downloaded = MinecraftLangAssetFetcher.ensureCached(this, version, locales);
+            if (downloaded) {
+                PluginSchedulers.runGlobal(this, this::clearSearchTranslationCaches);
+            }
+        });
+    }
+
+    private void clearSearchTranslationCaches() {
+        MinecraftLangCatalog.clear();
+        ItemTranslationCache.clear();
+        ListingSearchResolveCache.clear();
     }
 
     private void scheduleSellerSkinWarmup() {
@@ -380,40 +420,13 @@ public final class SoulAuction extends JavaPlugin {
         }));
     }
 
-    private FakeActivityConfig fakeActivityConfig() {
-        return fakeActivityConfig;
-    }
-
-    private void logFakeActivity() {
-        int totalAuctions = auctionService.sortedAuctionDefinitions().size();
-        int enabledAuctions = auctionService.countAuctionsWithFakeActivity();
-        int sellers = fakeActivityConfig.sellers().names == null ? 0 : fakeActivityConfig.sellers().names.size();
-        int items = fakeActivityConfig.items().size();
-        if (enabledAuctions == 0) {
-            startupLog.stepSkipped("Fake activity — 0/"
-                    + totalAuctions
-                    + " auctions with fake-activity-enabled, pool "
-                    + sellers
-                    + " sellers / "
-                    + items
-                    + " items");
+    private void startFakeActivityIfEnabled() {
+        if (auctionService.countAuctionsWithFakeActivity() == 0) {
             return;
         }
         if (fakeActivityService != null) {
             fakeActivityService.start();
         }
-        int synthetic = auctionService.countSyntheticListings(null);
-        startupLog.stepOk("Fake activity — "
-                + enabledAuctions
-                + "/"
-                + totalAuctions
-                + " auction(s), "
-                + items
-                + " items, "
-                + sellers
-                + " sellers, "
-                + synthetic
-                + " listings");
     }
 
     private void logSellerSkins() {

@@ -280,6 +280,14 @@ public final class AuctionSettings extends YamlSerializable {
         @Comment({@CommentValue("Shorter query tokens use exact contains only (fuzzy skipped)")})
         public int searchFuzzyMinTokenLength = 3;
         @Comment({
+                @CommentValue("Search index locales — Minecraft lang file codes from server jar (comma-separated)"),
+                @CommentValue("Format: language-REGION, e.g. ru-RU, en-US, zu-ZA, de-DE (also ru_RU)"),
+                @CommentValue("Bare language (ru) tries ru_ru.json; with region uses exact file zu_za.json"),
+        })
+        public String searchLocales = "ru,en";
+        @Comment({@CommentValue("Search with wrong keyboard layout (QWERTY ↔ Russian JCUKEN)")})
+        public boolean searchKeyboardLayoutFix = true;
+        @Comment({
                 @CommentValue("Enable message keys disable list in lang/messages_*.yml → disabled-messages."),
                 @CommentValue("Example placeholder key: example-disabled-key (does nothing; replace with keys like announce-sale)."),
         })

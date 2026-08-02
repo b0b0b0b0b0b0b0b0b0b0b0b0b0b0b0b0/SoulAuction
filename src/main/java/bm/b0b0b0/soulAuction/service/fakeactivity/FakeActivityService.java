@@ -11,8 +11,10 @@ import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -20,6 +22,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class FakeActivityService {
+
+    private static final int BOOTSTRAP_BATCH_SIZE = 8;
 
     private final JavaPlugin plugin;
     private final AuctionService auctionService;
@@ -112,7 +116,7 @@ public final class FakeActivityService {
             return;
         }
         started = true;
-        bootstrapIfNeeded();
+        PluginSchedulers.runGlobalLater(plugin, 1L, () -> bootstrapIfNeededBatched(BOOTSTRAP_BATCH_SIZE));
         FakeActivitySettings settings = fakeConfigSupplier.get().settings();
         long initialTicks = Math.max(20L, settings.initialDelaySeconds * 20L);
         long periodTicks = Math.max(20L, settings.tickIntervalSeconds * 20L);
@@ -129,7 +133,22 @@ public final class FakeActivityService {
             start();
             return;
         }
-        PluginSchedulers.runGlobal(plugin, this::bootstrapIfNeeded);
+        PluginSchedulers.runGlobalLater(plugin, 1L, () -> bootstrapIfNeededBatched(BOOTSTRAP_BATCH_SIZE));
+    }
+
+    public void onAuctionFakeToggled(String auctionId, boolean enabled) {
+        if (!enabled) {
+            if (!anyAuctionFakeEnabled()) {
+                started = false;
+                lastMinTopUpEpochMs.clear();
+            }
+            return;
+        }
+        if (!started) {
+            start();
+            return;
+        }
+        PluginSchedulers.runGlobalLater(plugin, 1L, () -> bootstrapIfNeededBatched(BOOTSTRAP_BATCH_SIZE));
     }
 
     public boolean isFakeEnabledForAuction(String auctionId) {
@@ -140,7 +159,7 @@ public final class FakeActivityService {
         return definition != null && definition.fakeActivityEnabled;
     }
 
-    private void bootstrapIfNeeded() {
+    private void bootstrapIfNeededBatched(int batchLimit) {
         if (!anyAuctionFakeEnabled() || !auctionService.isLoaded()) {
             return;
         }
@@ -159,18 +178,25 @@ public final class FakeActivityService {
         int target = settings.initialFillListings > 0
                 ? Math.min(settings.initialFillListings, settings.maxTotalListings)
                 : settings.maxTotalListings;
-        int missing = target - auctionService.countSyntheticListings(null);
+        int runningTotal = auctionService.countSyntheticListings(null);
+        int missing = target - runningTotal;
         if (missing <= 0) {
             return;
         }
+        Map<String, Integer> perAuction = new HashMap<>();
+        for (String auctionId : auctionIds) {
+            perAuction.put(auctionId, auctionService.countSyntheticListings(auctionId));
+        }
         int created = 0;
         int attempts = 0;
-        int attemptLimit = Math.max(missing * 4, missing + 8);
+        int batchCap = Math.max(1, batchLimit);
+        int attemptLimit = Math.min(Math.max(missing * 4, missing + 8), batchCap * 6);
         while (created < missing
-                && attempts < attemptLimit
-                && auctionService.countSyntheticListings(null) < settings.maxTotalListings) {
+                && created < batchCap
+                && runningTotal < settings.maxTotalListings
+                && attempts < attemptLimit) {
             attempts++;
-            String auctionId = pickAuctionId(auctionIds, settings.maxListingsPerAuction);
+            String auctionId = pickAuctionId(auctionIds, settings.maxListingsPerAuction, perAuction);
             if (auctionId == null) {
                 break;
             }
@@ -180,7 +206,12 @@ public final class FakeActivityService {
             }
             if (tryCreateListing(auctionId, seller, config)) {
                 created++;
+                runningTotal++;
+                perAuction.merge(auctionId, 1, Integer::sum);
             }
+        }
+        if (runningTotal < target && runningTotal < settings.maxTotalListings && created > 0) {
+            PluginSchedulers.runGlobalLater(plugin, 1L, () -> bootstrapIfNeededBatched(batchLimit));
         }
     }
 
@@ -236,10 +267,14 @@ public final class FakeActivityService {
         if (auctionService.countSyntheticListings(null) >= settings.maxTotalListings) {
             return;
         }
+        Map<String, Integer> perAuction = new HashMap<>();
+        for (String auctionId : auctionIds) {
+            perAuction.put(auctionId, auctionService.countSyntheticListings(auctionId));
+        }
+        int runningTotal = auctionService.countSyntheticListings(null);
         int created = 0;
-        while (created < settings.listingsPerTick
-                && auctionService.countSyntheticListings(null) < settings.maxTotalListings) {
-            String auctionId = pickAuctionId(auctionIds, settings.maxListingsPerAuction);
+        while (created < settings.listingsPerTick && runningTotal < settings.maxTotalListings) {
+            String auctionId = pickAuctionId(auctionIds, settings.maxListingsPerAuction, perAuction);
             if (auctionId == null) {
                 break;
             }
@@ -249,6 +284,8 @@ public final class FakeActivityService {
             }
             if (tryCreateListing(auctionId, seller, config)) {
                 created++;
+                runningTotal++;
+                perAuction.merge(auctionId, 1, Integer::sum);
             }
         }
     }
@@ -347,11 +384,11 @@ public final class FakeActivityService {
         tryCreateListing(auctionId, seller, config);
     }
 
-    private String pickAuctionId(List<String> auctionIds, int maxPerAuction) {
+    private String pickAuctionId(List<String> auctionIds, int maxPerAuction, Map<String, Integer> perAuction) {
         String best = null;
         int bestCount = Integer.MAX_VALUE;
         for (String auctionId : auctionIds) {
-            int count = auctionService.countSyntheticListings(auctionId);
+            int count = perAuction.getOrDefault(auctionId, 0);
             if (count >= maxPerAuction) {
                 continue;
             }

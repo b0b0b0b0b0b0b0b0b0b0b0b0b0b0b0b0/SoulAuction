@@ -85,7 +85,7 @@ public final class AuctionTabCompleter implements TabCompleter {
             case "cancel" -> List.of();
             case "search" -> args.length == 2
                     ? merge(
-                            CommandSuggestions.filter(partial, List.of("cancel")),
+                            CommandSuggestions.filter(partial, List.of("cancel", "clear")),
                             CommandSuggestions.filter(partial, auctionIds())
                     )
                     : List.of();

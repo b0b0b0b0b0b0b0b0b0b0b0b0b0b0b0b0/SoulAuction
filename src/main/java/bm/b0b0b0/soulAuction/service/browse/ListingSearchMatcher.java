@@ -18,12 +18,29 @@ public final class ListingSearchMatcher {
         if (regex != null) {
             return regex.matcher(haystack).find();
         }
-        String query = context.query();
+        for (SearchQueryContext.SearchQueryAttempt attempt : context.attempts()) {
+            if (matchesAttempt(haystack, context, attempt)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean matchesAttempt(
+            String haystack,
+            SearchQueryContext context,
+            SearchQueryContext.SearchQueryAttempt attempt
+    ) {
+        String query = attempt.query();
         if (haystack.contains(query)) {
             return true;
         }
+        String[] tokens = attempt.tokens();
+        if (matchesTokensInWords(haystack, tokens, context.minTokenLength())) {
+            return true;
+        }
         if (!context.fuzzyEnabled()) {
-            return matchesExactTokens(haystack, context.tokens());
+            return false;
         }
         if (SearchSimilarity.meetsThreshold(query, haystack, context.similarityThreshold())) {
             return true;
@@ -32,10 +49,10 @@ public final class ListingSearchMatcher {
         if (words.length == 0) {
             return false;
         }
-        if (context.tokens().length == 1) {
-            return tokenMatches(haystack, words, context.tokens()[0], context);
+        if (tokens.length == 1) {
+            return tokenMatches(haystack, words, tokens[0], context);
         }
-        for (String token : context.tokens()) {
+        for (String token : tokens) {
             if (!tokenMatches(haystack, words, token, context)) {
                 return false;
             }
@@ -43,9 +60,32 @@ public final class ListingSearchMatcher {
         return true;
     }
 
-    private static boolean matchesExactTokens(String haystack, String[] tokens) {
+    private static boolean matchesTokensInWords(String haystack, String[] tokens, int minTokenLength) {
+        if (tokens.length == 0) {
+            return false;
+        }
+        String[] words = splitWords(haystack);
         for (String token : tokens) {
-            if (!haystack.contains(token)) {
+            if (token.isBlank()) {
+                continue;
+            }
+            if (token.length() < minTokenLength) {
+                if (!haystack.contains(token)) {
+                    return false;
+                }
+                continue;
+            }
+            if (haystack.contains(token)) {
+                continue;
+            }
+            boolean found = false;
+            for (String word : words) {
+                if (word.contains(token)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
                 return false;
             }
         }
@@ -63,6 +103,9 @@ public final class ListingSearchMatcher {
         for (String word : words) {
             if (word.length() < context.minTokenLength()) {
                 continue;
+            }
+            if (word.contains(token)) {
+                return true;
             }
             if (SearchSimilarity.meetsThreshold(token, word, threshold)) {
                 return true;

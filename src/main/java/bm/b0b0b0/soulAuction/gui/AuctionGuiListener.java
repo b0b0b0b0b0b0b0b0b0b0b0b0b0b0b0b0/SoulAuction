@@ -404,6 +404,12 @@ public final class AuctionGuiListener implements Listener {
             PluginSchedulers.run(plugin, player, () -> player.openInventory(sellMenu.getInventory()));
             return;
         }
+        if (slot == configSupplier.get().guiGeneralSettings().searchSlot) {
+            if (event.isShiftClick() && event.isLeftClick()) {
+                menu.clearSearch();
+                return;
+            }
+        }
         menu.click(slot);
     }
 
@@ -745,7 +751,6 @@ public final class AuctionGuiListener implements Listener {
             adminAuctionSettingsService.toggleFakeActivity(player, auctionId, () -> {
                 openAdminAuctionSettings(player, auctionId, menu.adminListPage());
             });
-            openAdminAuctionSettings(player, auctionId, menu.adminListPage());
         }
     }
 

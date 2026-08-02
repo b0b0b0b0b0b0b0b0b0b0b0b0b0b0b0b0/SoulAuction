@@ -39,6 +39,7 @@ import bm.b0b0b0.soulAuction.service.listing.AuctionPurchaseService;
 import bm.b0b0b0.soulAuction.service.listing.ListingLockRunner;
 import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
+import bm.b0b0b0.soulAuction.util.ListingSearchResolveCache;
 import bm.b0b0b0.soulAuction.util.ItemDisplayNames;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import bm.b0b0b0.soulAuction.util.PlayerDisplayNames;
@@ -90,6 +91,7 @@ public final class AuctionService {
     private final MessageService messageService;
     private volatile SellerSkinBridge sellerSkinBridge;
     private volatile FakeActivityService fakeActivityService;
+    private volatile SyntheticListingCounts syntheticListingCounts;
     private final JavaPlugin plugin;
     private final ConcurrentHashMap<UUID, BrowsePreferences> browsePreferences;
     private final ConcurrentHashMap<UUID, BrowseFilterState> browseFilters;
@@ -215,6 +217,19 @@ public final class AuctionService {
         browseFilters.put(playerId, state);
     }
 
+    public void clearBrowseSearch(UUID playerId) {
+        BrowseFilterState current = browseFilterState(playerId);
+        setBrowseFilterState(playerId, current.withSearch(null));
+        BrowsePreferences preferences = browsePreferences.get(playerId);
+        if (preferences != null) {
+            setBrowsePreferences(playerId, new BrowsePreferences(
+                    preferences.auctionId(),
+                    preferences.page(),
+                    null
+            ));
+        }
+    }
+
     public void beginPendingChatSearch(UUID playerId, String auctionId) {
         pendingChatSearch.put(playerId, new PendingChatSearch(auctionId.toLowerCase(Locale.ROOT)));
     }
@@ -273,14 +288,21 @@ public final class AuctionService {
 
     public void invalidateListingCache(String auctionId) {
         listingCache.invalidate(auctionId);
+        syntheticListingCounts = null;
+        ListingSearchResolveCache.clear();
         redisSellGuard.publishCacheInvalidate(auctionId);
     }
 
     public void invalidateListingCache(String auctionId, AuctionListing listing, boolean removed) {
-        invalidateListingCache(auctionId);
+        listingCache.invalidate(auctionId);
+        syntheticListingCounts = null;
         if (listing != null) {
+            ListingSearchResolveCache.invalidate(listing.listingId());
             publishListingNetworkChange(removed ? "REMOVE" : "UPSERT", listing);
+        } else {
+            ListingSearchResolveCache.clear();
         }
+        redisSellGuard.publishCacheInvalidate(auctionId);
     }
 
     private void publishListingNetworkChange(String action, AuctionListing listing) {
@@ -535,15 +557,14 @@ public final class AuctionService {
     }
 
     public int countSyntheticListings(String auctionId) {
+        if (auctionId == null || auctionId.isBlank()) {
+            return syntheticListingCounts().total();
+        }
         int count = 0;
-        for (AuctionListing listing : repository.listAll()) {
-            if (!listing.metadata().syntheticSeller) {
-                continue;
+        for (AuctionListing listing : listingsForAuction(auctionId)) {
+            if (listing.metadata().syntheticSeller) {
+                count++;
             }
-            if (auctionId != null && !listing.auctionId().equalsIgnoreCase(auctionId)) {
-                continue;
-            }
-            count++;
         }
         return count;
     }
@@ -558,16 +579,14 @@ public final class AuctionService {
         }
         UUID sellerId = SyntheticSellerIds.forDisplayName(sellerName.trim());
         int count = 0;
-        for (AuctionListing listing : repository.listAll()) {
+        for (AuctionListing listing : listingsForAuction(auctionId)) {
             if (!listing.sellerId().equals(sellerId)) {
                 continue;
             }
             if (!listing.metadata().syntheticSeller) {
                 continue;
             }
-            if (listing.auctionId().equalsIgnoreCase(auctionId)) {
-                count++;
-            }
+            count++;
         }
         return count;
     }
@@ -628,8 +647,6 @@ public final class AuctionService {
         String forced = settings.fakeSellerSkin == null ? "" : settings.fakeSellerSkin.trim();
         if (!forced.isEmpty()) {
             names.add(forced);
-        } else {
-            names.addAll(knownFakeSellerNames());
         }
         if (settings.fallbackSkin != null && !settings.fallbackSkin.isBlank()) {
             names.add(settings.fallbackSkin.trim());
@@ -669,7 +686,10 @@ public final class AuctionService {
 
     public void prefetchSellerSkin(String sellerName, UUID sellerId) {
         SellerSkinBridge bridge = sellerSkinBridge();
-        bridge.prefetchSkinsRestorer(resolveSkinPrefetchName(sellerName, sellerId));
+        String prefetchName = resolveSkinPrefetchName(sellerName, sellerId);
+        if (prefetchName != null) {
+            bridge.prefetchSkinsRestorer(prefetchName);
+        }
         if (bridge.enabled()) {
             bridge.fetchSkinProperty(sellerName, sellerId, isSyntheticSeller(sellerId));
         }
@@ -682,6 +702,8 @@ public final class AuctionService {
             if (!forced.isEmpty()) {
                 return forced;
             }
+            String fallback = settings.fallbackSkin == null ? "" : settings.fallbackSkin.trim();
+            return fallback.isEmpty() ? null : fallback;
         }
         return sellerName;
     }
@@ -1017,13 +1039,37 @@ public final class AuctionService {
         if (auctionId == null || auctionId.isBlank()) {
             return 0;
         }
-        int count = 0;
-        for (AuctionListing listing : repository.listAll()) {
-            if (listing.auctionId().equalsIgnoreCase(auctionId)) {
-                count++;
-            }
+        return listingsForAuction(auctionId).size();
+    }
+
+    private List<AuctionListing> listingsForAuction(String auctionId) {
+        return listingCache.listingsForAuction(
+                auctionId,
+                () -> repository.listByAuction(auctionId)
+        );
+    }
+
+    private SyntheticListingCounts syntheticListingCounts() {
+        SyntheticListingCounts snapshot = syntheticListingCounts;
+        if (snapshot != null) {
+            return snapshot;
         }
-        return count;
+        Map<String, Integer> byAuction = new HashMap<>();
+        int total = 0;
+        for (AuctionListing listing : repository.listAll()) {
+            if (!listing.metadata().syntheticSeller) {
+                continue;
+            }
+            total++;
+            String key = listing.auctionId().toLowerCase(Locale.ROOT);
+            byAuction.merge(key, 1, Integer::sum);
+        }
+        SyntheticListingCounts computed = new SyntheticListingCounts(total, Map.copyOf(byAuction));
+        syntheticListingCounts = computed;
+        return computed;
+    }
+
+    private record SyntheticListingCounts(int total, Map<String, Integer> byAuction) {
     }
 
     public AuctionStorageMigrator.Result migrateFromStorage(

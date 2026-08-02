@@ -112,6 +112,9 @@ public final class AuctionBrowseService {
         SearchQueryContext searchContext = normalizedQuery == null
                 ? null
                 : SearchQueryContext.compile(normalizedQuery, regex, settings.features);
+        Locale[] searchLocales = ListingSearchText.parseSearchLocales(
+                settings.features == null ? null : settings.features.searchLocales
+        );
         BrowseFilterState effectiveFilter = filter == null ? BrowseFilterState.empty() : filter;
         List<UUID> favoriteSellers = viewerId == null ? List.of() : runtimeStorage.favoriteSellers(viewerId);
         Set<Long> favoriteListings = viewerId == null ? Set.of() : runtimeStorage.favoriteListings(viewerId);
@@ -131,7 +134,7 @@ public final class AuctionBrowseService {
             if (effectiveFilter.sellerFilter() != null && !effectiveFilter.sellerFilter().equals(listing.sellerId())) {
                 continue;
             }
-            if (searchContext != null && !matchesSearch(listing, searchContext)) {
+            if (searchContext != null && !matchesSearch(listing, searchContext, searchLocales)) {
                 continue;
             }
             if (!matchesFavoriteFilter(effectiveFilter.favoriteMode(), listing, favoriteSellers, favoriteListings)) {
@@ -171,11 +174,14 @@ public final class AuctionBrowseService {
         };
     }
 
-    private boolean matchesSearch(AuctionListing listing, SearchQueryContext context) {
-        if (Long.toString(listing.listingId()).contains(context.query())) {
-            return true;
+    private boolean matchesSearch(AuctionListing listing, SearchQueryContext context, Locale[] searchLocales) {
+        String listingId = Long.toString(listing.listingId());
+        for (SearchQueryContext.SearchQueryAttempt attempt : context.attempts()) {
+            if (listingId.contains(attempt.query())) {
+                return true;
+            }
         }
-        String haystack = ListingSearchText.resolve(listing);
+        String haystack = ListingSearchText.resolve(listing, searchLocales);
         return ListingSearchMatcher.matches(haystack, context);
     }
 

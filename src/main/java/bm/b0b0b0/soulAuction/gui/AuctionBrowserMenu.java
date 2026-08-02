@@ -176,6 +176,33 @@ public final class AuctionBrowserMenu implements InventoryHolder {
         refresh();
     }
 
+    public void clearSearch() {
+        if (searchQuery == null || searchQuery.isBlank()) {
+            return;
+        }
+        auctionService.clearBrowseSearch(viewerId);
+        searchQuery = null;
+        page = 0;
+        refresh();
+        org.bukkit.entity.Player player = Bukkit.getPlayer(viewerId);
+        if (player == null) {
+            return;
+        }
+        BrowseFilterState state = auctionService.browseFilterState(viewerId);
+        int total = auctionService.count(
+                auctionId,
+                category,
+                null,
+                viewerId,
+                state
+        );
+        messageService.send(
+                player,
+                "search-chat-cleared",
+                Map.of("found", String.valueOf(total), "total", String.valueOf(total))
+        );
+    }
+
     public Long listingIdAt(int slot) {
         return listingBySlot.get(slot);
     }
@@ -309,8 +336,20 @@ public final class AuctionBrowserMenu implements InventoryHolder {
                 actionItem(
                         guiSettings.searchMaterial,
                         guiSettings.searchCustomModelData,
-                        messageService.component(viewerId, "button-search"),
-                        messageService.components(viewerId, "button-search-lore")
+                        searchQuery == null || searchQuery.isBlank()
+                                ? messageService.component(viewerId, "button-search")
+                                : messageService.component(
+                                        viewerId,
+                                        "button-search-active",
+                                        Map.of("query", searchQuery)
+                                ),
+                        searchQuery == null || searchQuery.isBlank()
+                                ? messageService.components(viewerId, "button-search-lore")
+                                : messageService.components(
+                                        viewerId,
+                                        "button-search-active-lore",
+                                        Map.of("query", searchQuery)
+                                )
                 )
         );
         inventory.setItem(

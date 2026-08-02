@@ -393,7 +393,7 @@ error-price-too-low: "{prefix}<color:#FB7185>Цена слишком низка�
 error-price-too-high: "{prefix}<color:#FB7185>Цена слишком высокая для этого аукциона.</color>"
 error-search-usage:
   - "{prefix}<color:#FB7185>Используй:</color>"
-  - "<color:#9CA3AF>/ah search <текст> или /ah search <auctionId> <текст></color>"
+  - "<color:#9CA3AF>/ah search <текст> · /ah search clear · /ah search cancel</color>"
 error-page-usage:
   - "{prefix}<color:#FB7185>Используй:</color>"
   - "<color:#9CA3AF>/ah page <номер> [auctionId]</color>"
@@ -470,7 +470,15 @@ button-search-lore:
   - "<color:#9CA3AF>Напишите название предмета</color>"
   - "<color:#9CA3AF>в чат — откроется фильтр.</color>"
   - " "
-  - "<gradient:#A78BFA:#E879F9>Нажмите, чтобы искать</gradient>"
+  - "<gradient:#A78BFA:#E879F9>ЛКМ — новый запрос</gradient>"
+  - "<gradient:#A78BFA:#E879F9>Shift+ЛКМ — сбросить фильтр</gradient>"
+button-search-active: "<gradient:#8B5CF6:#D946EF><bold>Поиск:</bold></gradient> <color:#F5D0FE>{query}</color>"
+button-search-active-lore:
+  - " "
+  - "<color:#9CA3AF>Активный запрос:</color> <color:#F5D0FE>{query}</color>"
+  - " "
+  - "<gradient:#A78BFA:#E879F9>ЛКМ — изменить</gradient>"
+  - "<gradient:#A78BFA:#E879F9>Shift+ЛКМ — сбросить</gradient>"
 button-favorites-on: "<gradient:#A78BFA:#E879F9><bold>Избранные продавцы</bold></gradient> <color:#34D399>(вкл.)</color>"
 button-favorites-on-lore:
   - " "
@@ -545,6 +553,7 @@ button-price-filter-lore:
   - "<gradient:#A78BFA:#E879F9>Нажмите, чтобы настроить</gradient>"
 search-chat-prompt:
   - "{prefix}<color:#C4B5FD>Напиши в чат, какой предмет ищешь.</color>"
+  - "<color:#9CA3AF>«-» или пустое сообщение — сбросить фильтр.</color>"
   - "<click:run_command:'/ah search cancel'><hover:show_text:'<color:#9CA3AF>Вернуться в аукцион'><color:#E57373>[Отмена]</color></hover></click>"
 search-chat-cancelled: "{prefix}<color:#A1A1AA>Поиск отменён.</color>"
 search-chat-applied:

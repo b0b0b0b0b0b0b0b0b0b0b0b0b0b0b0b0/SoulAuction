@@ -143,7 +143,12 @@ public final class AuctionListingCreator {
                 customRules,
                 AuctionCategory.fromMaterial(soldItem.getType())
         );
-        String searchText = ListingSearchText.fromItem(seller.getName(), soldItem, customRules);
+        String searchText = ListingSearchText.fromItem(
+                seller.getName(),
+                soldItem,
+                customRules,
+                ListingSearchText.parseSearchLocales(settings.features.searchLocales)
+        );
         ListingMetadata metadata = ListingMetadata.empty();
         metadata.serverOrigin = settings.network == null ? "" : settings.network.serverId;
         AuctionListing listing = repository.create(
@@ -200,7 +205,12 @@ public final class AuctionListingCreator {
                 AuctionCategory.fromMaterial(soldItem.getType())
         );
         String trimmedName = sellerName.trim();
-        String searchText = ListingSearchText.fromItem(trimmedName, soldItem, customRules);
+        String searchText = ListingSearchText.fromItem(
+                trimmedName,
+                soldItem,
+                customRules,
+                ListingSearchText.parseSearchLocales(settings.features.searchLocales)
+        );
         ListingMetadata metadata = ListingMetadata.empty();
         metadata.serverOrigin = settings.network == null ? "" : settings.network.serverId;
         metadata.syntheticSeller = true;

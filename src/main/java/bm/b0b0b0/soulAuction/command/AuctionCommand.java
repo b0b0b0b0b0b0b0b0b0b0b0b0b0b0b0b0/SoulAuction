@@ -4,6 +4,7 @@ import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.gui.AuctionBrowserMenu;
 import bm.b0b0b0.soulAuction.gui.PlayerRecordsMenu;
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.PlayerHistoryView;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
@@ -175,9 +176,35 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         return openAuction(player, pending.get().auctionId());
     }
 
+    private boolean clearActiveSearch(Player player, String[] args) {
+        String auctionId = args.length >= 3 ? args[2] : auctionService.defaultAuctionId();
+        if (args.length >= 3 && !auctionService.auctionExists(auctionId)) {
+            messageService.send(player, "error-auction-not-found");
+            return true;
+        }
+        auctionService.clearBrowseSearch(player.getUniqueId());
+        BrowseFilterState state = auctionService.browseFilterState(player.getUniqueId());
+        int total = auctionService.count(
+                auctionId,
+                AuctionCategory.ALL,
+                null,
+                player.getUniqueId(),
+                state
+        );
+        messageService.send(
+                player,
+                "search-chat-cleared",
+                Map.of("found", String.valueOf(total), "total", String.valueOf(total))
+        );
+        return openAuction(player, auctionId);
+    }
+
     private boolean handleSearch(Player player, String[] args) {
         if (args.length >= 2 && args[1].equalsIgnoreCase("cancel")) {
             return cancelPendingSearch(player);
+        }
+        if (args.length >= 2 && args[1].equalsIgnoreCase("clear")) {
+            return clearActiveSearch(player, args);
         }
         if (args.length < 2) {
             messageService.send(player, "error-search-usage");

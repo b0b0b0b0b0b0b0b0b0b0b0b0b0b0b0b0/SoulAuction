@@ -47,14 +47,22 @@ public final class ItemDisplayNames {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             if (meta.hasDisplayName()) {
-                return serializeForLocale(meta.displayName(), effective);
+                return plain(meta.displayName(), effective);
             }
             if (meta.hasItemName()) {
-                return serializeForLocale(meta.itemName(), effective);
+                return plain(meta.itemName(), effective);
             }
         }
         Component name = Component.translatable(item.translationKey());
-        return serializeForLocale(name, effective);
+        return plain(name, effective);
+    }
+
+    public static String plain(Component component, Locale locale) {
+        if (component == null) {
+            return "?";
+        }
+        Locale effective = locale == null ? Locale.ENGLISH : locale;
+        return serializeForLocale(component, effective);
     }
 
     private static String serializeForLocale(Component component, Locale locale) {

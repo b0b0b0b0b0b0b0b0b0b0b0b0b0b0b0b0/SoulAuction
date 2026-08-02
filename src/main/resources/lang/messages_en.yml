@@ -393,7 +393,7 @@ error-price-too-low: "{prefix}<color:#FB7185>Price too low for this auction.</co
 error-price-too-high: "{prefix}<color:#FB7185>Price too high for this auction.</color>"
 error-search-usage:
   - "{prefix}<color:#FB7185>Usage:</color>"
-  - "<color:#9CA3AF>/ah search <text> or /ah search <auctionId> <text></color>"
+  - "<color:#9CA3AF>/ah search <text> · /ah search clear · /ah search cancel</color>"
 error-page-usage:
   - "{prefix}<color:#FB7185>Usage:</color>"
   - "<color:#9CA3AF>/ah page <number> [auctionId]</color>"
@@ -470,7 +470,15 @@ button-search-lore:
   - "<color:#9CA3AF>Type an item name in chat</color>"
   - "<color:#9CA3AF>to filter listings.</color>"
   - " "
-  - "<gradient:#A78BFA:#E879F9>Click to search</gradient>"
+  - "<gradient:#A78BFA:#E879F9>LMB — new query</gradient>"
+  - "<gradient:#A78BFA:#E879F9>Shift+LMB — clear filter</gradient>"
+button-search-active: "<gradient:#8B5CF6:#D946EF><bold>Search:</bold></gradient> <color:#F5D0FE>{query}</color>"
+button-search-active-lore:
+  - " "
+  - "<color:#9CA3AF>Active query:</color> <color:#F5D0FE>{query}</color>"
+  - " "
+  - "<gradient:#A78BFA:#E879F9>LMB — change</gradient>"
+  - "<gradient:#A78BFA:#E879F9>Shift+LMB — clear</gradient>"
 button-favorites-on: "<gradient:#A78BFA:#E879F9><bold>Favorite sellers</bold></gradient> <color:#34D399>(on)</color>"
 button-favorites-on-lore:
   - " "
@@ -545,6 +553,7 @@ button-price-filter-lore:
   - "<gradient:#A78BFA:#E879F9>Click to configure</gradient>"
 search-chat-prompt:
   - "{prefix}<color:#C4B5FD>Type in chat what item you are looking for.</color>"
+  - "<color:#9CA3AF>\"-\" or empty message clears the filter.</color>"
   - "<click:run_command:'/ah search cancel'><hover:show_text:'<color:#9CA3AF>Return to auction'><color:#E57373>[Cancel]</color></hover></click>"
 search-chat-cancelled: "{prefix}<color:#A1A1AA>Search cancelled.</color>"
 search-chat-applied:
