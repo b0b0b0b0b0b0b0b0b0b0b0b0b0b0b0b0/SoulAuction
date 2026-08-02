@@ -271,6 +271,15 @@ public final class AuctionSettings extends YamlSerializable {
         @Comment({@CommentValue("Advanced search regex (ProtocolLib not required)")})
         public boolean advancedSearchRegex = false;
         @Comment({
+                @CommentValue("Typo-tolerant search: Levenshtein similarity per word (like chat same-message limiters)"),
+                @CommentValue("Example: query \"diamnod\" matches listing text \"diamond\" at 87% threshold"),
+        })
+        public boolean searchFuzzyEnabled = true;
+        @Comment({@CommentValue("Minimum similarity percent (1-100) for fuzzy token match")})
+        public int searchFuzzyMinSimilarityPercent = 87;
+        @Comment({@CommentValue("Shorter query tokens use exact contains only (fuzzy skipped)")})
+        public int searchFuzzyMinTokenLength = 3;
+        @Comment({
                 @CommentValue("Enable message keys disable list in lang/messages_*.yml → disabled-messages."),
                 @CommentValue("Example placeholder key: example-disabled-key (does nothing; replace with keys like announce-sale)."),
         })

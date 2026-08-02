@@ -106,8 +106,12 @@ public final class AuctionBrowseService {
             UUID viewerId,
             BrowseFilterState filter
     ) {
+        AuctionSettings settings = settingsSupplier.get();
         String normalizedQuery = normalizeSearch(searchQuery != null ? searchQuery : filter == null ? null : filter.searchQuery());
-        Pattern regex = compileRegex(normalizedQuery);
+        Pattern regex = compileRegex(normalizedQuery, settings);
+        SearchQueryContext searchContext = normalizedQuery == null
+                ? null
+                : SearchQueryContext.compile(normalizedQuery, regex, settings.features);
         BrowseFilterState effectiveFilter = filter == null ? BrowseFilterState.empty() : filter;
         List<UUID> favoriteSellers = viewerId == null ? List.of() : runtimeStorage.favoriteSellers(viewerId);
         Set<Long> favoriteListings = viewerId == null ? Set.of() : runtimeStorage.favoriteListings(viewerId);
@@ -127,7 +131,7 @@ public final class AuctionBrowseService {
             if (effectiveFilter.sellerFilter() != null && !effectiveFilter.sellerFilter().equals(listing.sellerId())) {
                 continue;
             }
-            if (normalizedQuery != null && !matchesSearch(listing, normalizedQuery, regex)) {
+            if (searchContext != null && !matchesSearch(listing, searchContext)) {
                 continue;
             }
             if (!matchesFavoriteFilter(effectiveFilter.favoriteMode(), listing, favoriteSellers, favoriteListings)) {
@@ -167,22 +171,18 @@ public final class AuctionBrowseService {
         };
     }
 
-    private boolean matchesSearch(AuctionListing listing, String query, Pattern regex) {
-        if (Long.toString(listing.listingId()).contains(query)) {
+    private boolean matchesSearch(AuctionListing listing, SearchQueryContext context) {
+        if (Long.toString(listing.listingId()).contains(context.query())) {
             return true;
         }
         String haystack = ListingSearchText.resolve(listing);
-        if (regex != null) {
-            return regex.matcher(haystack).find();
-        }
-        return haystack.contains(query);
+        return ListingSearchMatcher.matches(haystack, context);
     }
 
-    private Pattern compileRegex(String normalizedQuery) {
+    private Pattern compileRegex(String normalizedQuery, AuctionSettings settings) {
         if (normalizedQuery == null) {
             return null;
         }
-        AuctionSettings settings = settingsSupplier.get();
         if (settings == null || settings.features == null || !settings.features.advancedSearchRegex) {
             return null;
         }
