@@ -35,6 +35,7 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.inventory.PlayerInventory;
@@ -247,8 +248,12 @@ public final class AuctionGuiListener implements Listener {
             return;
         }
         if (!(event.getInventory().getHolder(false) instanceof AuctionSellMenu sellMenu)) {
-            if (event.getInventory().getHolder(false) instanceof AuctionBrowserMenu) {
+            InventoryHolder closedHolder = event.getInventory().getHolder(false);
+            if (closedHolder instanceof AuctionBrowserMenu) {
                 stopBrowserExpiryRefresh(player.getUniqueId());
+            }
+            if (closedHolder instanceof AuctionBrowserMenu || isAuctionBrowseFlow(closedHolder)) {
+                scheduleBrowseSearchClearOnLeave(player);
             }
             return;
         }
@@ -271,6 +276,34 @@ public final class AuctionGuiListener implements Listener {
         if (!leftovers.isEmpty()) {
             leftovers.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
         }
+    }
+
+    private void scheduleBrowseSearchClearOnLeave(Player player) {
+        PluginSchedulers.runLater(plugin, player, 1L, () -> {
+            if (auctionService.peekPendingChatSearch(player.getUniqueId()).isPresent()) {
+                return;
+            }
+            InventoryHolder openHolder = player.getOpenInventory().getTopInventory().getHolder(false);
+            if (openHolder instanceof AuctionBrowserMenu || isAuctionBrowseFlow(openHolder)) {
+                return;
+            }
+            auctionService.cancelPendingChatSearch(player.getUniqueId());
+            auctionService.clearBrowseSearch(player.getUniqueId());
+        });
+    }
+
+    private static boolean isAuctionBrowseFlow(InventoryHolder holder) {
+        return holder instanceof PurchaseConfirmMenu
+                || holder instanceof OwnerListingMenu
+                || holder instanceof AuctionPriceFilterMenu
+                || holder instanceof FavoriteSellersMenu
+                || holder instanceof FavoriteListingsMenu
+                || holder instanceof ContainerPreviewMenu
+                || holder instanceof PlayerHubMenu
+                || holder instanceof PlayerRecordsMenu
+                || holder instanceof RecentSalesMenu
+                || holder instanceof AuctionSellMenu
+                || holder instanceof AuctionSellConfirmMenu;
     }
 
     private void openSellSetup(
