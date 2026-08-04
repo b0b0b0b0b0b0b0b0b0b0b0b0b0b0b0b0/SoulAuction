@@ -49,15 +49,18 @@ public final class RegionMarketLifecycle {
         dependencies.plugin().getServer().getPluginManager().registerEvents(module.guiListener(), dependencies.plugin());
         dependencies.plugin().getServer().getPluginManager().registerEvents(module.chatListener(), dependencies.plugin());
         dependencies.plugin().getServer().getPluginManager().registerEvents(module.commandInterceptListener(), dependencies.plugin());
+        dependencies.plugin().getServer().getPluginManager().registerEvents(module.previewListener(), dependencies.plugin());
     }
 
     private void deactivate() {
         if (module == null) {
             return;
         }
+        module.previewSessionService().endAll();
         HandlerList.unregisterAll(module.guiListener());
         HandlerList.unregisterAll(module.chatListener());
         HandlerList.unregisterAll(module.commandInterceptListener());
+        HandlerList.unregisterAll(module.previewListener());
         module = null;
     }
 

@@ -17,7 +17,7 @@ public final class RegionMarketRouting {
             "ah", "ax", "auction", "soulauction"
     );
 
-    private static final Set<String> SUBCOMMANDS = Set.of("sell", "cancel", "my", "clear");
+    private static final Set<String> SUBCOMMANDS = Set.of("sell", "cancel", "preview", "my", "clear");
 
     private RegionMarketRouting() {
     }

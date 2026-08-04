@@ -2,6 +2,7 @@ package bm.b0b0b0.soulAuction.service.region;
 
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.ListingMetadata;
+import bm.b0b0b0.soulAuction.model.region.RegionInfo;
 import bm.b0b0b0.soulAuction.model.region.RegionRef;
 
 public final class RegionListingHelper {
@@ -27,12 +28,15 @@ public final class RegionListingHelper {
         return new RegionRef(metadata.regionWorld, metadata.regionId);
     }
 
-    public static ListingMetadata regionMetadata(RegionRef region, String serverOrigin) {
+    public static ListingMetadata regionMetadata(RegionRef region, String serverOrigin, RegionInfo info, String description) {
         ListingMetadata metadata = ListingMetadata.empty();
         metadata.kind = ListingMetadata.ListingKind.REGION;
         metadata.regionWorld = region.worldName();
         metadata.regionId = region.regionId();
         metadata.serverOrigin = serverOrigin == null ? "" : serverOrigin;
-        return metadata;
+        if (description != null && !description.isBlank()) {
+            metadata.regionDescription = description.trim();
+        }
+        return RegionListingPresentation.applyRegionInfo(metadata, info);
     }
 }

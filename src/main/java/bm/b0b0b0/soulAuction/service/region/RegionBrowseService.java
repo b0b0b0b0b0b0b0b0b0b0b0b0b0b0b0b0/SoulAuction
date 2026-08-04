@@ -25,17 +25,20 @@ public final class RegionBrowseService {
     private final AuctionListingCache listingCache;
     private final PermissionPriorityResolver priorityResolver;
     private final Supplier<PluginConfig> configSupplier;
+    private final RegionListingGuard listingGuard;
 
     public RegionBrowseService(
             AuctionRepository repository,
             AuctionListingCache listingCache,
             PermissionPriorityResolver priorityResolver,
-            Supplier<PluginConfig> configSupplier
+            Supplier<PluginConfig> configSupplier,
+            RegionListingGuard listingGuard
     ) {
         this.repository = repository;
         this.listingCache = listingCache;
         this.priorityResolver = priorityResolver;
         this.configSupplier = configSupplier;
+        this.listingGuard = listingGuard;
     }
 
     public BrowsePage browsePage(AuctionSort sort, int page, int pageSize, UUID sellerFilter) {
@@ -63,9 +66,13 @@ public final class RegionBrowseService {
             if (!RegionListingHelper.isRegionListing(listing)) {
                 continue;
             }
-            if (RegionListingHelper.regionRef(listing).matchesIgnoreCase(region)) {
-                return true;
+            if (!RegionListingHelper.regionRef(listing).matchesIgnoreCase(region)) {
+                continue;
             }
+            if (listingGuard.invalidateIfNotSellable(listing)) {
+                continue;
+            }
+            return true;
         }
         return false;
     }
@@ -76,9 +83,13 @@ public final class RegionBrowseService {
             if (!RegionListingHelper.isRegionListing(listing)) {
                 continue;
             }
-            if (listing.sellerId().equals(sellerId)) {
-                count++;
+            if (!listing.sellerId().equals(sellerId)) {
+                continue;
             }
+            if (listingGuard.invalidateIfNotSellable(listing)) {
+                continue;
+            }
+            count++;
         }
         return count;
     }
@@ -131,9 +142,13 @@ public final class RegionBrowseService {
                     preSorted
             );
             for (AuctionListing listing : auctionListings) {
-                if (RegionListingHelper.isRegionListing(listing)) {
-                    combined.add(listing);
+                if (!RegionListingHelper.isRegionListing(listing)) {
+                    continue;
                 }
+                if (listingGuard.invalidateIfNotSellable(listing)) {
+                    continue;
+                }
+                combined.add(listing);
             }
         }
         return AuctionListingSorter.sort(combined, sort, priorityResolver);

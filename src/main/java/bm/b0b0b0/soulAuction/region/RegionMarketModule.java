@@ -7,10 +7,15 @@ import bm.b0b0b0.soulAuction.listener.RegionMarketCommandInterceptListener;
 import bm.b0b0b0.soulAuction.listener.RegionSellChatListener;
 import bm.b0b0b0.soulAuction.service.region.RegionBrowseService;
 import bm.b0b0b0.soulAuction.service.region.RegionDisplayItemFactory;
+import bm.b0b0b0.soulAuction.service.region.RegionListingGuard;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketService;
+import bm.b0b0b0.soulAuction.service.region.RegionOwnerEditSessionService;
 import bm.b0b0b0.soulAuction.service.region.RegionPurchaseService;
 import bm.b0b0b0.soulAuction.service.region.RegionSellService;
 import bm.b0b0b0.soulAuction.service.region.RegionSellSessionService;
+import bm.b0b0b0.soulAuction.listener.RegionPreviewListener;
+import bm.b0b0b0.soulAuction.service.region.RegionPreviewSessionService;
+import bm.b0b0b0.soulAuction.service.region.RegionTeleportService;
 
 public final class RegionMarketModule {
 
@@ -19,34 +24,59 @@ public final class RegionMarketModule {
     private final RegionGuiListener guiListener;
     private final RegionSellChatListener chatListener;
     private final RegionMarketCommandInterceptListener commandInterceptListener;
+    private final RegionPreviewListener previewListener;
+    private final RegionPreviewSessionService previewSessionService;
 
     private RegionMarketModule(
             RegionMarketService marketService,
             RegionMarketCommandHandler commandHandler,
             RegionGuiListener guiListener,
             RegionSellChatListener chatListener,
-            RegionMarketCommandInterceptListener commandInterceptListener
+            RegionMarketCommandInterceptListener commandInterceptListener,
+            RegionPreviewListener previewListener,
+            RegionPreviewSessionService previewSessionService
     ) {
         this.marketService = marketService;
         this.commandHandler = commandHandler;
         this.guiListener = guiListener;
         this.chatListener = chatListener;
         this.commandInterceptListener = commandInterceptListener;
+        this.previewListener = previewListener;
+        this.previewSessionService = previewSessionService;
     }
 
     public static RegionMarketModule create(RegionMarketDependencies dependencies) {
         WorldGuardBridge worldGuardBridge = new WorldGuardBridge();
+        var auctionService = dependencies.auctionService();
+        RegionListingGuard listingGuard = new RegionListingGuard(
+                dependencies.plugin(),
+                worldGuardBridge,
+                auctionService,
+                dependencies.messageService()
+        );
         RegionBrowseService browseService = new RegionBrowseService(
                 dependencies.repository(),
                 dependencies.listingCache(),
                 dependencies.priorityResolver(),
-                dependencies.configSupplier()
+                dependencies.configSupplier(),
+                listingGuard
         );
         RegionDisplayItemFactory displayItemFactory = new RegionDisplayItemFactory(
                 dependencies.messageService(),
-                dependencies.economy()
+                dependencies.economy(),
+                worldGuardBridge
         );
-        var auctionService = dependencies.auctionService();
+        RegionPreviewSessionService previewSessionService = new RegionPreviewSessionService(
+                dependencies.plugin(),
+                dependencies.messageService()
+        );
+        RegionTeleportService teleportService = new RegionTeleportService(
+                dependencies.plugin(),
+                worldGuardBridge,
+                dependencies.messageService(),
+                previewSessionService
+        );
+        RegionOwnerEditSessionService ownerEditSessionService = new RegionOwnerEditSessionService();
         RegionSellService sellService = new RegionSellService(
                 dependencies.repository(),
                 dependencies.configSupplier(),
@@ -73,6 +103,7 @@ public final class RegionMarketModule {
                 dependencies.listingLocks(),
                 dependencies.listingSaleClaimer(),
                 worldGuardBridge,
+                listingGuard,
                 auctionService::invalidateListingCache,
                 auctionService::publishListingChange,
                 auctionService.announcementBroadcaster()
@@ -85,7 +116,9 @@ public final class RegionMarketModule {
                 sellService,
                 purchaseService,
                 new RegionSellSessionService(),
+                ownerEditSessionService,
                 displayItemFactory,
+                teleportService,
                 auctionService
         );
         RegionMarketCommandHandler commandHandler = new RegionMarketCommandHandler(
@@ -108,7 +141,16 @@ public final class RegionMarketModule {
         RegionMarketCommandInterceptListener commandInterceptListener = new RegionMarketCommandInterceptListener(
                 () -> commandHandler
         );
-        return new RegionMarketModule(marketService, commandHandler, guiListener, chatListener, commandInterceptListener);
+        RegionPreviewListener previewListener = new RegionPreviewListener(previewSessionService);
+        return new RegionMarketModule(
+                marketService,
+                commandHandler,
+                guiListener,
+                chatListener,
+                commandInterceptListener,
+                previewListener,
+                previewSessionService
+        );
     }
 
     public RegionMarketService marketService() {
@@ -129,5 +171,13 @@ public final class RegionMarketModule {
 
     public RegionMarketCommandInterceptListener commandInterceptListener() {
         return commandInterceptListener;
+    }
+
+    public RegionPreviewListener previewListener() {
+        return previewListener;
+    }
+
+    public RegionPreviewSessionService previewSessionService() {
+        return previewSessionService;
     }
 }

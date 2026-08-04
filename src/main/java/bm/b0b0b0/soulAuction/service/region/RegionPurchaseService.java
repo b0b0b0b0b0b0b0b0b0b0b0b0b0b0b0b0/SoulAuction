@@ -40,6 +40,7 @@ public final class RegionPurchaseService {
     private final ListingLockRunner listingLocks;
     private final ListingSaleClaimer saleClaimer;
     private final WorldGuardBridge worldGuardBridge;
+    private final RegionListingGuard listingGuard;
     private final java.util.function.Consumer<String> invalidateCacheForAuction;
     private final java.util.function.BiConsumer<String, AuctionListing> publishListingChange;
     private final AuctionAnnouncementBroadcaster announcementBroadcaster;
@@ -54,6 +55,7 @@ public final class RegionPurchaseService {
             ListingLockRunner listingLocks,
             ListingSaleClaimer saleClaimer,
             WorldGuardBridge worldGuardBridge,
+            RegionListingGuard listingGuard,
             java.util.function.Consumer<String> invalidateCacheForAuction,
             java.util.function.BiConsumer<String, AuctionListing> publishListingChange,
             AuctionAnnouncementBroadcaster announcementBroadcaster
@@ -67,6 +69,7 @@ public final class RegionPurchaseService {
         this.listingLocks = listingLocks;
         this.saleClaimer = saleClaimer;
         this.worldGuardBridge = worldGuardBridge;
+        this.listingGuard = listingGuard;
         this.invalidateCacheForAuction = invalidateCacheForAuction;
         this.publishListingChange = publishListingChange;
         this.announcementBroadcaster = announcementBroadcaster;
@@ -147,8 +150,9 @@ public final class RegionPurchaseService {
                 saleClaimer.rollback(listing);
                 return RegionPurchaseResult.failure(RegionPurchaseFailure.OWN_LISTING);
             }
-            if (!worldGuardBridge.regionExists(region) || !worldGuardBridge.isOwner(listing.sellerId(), region)) {
+            if (!listingGuard.isSellable(listing)) {
                 saleClaimer.rollback(listing);
+                listingGuard.invalidateIfNotSellable(listing);
                 return RegionPurchaseResult.failure(RegionPurchaseFailure.REGION_UNAVAILABLE);
             }
             ItemStack placeholder = ItemStackCodec.decode(listing.itemBase64());

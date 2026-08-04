@@ -16,6 +16,25 @@ public final class ListingMetadata {
     public String removalReason = "";
     public String regionWorld = "";
     public String regionId = "";
+    public String regionDescription = "";
+    public int regionCenterX = 0;
+    public int regionCenterY = 0;
+    public int regionCenterZ = 0;
+    public int regionSizeX = 0;
+    public int regionSizeY = 0;
+    public int regionSizeZ = 0;
+    public int regionMinX = 0;
+    public int regionMinY = 0;
+    public int regionMinZ = 0;
+    public int regionMaxX = 0;
+    public int regionMaxY = 0;
+    public int regionMaxZ = 0;
+    public long regionVolume = 0L;
+    public int regionPriority = 0;
+    public String regionParent = "";
+    public int regionOwnersCount = 0;
+    public int regionMembersCount = 0;
+    public String regionFlags = "";
 
     public static ListingMetadata empty() {
         return new ListingMetadata();

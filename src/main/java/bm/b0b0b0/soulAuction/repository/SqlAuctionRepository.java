@@ -335,6 +335,32 @@ public final class SqlAuctionRepository implements AuctionRepository {
     }
 
     @Override
+    public boolean updateMetadata(long listingId, String metadataJson, String searchText) {
+        AuctionListing old = listingsById.get(listingId);
+        if (old == null) {
+            return false;
+        }
+        String nextMetadata = metadataJson == null ? old.metadataJson() : metadataJson;
+        String nextSearch = searchText == null ? old.searchText() : searchText;
+        AuctionListing updated = new AuctionListing(
+                old.listingId(),
+                old.auctionId(),
+                old.sellerId(),
+                old.sellerName(),
+                old.price(),
+                old.economyType(),
+                old.createdAtEpochMillis(),
+                old.itemBase64(),
+                old.category(),
+                nextSearch,
+                nextMetadata
+        );
+        listingsById.put(listingId, updated);
+        CompletableFuture.runAsync(() -> updateMetadataSql(listingId, nextMetadata, nextSearch), ioExecutor);
+        return true;
+    }
+
+    @Override
     public List<AuctionListing> listByAuction(String auctionId) {
         List<AuctionListing> output = new ArrayList<>();
         for (AuctionListing listing : listingsById.values()) {
@@ -705,6 +731,18 @@ public final class SqlAuctionRepository implements AuctionRepository {
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setInt(1, newPrice);
             statement.setLong(2, listingId);
+            statement.executeUpdate();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void updateMetadataSql(long listingId, String metadataJson, String searchText) {
+        String sql = "UPDATE soulauction_listings SET metadata_json=?, search_text=? WHERE listing_id=? AND status='ACTIVE'";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, metadataJson);
+            statement.setString(2, searchText);
+            statement.setLong(3, listingId);
             statement.executeUpdate();
         } catch (Exception ignored) {
         }

@@ -2,6 +2,7 @@ package bm.b0b0b0.soulAuction.service.region;
 
 import bm.b0b0b0.soulAuction.config.settings.AuctionDefinitionSettings;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
+import bm.b0b0b0.soulAuction.integration.worldguard.WorldGuardBridge;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.ListingMetadata;
@@ -19,10 +20,16 @@ public final class RegionDisplayItemFactory {
 
     private final MessageService messageService;
     private final AuctionEconomyService economy;
+    private final WorldGuardBridge worldGuardBridge;
 
-    public RegionDisplayItemFactory(MessageService messageService, AuctionEconomyService economy) {
+    public RegionDisplayItemFactory(
+            MessageService messageService,
+            AuctionEconomyService economy,
+            WorldGuardBridge worldGuardBridge
+    ) {
         this.messageService = messageService;
         this.economy = economy;
+        this.worldGuardBridge = worldGuardBridge;
     }
 
     public ItemStack createListingIcon(
@@ -42,23 +49,21 @@ public final class RegionDisplayItemFactory {
         String world = metadata.regionWorld == null ? "?" : metadata.regionWorld;
         String price = economy.format(listing.price(), listing.economyType(), definition);
         String economyLabel = definition == null ? listing.economyType().name() : definition.economy;
+        Map<String, String> placeholders = RegionListingPresentation.listingPlaceholders(
+                listing,
+                price,
+                economyLabel,
+                worldGuardBridge
+        );
         meta.displayName(messageService.component(
                 viewerId,
                 RegionMarketPresentation.listingTitleKey(settings),
-                Map.of("region", regionId, "world", world)
+                Map.of("region", placeholders.get("region"), "world", placeholders.get("world"))
         ));
         meta.lore(messageService.components(
                 viewerId,
                 RegionMarketPresentation.listingLoreKey(settings),
-                Map.of(
-                        "region", regionId,
-                        "world", world,
-                        "seller", listing.sellerName(),
-                        "price", price,
-                        "economy", economyLabel,
-                        "auction", listing.auctionId(),
-                        "id", String.valueOf(listing.listingId())
-                )
+                placeholders
         ));
         item.setItemMeta(meta);
         return item;

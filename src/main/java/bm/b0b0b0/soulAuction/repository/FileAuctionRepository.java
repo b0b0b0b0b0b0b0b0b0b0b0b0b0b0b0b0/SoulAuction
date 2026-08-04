@@ -163,6 +163,29 @@ public final class FileAuctionRepository implements AuctionRepository {
     }
 
     @Override
+    public boolean updateMetadata(long listingId, String metadataJson, String searchText) {
+        AuctionListing old = listingsById.get(listingId);
+        if (old == null) {
+            return false;
+        }
+        AuctionListing updated = new AuctionListing(
+                old.listingId(),
+                old.auctionId(),
+                old.sellerId(),
+                old.sellerName(),
+                old.price(),
+                old.economyType(),
+                old.createdAtEpochMillis(),
+                old.itemBase64(),
+                old.category(),
+                searchText == null ? old.searchText() : searchText,
+                metadataJson == null ? old.metadataJson() : metadataJson
+        );
+        listingsById.put(listingId, updated);
+        return true;
+    }
+
+    @Override
     public List<AuctionListing> listByAuction(String auctionId) {
         List<AuctionListing> output = new ArrayList<>();
         for (AuctionListing listing : listingsById.values()) {

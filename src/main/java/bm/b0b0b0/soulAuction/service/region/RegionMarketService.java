@@ -9,6 +9,8 @@ import bm.b0b0b0.soulAuction.model.AuctionSort;
 import bm.b0b0b0.soulAuction.model.region.RegionRef;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
 import bm.b0b0b0.soulAuction.model.result.CancelResult;
+import bm.b0b0b0.soulAuction.model.result.EditDescriptionResult;
+import bm.b0b0b0.soulAuction.model.result.EditPriceResult;
 import bm.b0b0b0.soulAuction.model.result.PurchaseQuote;
 import bm.b0b0b0.soulAuction.model.result.RegionPurchaseResult;
 import bm.b0b0b0.soulAuction.model.result.RegionSellResult;
@@ -28,7 +30,9 @@ public final class RegionMarketService {
     private final RegionSellService sellService;
     private final RegionPurchaseService purchaseService;
     private final RegionSellSessionService sessionService;
+    private final RegionOwnerEditSessionService ownerEditSessionService;
     private final RegionDisplayItemFactory displayItemFactory;
+    private final RegionTeleportService teleportService;
     private final AuctionService auctionService;
 
     public RegionMarketService(
@@ -39,7 +43,9 @@ public final class RegionMarketService {
             RegionSellService sellService,
             RegionPurchaseService purchaseService,
             RegionSellSessionService sessionService,
+            RegionOwnerEditSessionService ownerEditSessionService,
             RegionDisplayItemFactory displayItemFactory,
+            RegionTeleportService teleportService,
             AuctionService auctionService
     ) {
         this.configSupplier = configSupplier;
@@ -49,7 +55,9 @@ public final class RegionMarketService {
         this.sellService = sellService;
         this.purchaseService = purchaseService;
         this.sessionService = sessionService;
+        this.ownerEditSessionService = ownerEditSessionService;
         this.displayItemFactory = displayItemFactory;
+        this.teleportService = teleportService;
         this.auctionService = auctionService;
     }
 
@@ -75,8 +83,34 @@ public final class RegionMarketService {
         return sessionService;
     }
 
+    public RegionOwnerEditSessionService ownerEditSessionService() {
+        return ownerEditSessionService;
+    }
+
     public RegionDisplayItemFactory displayItemFactory() {
         return displayItemFactory;
+    }
+
+    public AuctionListing listingById(long listingId) {
+        return auctionService.listingById(listingId);
+    }
+
+    public int globalMaxPrice() {
+        return auctionService.globalMaxPrice();
+    }
+
+    public int maxPrice(Player player, String auctionId) {
+        return auctionService.maxPrice(player, auctionId);
+    }
+
+    public EditPriceResult editListingPrice(Player seller, long listingId, int newPrice) {
+        return auctionService.editListingPrice(seller, listingId, newPrice);
+    }
+
+    public EditDescriptionResult editListingDescription(Player seller, long listingId, String description) {
+        AuctionSettings.RegionMarketSettings regionSettings = settings();
+        int maxLength = regionSettings == null ? 200 : regionSettings.maxDescriptionLength;
+        return auctionService.editRegionListingDescription(seller, listingId, description, maxLength);
     }
 
     public BrowsePage browsePage(AuctionSort sort, int page, int pageSize, UUID sellerFilter) {
@@ -103,6 +137,10 @@ public final class RegionMarketService {
         return sellService.sell(seller, region, auctionId, price, loadedSupplier.get());
     }
 
+    public RegionSellResult sell(Player seller, RegionRef region, String auctionId, int price, String description) {
+        return sellService.sell(seller, region, auctionId, price, description, loadedSupplier.get());
+    }
+
     public RegionPurchaseResult purchase(Player buyer, long listingId) {
         return purchaseService.purchase(buyer, listingId, loadedSupplier.get());
     }
@@ -115,8 +153,20 @@ public final class RegionMarketService {
         return auctionService.formatPrice(amount, auctionId, viewerId);
     }
 
+    public boolean previewTeleport(Player player, long listingId) {
+        AuctionListing listing = listingById(listingId);
+        return teleportService.teleportToListing(player, listing, settings());
+    }
+
+    public boolean cancelPreview(Player player) {
+        if (player == null) {
+            return false;
+        }
+        return teleportService.previewSessions().cancel(player);
+    }
+
     public CancelResult cancelListing(Player seller, long listingId, boolean canCancelAny) {
-        AuctionListing listing = auctionService.listingById(listingId);
+        AuctionListing listing = listingById(listingId);
         if (listing == null || !RegionListingHelper.isRegionListing(listing)) {
             return CancelResult.failure(CancelFailure.NOT_FOUND);
         }

@@ -11,27 +11,33 @@ public final class RegionSellSessionService {
     public enum Step {
         REGION,
         AUCTION,
-        PRICE
+        PRICE,
+        DESCRIPTION
     }
 
     public record Session(
             Step step,
             RegionRef region,
-            String auctionId
+            String auctionId,
+            int price
     ) {
         public Session withRegion(RegionRef value) {
-            return new Session(Step.AUCTION, value, auctionId);
+            return new Session(Step.AUCTION, value, auctionId, price);
         }
 
         public Session withAuction(String value) {
-            return new Session(Step.PRICE, region, value);
+            return new Session(Step.PRICE, region, value, price);
+        }
+
+        public Session withPrice(int value) {
+            return new Session(Step.DESCRIPTION, region, auctionId, value);
         }
     }
 
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
     public void start(UUID playerId) {
-        sessions.put(playerId, new Session(Step.REGION, null, null));
+        sessions.put(playerId, new Session(Step.REGION, null, null, 0));
     }
 
     public Optional<Session> peek(UUID playerId) {
@@ -43,7 +49,7 @@ public final class RegionSellSessionService {
     }
 
     public Session submitRegion(UUID playerId, RegionRef region) {
-        Session updated = new Session(Step.AUCTION, region, null);
+        Session updated = new Session(Step.AUCTION, region, null, 0);
         sessions.put(playerId, updated);
         return updated;
     }
@@ -53,7 +59,17 @@ public final class RegionSellSessionService {
         if (current == null || current.region() == null) {
             return null;
         }
-        Session updated = new Session(Step.PRICE, current.region(), auctionId);
+        Session updated = new Session(Step.PRICE, current.region(), auctionId, 0);
+        sessions.put(playerId, updated);
+        return updated;
+    }
+
+    public Session submitPrice(UUID playerId, int price) {
+        Session current = sessions.get(playerId);
+        if (current == null || current.region() == null || current.auctionId() == null) {
+            return null;
+        }
+        Session updated = new Session(Step.DESCRIPTION, current.region(), current.auctionId(), price);
         sessions.put(playerId, updated);
         return updated;
     }

@@ -173,6 +173,30 @@ public final class JsonPerItemRepository implements AuctionRepository {
     }
 
     @Override
+    public boolean updateMetadata(long listingId, String metadataJson, String searchText) {
+        AuctionListing old = listingsById.get(listingId);
+        if (old == null) {
+            return false;
+        }
+        AuctionListing updated = new AuctionListing(
+                old.listingId(),
+                old.auctionId(),
+                old.sellerId(),
+                old.sellerName(),
+                old.price(),
+                old.economyType(),
+                old.createdAtEpochMillis(),
+                old.itemBase64(),
+                old.category(),
+                searchText == null ? old.searchText() : searchText,
+                metadataJson == null ? old.metadataJson() : metadataJson
+        );
+        listingsById.put(listingId, updated);
+        CompletableFuture.runAsync(() -> writeListingSync(updated), ioExecutor);
+        return true;
+    }
+
+    @Override
     public boolean importListing(AuctionListing listing) {
         if (listing == null || findById(listing.listingId()) != null) {
             return false;

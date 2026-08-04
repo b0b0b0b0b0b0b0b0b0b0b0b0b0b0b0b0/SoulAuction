@@ -209,7 +209,11 @@ public final class MessageService {
     ) {
         List<String> lines = stringList(localeId, key);
         if (lines.isEmpty()) {
-            return List.of();
+            String single = scalarTemplate(localeId, key);
+            if (single == null) {
+                return List.of();
+            }
+            return List.of(deserializeLine(localeId, single, placeholders, componentPlaceholders));
         }
         List<Component> output = new ArrayList<>(lines.size());
         for (String line : lines) {
@@ -426,6 +430,11 @@ public final class MessageService {
     }
 
     private String template(String localeId, String key) {
+        String value = scalarTemplate(localeId, key);
+        return value == null ? key : value;
+    }
+
+    private String scalarTemplate(String localeId, String key) {
         String value = bundle(localeId).getString(key);
         if (value != null) {
             return value;
@@ -436,7 +445,7 @@ public final class MessageService {
                 return value;
             }
         }
-        return key;
+        return null;
     }
 
     private List<String> stringList(String localeId, String key) {

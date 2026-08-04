@@ -103,8 +103,8 @@ public final class AuctionSettings extends YamlSerializable {
     @NewLine
     @Comment({
             @CommentValue("WorldGuard region marketplace (requires WorldGuard plugin)."),
-            @CommentValue("Default off — set region-market.enabled: true and /ah reload to activate."),
-            @CommentValue("While off: no listeners, no commands, no runtime cost."),
+            @CommentValue("On by default — /ah reload toggles without full restart."),
+            @CommentValue("When off or WG missing: no listeners, no commands."),
             @CommentValue(""),
             @CommentValue("NOT the same as world-guard-trade-regions in auctions/*.yml:"),
             @CommentValue("  region-market here = sell/buy WorldGuard regions as auction lots (/ah regions)."),
@@ -542,9 +542,9 @@ public final class AuctionSettings extends YamlSerializable {
 
         @Comment({
                 @CommentValue("Enable /ah regions (requires WorldGuard on the server)."),
-                @CommentValue("Default false — zero runtime cost until you set true and reload."),
+                @CommentValue("Default true — set false to disable on servers without region market."),
         })
-        public boolean enabled = false;
+        public boolean enabled = true;
 
         @Comment({
                 @CommentValue("Data subfolder under plugins/SoulAuction/ (created when module activates)."),
@@ -572,6 +572,24 @@ public final class AuctionSettings extends YamlSerializable {
                 @CommentValue("world:region still works when false or for duplicate ids across worlds."),
         })
         public boolean hideWorldName = true;
+
+        @Comment({@CommentValue("RMB on a region listing teleports the viewer for preview (safe spot inside region).")})
+        public boolean previewTeleportEnabled = true;
+
+        @Comment({@CommentValue("Cooldown between preview teleports per player, seconds. 0 = none.")})
+        public int previewTeleportCooldownSeconds = 15;
+
+        @Comment({@CommentValue("Preview session length in seconds. 0 = until cancel or forced exit.")})
+        public int previewDurationSeconds = 20;
+
+        @Comment({
+                @CommentValue("Spectator mode during preview (GM 3) — no grief, fly through blocks."),
+                @CommentValue("false = adventure + flight inside the region."),
+        })
+        public boolean previewSpectatorMode = true;
+
+        @Comment({@CommentValue("Max length of seller region description (listing lore + owner edit).")})
+        public int maxDescriptionLength = 200;
 
         @Comment({
                 @CommentValue("Extra /ah subcommands for region market (besides regions)."),

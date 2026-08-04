@@ -78,6 +78,10 @@ public final class RegionSellService {
     }
 
     public RegionSellResult sell(Player seller, RegionRef region, String auctionId, int price, boolean loaded) {
+        return sell(seller, region, auctionId, price, "", loaded);
+    }
+
+    public RegionSellResult sell(Player seller, RegionRef region, String auctionId, int price, String description, boolean loaded) {
         AuctionSettings settings = configSupplier.get().auctionSettings();
         AuctionSettings.RegionMarketSettings regionSettings = settings.regionMarket;
         if (regionSettings == null || !regionSettings.enabled) {
@@ -96,7 +100,7 @@ public final class RegionSellService {
             return RegionSellResult.failure(RegionSellFailure.SELL_LOCK_FAILED);
         }
         try {
-            return sellLocked(seller, region, auctionId, price, settings, regionSettings);
+            return sellLocked(seller, region, auctionId, price, description, settings, regionSettings);
         } finally {
             redisSellGuard.releaseSellLock(seller.getUniqueId());
         }
@@ -107,6 +111,7 @@ public final class RegionSellService {
             RegionRef region,
             String auctionId,
             int price,
+            String description,
             AuctionSettings settings,
             AuctionSettings.RegionMarketSettings regionSettings
     ) {
@@ -178,9 +183,14 @@ public final class RegionSellService {
         }
         ListingMetadata metadata = RegionListingHelper.regionMetadata(
                 region,
-                settings.network == null ? "" : settings.network.serverId
+                settings.network == null ? "" : settings.network.serverId,
+                worldGuardBridge.regionInfo(region),
+                sanitizeDescription(description, regionSettings)
         );
-        String searchText = buildSearchText(region, seller.getName(), definition);
+        String auctionLabel = definition.displayName == null || definition.displayName.isBlank()
+                ? definition.id
+                : definition.displayName;
+        String searchText = RegionListingPresentation.buildSearchText(region, seller.getName(), auctionLabel, metadata.regionDescription);
         AuctionListing listing = repository.create(
                 normalizedAuctionId,
                 seller.getUniqueId(),
@@ -201,6 +211,18 @@ public final class RegionSellService {
         externalNotifier.listingCreated(listing, placeholder);
         announcementBroadcaster.maybeBroadcastRegionListing(seller, listing, region, definition);
         return RegionSellResult.success(listing);
+    }
+
+    private String sanitizeDescription(String description, AuctionSettings.RegionMarketSettings regionSettings) {
+        if (description == null || description.isBlank()) {
+            return "";
+        }
+        int max = regionSettings == null ? 200 : Math.max(1, regionSettings.maxDescriptionLength);
+        String trimmed = description.trim();
+        if (trimmed.length() <= max) {
+            return trimmed;
+        }
+        return trimmed.substring(0, max);
     }
 
     private AuctionDefinitionSettings findDefinition(String auctionId, AuctionSettings.RegionMarketSettings regionSettings) {
@@ -233,10 +255,5 @@ public final class RegionSellService {
                 .map(id -> id.toLowerCase(Locale.ROOT))
                 .toList();
     }
-
-    private String buildSearchText(RegionRef region, String sellerName, AuctionDefinitionSettings definition) {
-        return (region.regionId() + " " + region.worldName() + " " + sellerName + " " + definition.displayName)
-                .toLowerCase(Locale.ROOT)
-                .trim();
-    }
 }
+

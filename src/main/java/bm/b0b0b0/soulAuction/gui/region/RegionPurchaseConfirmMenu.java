@@ -4,6 +4,7 @@ import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionSort;
 import bm.b0b0b0.soulAuction.model.result.PurchaseQuote;
 import bm.b0b0b0.soulAuction.service.region.RegionListingHelper;
+import bm.b0b0b0.soulAuction.service.region.RegionListingPresentation;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketPresentation;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketService;
 import java.util.Map;
@@ -87,20 +88,24 @@ public final class RegionPurchaseConfirmMenu implements InventoryHolder {
         var regionSettings = regionMarketService.settings();
         String price = regionMarketService.formatPrice(quote.totalCharge(), quote.listing().auctionId(), viewerId);
         String basePrice = regionMarketService.formatPrice(quote.listing().price(), quote.listing().auctionId(), viewerId);
+        var definition = regionMarketService.findDefinition(quote.listing().auctionId());
+        String economyLabel = definition == null ? quote.listing().economyType().name() : definition.economy;
+        java.util.HashMap<String, String> placeholders = new java.util.HashMap<>(RegionListingPresentation.listingPlaceholders(
+                quote.listing(),
+                price,
+                economyLabel,
+                regionMarketService.worldGuardBridge()
+        ));
+        placeholders.put("price", price);
+        placeholders.put("base", basePrice);
+        placeholders.put("buytax", String.valueOf(quote.buyTax()));
         inventory.setItem(YES_SLOT, button(
                 Material.LIME_WOOL,
                 messageService.component(viewerId, "region-buy-confirm-yes"),
                 messageService.components(
                         viewerId,
                         RegionMarketPresentation.buyConfirmLoreKey(regionSettings),
-                        Map.of(
-                                "region", region.regionId(),
-                                "world", region.worldName(),
-                                "seller", quote.listing().sellerName(),
-                                "price", price,
-                                "base", basePrice,
-                                "buytax", String.valueOf(quote.buyTax())
-                        )
+                        placeholders
                 )
         ));
         inventory.setItem(NO_SLOT, button(Material.RED_WOOL, messageService.component(viewerId, "region-buy-confirm-no"), null));

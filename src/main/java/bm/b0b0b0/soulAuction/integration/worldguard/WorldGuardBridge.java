@@ -1,5 +1,7 @@
 package bm.b0b0b0.soulAuction.integration.worldguard;
 
+import bm.b0b0b0.soulAuction.model.region.RegionBounds;
+import bm.b0b0b0.soulAuction.model.region.RegionInfo;
 import bm.b0b0b0.soulAuction.model.region.RegionRef;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -8,10 +10,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 
 public final class WorldGuardBridge {
@@ -142,6 +147,221 @@ public final class WorldGuardBridge {
         } catch (ReflectiveOperationException exception) {
             return false;
         }
+    }
+
+    public RegionBounds regionBounds(RegionRef ref) {
+        Object region = resolveRegion(ref);
+        if (region == null) {
+            return null;
+        }
+        try {
+            Object min = invoke(region, "getMinimumPoint");
+            Object max = invoke(region, "getMaximumPoint");
+            if (min == null || max == null) {
+                return null;
+            }
+            return new RegionBounds(
+                    blockX(min),
+                    blockY(min),
+                    blockZ(min),
+                    blockX(max),
+                    blockY(max),
+                    blockZ(max)
+            );
+        } catch (ReflectiveOperationException exception) {
+            return null;
+        }
+    }
+
+    public RegionInfo regionInfo(RegionRef ref) {
+        Object region = resolveRegion(ref);
+        if (region == null) {
+            return RegionInfo.empty();
+        }
+        RegionBounds bounds = regionBounds(ref);
+        if (bounds == null) {
+            return RegionInfo.empty();
+        }
+        try {
+            long volume = resolveVolume(region, bounds);
+            int priority = intValue(invoke(region, "getPriority"));
+            String parentId = parentId(region);
+            int ownersCount = domainSize(invoke(region, "getOwners"));
+            int membersCount = domainSize(invoke(region, "getMembers"));
+            String flagsSummary = formatFlags(invokeMap(region, "getFlags"));
+            return new RegionInfo(bounds, volume, priority, parentId, ownersCount, membersCount, flagsSummary);
+        } catch (ReflectiveOperationException exception) {
+            return new RegionInfo(bounds, bounds.blockVolume(), 0, "", 0, 0, "");
+        }
+    }
+
+    private long resolveVolume(Object region, RegionBounds bounds) throws ReflectiveOperationException {
+        Object volume = invoke(region, "getVolume");
+        if (volume instanceof Number number && number.longValue() > 0L) {
+            return number.longValue();
+        }
+        return bounds.blockVolume();
+    }
+
+    private static String parentId(Object region) throws ReflectiveOperationException {
+        Object parent = region.getClass().getMethod("getParent").invoke(region);
+        if (parent == null) {
+            return "";
+        }
+        Object id = parent.getClass().getMethod("getId").invoke(parent);
+        return id == null ? "" : String.valueOf(id);
+    }
+
+    private static int domainSize(Object domain) throws ReflectiveOperationException {
+        if (domain == null) {
+            return 0;
+        }
+        Object size = domain.getClass().getMethod("size").invoke(domain);
+        return size instanceof Number number ? number.intValue() : 0;
+    }
+
+    private static int intValue(Object value) {
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    private static String formatFlags(Map<?, ?> flags) {
+        if (flags == null || flags.isEmpty()) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<?, ?> entry : flags.entrySet()) {
+            if (entry.getKey() == null) {
+                continue;
+            }
+            String name = flagName(entry.getKey());
+            if (name.isBlank()) {
+                continue;
+            }
+            String value = flagValue(entry.getValue());
+            parts.add(name.toLowerCase(Locale.ROOT) + "=" + value);
+        }
+        parts.sort(String.CASE_INSENSITIVE_ORDER);
+        return String.join(", ", parts);
+    }
+
+    private static String flagName(Object flag) {
+        try {
+            Object name = flag.getClass().getMethod("getName").invoke(flag);
+            return name == null ? "" : String.valueOf(name);
+        } catch (ReflectiveOperationException exception) {
+            return "";
+        }
+    }
+
+    private static String flagValue(Object value) {
+        if (value == null) {
+            return "?";
+        }
+        if (value instanceof Enum<?> enumValue) {
+            return enumValue.name().toLowerCase(Locale.ROOT);
+        }
+        return String.valueOf(value).toLowerCase(Locale.ROOT);
+    }
+
+    public Optional<Location> findSafeVisitLocation(RegionRef ref) {
+        RegionBounds bounds = regionBounds(ref);
+        if (bounds == null) {
+            return Optional.empty();
+        }
+        World world = worldByName(ref.worldName());
+        if (world == null) {
+            return Optional.empty();
+        }
+        int checks = 0;
+        int maxChecks = 512;
+        for (int y = bounds.maxY(); y >= bounds.minY() && checks < maxChecks; y--) {
+            for (int x = bounds.centerX(); x <= bounds.maxX() && checks < maxChecks; x += 2) {
+                checks++;
+                Optional<Location> found = safeStand(world, x, y, bounds.centerZ(), bounds);
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+            for (int x = bounds.centerX() - 2; x >= bounds.minX() && checks < maxChecks; x -= 2) {
+                checks++;
+                Optional<Location> found = safeStand(world, x, y, bounds.centerZ(), bounds);
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+            for (int z = bounds.centerZ() + 2; z <= bounds.maxZ() && checks < maxChecks; z += 2) {
+                checks++;
+                Optional<Location> found = safeStand(world, bounds.centerX(), y, z, bounds);
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+            for (int z = bounds.centerZ() - 2; z >= bounds.minZ() && checks < maxChecks; z -= 2) {
+                checks++;
+                Optional<Location> found = safeStand(world, bounds.centerX(), y, z, bounds);
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<Location> safeStand(World world, int x, int y, int z, RegionBounds bounds) {
+        if (!bounds.contains(x, y, z)) {
+            return Optional.empty();
+        }
+        Location feet = new Location(world, x, y, z);
+        Block ground = world.getBlockAt(x, y - 1, z);
+        Block lower = feet.getBlock();
+        Block upper = world.getBlockAt(x, y + 1, z);
+        if (!ground.getType().isSolid() || isDangerous(ground.getType())) {
+            return Optional.empty();
+        }
+        if (!isPassable(lower.getType()) || !isPassable(upper.getType())) {
+            return Optional.empty();
+        }
+        if (isDangerous(lower.getType()) || isDangerous(upper.getType())) {
+            return Optional.empty();
+        }
+        Block aboveHead = world.getBlockAt(x, y + 2, z);
+        if (!isPassable(aboveHead.getType()) || isDangerous(aboveHead.getType())) {
+            return Optional.empty();
+        }
+        return Optional.of(feet.add(0.5D, 0.0D, 0.5D));
+    }
+
+    private static boolean isPassable(Material material) {
+        return material.isAir() || !material.isSolid();
+    }
+
+    private static boolean isDangerous(Material material) {
+        return material == Material.LAVA
+                || material == Material.WATER
+                || material == Material.FIRE
+                || material == Material.SOUL_FIRE
+                || material == Material.MAGMA_BLOCK
+                || material == Material.CACTUS
+                || material == Material.CAMPFIRE
+                || material == Material.SOUL_CAMPFIRE
+                || material == Material.SWEET_BERRY_BUSH
+                || material == Material.WITHER_ROSE
+                || material == Material.POWDER_SNOW;
+    }
+
+    private static int blockX(Object vector) throws ReflectiveOperationException {
+        Object value = vector.getClass().getMethod("getBlockX").invoke(vector);
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    private static int blockY(Object vector) throws ReflectiveOperationException {
+        Object value = vector.getClass().getMethod("getBlockY").invoke(vector);
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    private static int blockZ(Object vector) throws ReflectiveOperationException {
+        Object value = vector.getClass().getMethod("getBlockZ").invoke(vector);
+        return value instanceof Number number ? number.intValue() : 0;
     }
 
     private Object resolveRegion(RegionRef ref) {

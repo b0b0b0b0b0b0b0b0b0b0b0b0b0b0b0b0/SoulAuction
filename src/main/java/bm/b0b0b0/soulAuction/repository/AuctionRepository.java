@@ -63,6 +63,8 @@ public interface AuctionRepository {
 
     boolean updatePrice(long listingId, int newPrice);
 
+    boolean updateMetadata(long listingId, String metadataJson, String searchText);
+
     List<AuctionListing> listAll();
 
     List<AuctionListing> listByAuction(String auctionId);

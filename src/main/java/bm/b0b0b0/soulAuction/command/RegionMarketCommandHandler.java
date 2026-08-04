@@ -57,6 +57,7 @@ public final class RegionMarketCommandHandler {
         return switch (sub) {
             case "sell" -> handleSell(player, args);
             case "cancel" -> handleCancel(player, args);
+            case "preview" -> handlePreview(player, args);
             case "my" -> openBrowse(player, player.getUniqueId());
             case "clear" -> handleClear(player);
             default -> openBrowse(player, null);
@@ -75,7 +76,10 @@ public final class RegionMarketCommandHandler {
             return List.of();
         }
         if (args.length <= 1) {
-            return CommandSuggestions.filter(args.length == 0 ? "" : args[0], List.of("sell", "cancel", "my", "clear"));
+            return CommandSuggestions.filter(args.length == 0 ? "" : args[0], List.of("sell", "cancel", "preview", "my", "clear"));
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("preview")) {
+            return CommandSuggestions.filter(args[1], List.of("cancel"));
         }
         String sub = args[0].equalsIgnoreCase("sell") ? "sell" : "";
         if (!sub.equals("sell")) {
@@ -181,6 +185,17 @@ public final class RegionMarketCommandHandler {
     private boolean handleClear(Player player) {
         regionMarketService.sessionService().clear(player.getUniqueId());
         messageService.send(player, "region-sell-chat-cancelled");
+        return true;
+    }
+
+    private boolean handlePreview(Player player, String[] args) {
+        if (args.length < 2 || !args[1].equalsIgnoreCase("cancel")) {
+            messageService.send(player, "region-preview-cancel-usage");
+            return true;
+        }
+        if (!regionMarketService.cancelPreview(player)) {
+            messageService.send(player, "region-preview-not-active");
+        }
         return true;
     }
 }

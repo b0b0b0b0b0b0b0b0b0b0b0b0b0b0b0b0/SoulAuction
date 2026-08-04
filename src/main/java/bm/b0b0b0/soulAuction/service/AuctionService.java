@@ -18,6 +18,9 @@ import bm.b0b0b0.soulAuction.model.StorageMode;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
 import bm.b0b0b0.soulAuction.model.result.CancelResult;
 import bm.b0b0b0.soulAuction.model.result.ClaimResult;
+import bm.b0b0b0.soulAuction.model.ListingMetadata;
+import bm.b0b0b0.soulAuction.model.region.RegionRef;
+import bm.b0b0b0.soulAuction.model.result.EditDescriptionResult;
 import bm.b0b0b0.soulAuction.model.result.EditPriceResult;
 import bm.b0b0b0.soulAuction.model.result.PurchaseFailure;
 import bm.b0b0b0.soulAuction.model.result.PurchaseQuote;
@@ -41,6 +44,7 @@ import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
 import bm.b0b0b0.soulAuction.service.policy.AuctionTradeRegionPolicy;
 import bm.b0b0b0.soulAuction.service.region.RegionListingHelper;
+import bm.b0b0b0.soulAuction.service.region.RegionListingPresentation;
 import bm.b0b0b0.soulAuction.util.ListingSearchResolveCache;
 import bm.b0b0b0.soulAuction.util.ItemDisplayNames;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
@@ -958,6 +962,38 @@ public final class AuctionService {
         return CancelResult.success(false);
     }
 
+    public CancelResult cancelRegionListingSystem(long listingId) {
+        return listingLocks.withLock(listingId, () -> cancelRegionListingSystemLocked(listingId));
+    }
+
+    private CancelResult cancelRegionListingSystemLocked(long listingId) {
+        Optional<AuctionListing> withdrawn = withdrawListing(listingId, "CANCELLED");
+        AuctionListing listing = withdrawn.orElse(null);
+        if (listing == null) {
+            return CancelResult.failure(CancelFailure.NOT_FOUND);
+        }
+        if (!RegionListingHelper.isRegionListing(listing)) {
+            rollbackWithdraw(listing, "CANCELLED");
+            return CancelResult.failure(CancelFailure.NOT_FOUND);
+        }
+        repository.flush();
+        invalidateListingCache(listing.auctionId(), listing, true);
+        runtimeStorage.addHistory(
+                "CANCELLED",
+                listing.auctionId(),
+                listing.listingId(),
+                listing.sellerId(),
+                listing.sellerName(),
+                null,
+                null,
+                listing.price(),
+                0,
+                listing.economyType(),
+                0
+        );
+        return CancelResult.success(false);
+    }
+
     public CancelResult cancelListing(Player seller, long listingId, boolean canCancelAny) {
         return listingLocks.withLock(listingId, () -> cancelListingLocked(seller, listingId, canCancelAny));
     }
@@ -1306,6 +1342,50 @@ public final class AuctionService {
                 0
         );
         return EditPriceResult.SUCCESS;
+    }
+
+    public EditDescriptionResult editRegionListingDescription(Player seller, long listingId, String description, int maxLength) {
+        return listingLocks.withLock(listingId, () -> editRegionListingDescriptionLocked(seller, listingId, description, maxLength));
+    }
+
+    private EditDescriptionResult editRegionListingDescriptionLocked(Player seller, long listingId, String description, int maxLength) {
+        AuctionListing listing = repository.findById(listingId);
+        if (listing == null) {
+            return EditDescriptionResult.LISTING_UNAVAILABLE;
+        }
+        if (!RegionListingHelper.isRegionListing(listing)) {
+            return EditDescriptionResult.NOT_REGION;
+        }
+        if (!listing.sellerId().equals(seller.getUniqueId())) {
+            return EditDescriptionResult.NOT_OWNER;
+        }
+        String trimmed = description == null ? "" : description.trim();
+        if (trimmed.equals("-")) {
+            trimmed = "";
+        }
+        int limit = Math.max(1, maxLength);
+        if (trimmed.length() > limit) {
+            return EditDescriptionResult.TOO_LONG;
+        }
+        ListingMetadata metadata = listing.metadata();
+        metadata.regionDescription = trimmed;
+        AuctionDefinitionSettings definition = findAuction(listing.auctionId(), configSupplier.get());
+        String auctionLabel = definition == null || definition.displayName == null || definition.displayName.isBlank()
+                ? listing.auctionId()
+                : definition.displayName;
+        RegionRef region = RegionListingHelper.regionRef(listing);
+        String searchText = RegionListingPresentation.buildSearchText(region, listing.sellerName(), auctionLabel, trimmed);
+        if (!repository.updateMetadata(listingId, metadata.toJson(), searchText)) {
+            return EditDescriptionResult.LISTING_UNAVAILABLE;
+        }
+        repository.flush();
+        AuctionListing updated = repository.findById(listingId);
+        if (updated != null) {
+            invalidateListingCache(updated.auctionId(), updated, false);
+        } else {
+            invalidateListingCache(listing.auctionId());
+        }
+        return EditDescriptionResult.SUCCESS;
     }
 
     public List<AuctionListing> page(String auctionId, AuctionSort sort, AuctionCategory category, int page, int pageSize) {
