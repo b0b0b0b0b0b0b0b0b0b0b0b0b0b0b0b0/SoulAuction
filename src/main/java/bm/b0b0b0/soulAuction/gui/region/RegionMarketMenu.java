@@ -8,6 +8,7 @@ import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.AuctionSort;
 import bm.b0b0b0.soulAuction.service.region.RegionBrowseService.BrowsePage;
+import bm.b0b0b0.soulAuction.service.region.RegionMarketPresentation;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketService;
 import java.util.HashMap;
 import java.util.List;
@@ -62,7 +63,11 @@ public final class RegionMarketMenu implements InventoryHolder {
         this.page = Math.max(0, initialPage);
         this.sort = sort == null ? AuctionSort.NEWEST : sort;
         this.sellerFilter = sellerFilter;
-        this.inventory = Bukkit.createInventory(this, guiSettings.size, messageService.component(viewerId, "region-market-title"));
+        this.inventory = Bukkit.createInventory(
+                this,
+                guiSettings.size,
+                messageService.component(viewerId, RegionMarketPresentation.marketTitleKey(viewerId, sellerFilter))
+        );
         refresh();
     }
 
@@ -81,6 +86,10 @@ public final class RegionMarketMenu implements InventoryHolder {
 
     public AuctionSort sort() {
         return sort;
+    }
+
+    public UUID sellerFilter() {
+        return sellerFilter;
     }
 
     public Long listingIdAt(int slot) {
@@ -149,39 +158,48 @@ public final class RegionMarketMenu implements InventoryHolder {
             inventory.setItem(slot, icon);
             listingBySlot.put(slot, listing.listingId());
         }
-        inventory.setItem(guiSettings.previousPageSlot, controlButton(
-                guiSettings.previousPageMaterial,
-                guiSettings.previousPageCustomModelData,
-                page > 0 ? "button-previous-page" : "button-previous-page-disabled",
-                Map.of("page", String.valueOf(page + 1), "pages", String.valueOf(maxPage + 1))
-        ));
-        inventory.setItem(guiSettings.nextPageSlot, controlButton(
-                guiSettings.nextPageMaterial,
-                guiSettings.nextPageCustomModelData,
-                page < maxPage ? "button-next-page" : "button-next-page-disabled",
-                Map.of("page", String.valueOf(page + 1), "pages", String.valueOf(maxPage + 1))
-        ));
+        inventory.setItem(guiSettings.previousPageSlot, page > 0
+                ? controlButton(
+                        guiSettings.previousPageMaterial,
+                        guiSettings.previousPageCustomModelData,
+                        "button-prev-page",
+                        "button-prev-page-lore",
+                        Map.of()
+                )
+                : filler);
+        inventory.setItem(guiSettings.nextPageSlot, page < maxPage
+                ? controlButton(
+                        guiSettings.nextPageMaterial,
+                        guiSettings.nextPageCustomModelData,
+                        "button-next-page",
+                        "button-next-page-lore",
+                        Map.of()
+                )
+                : filler);
         inventory.setItem(guiSettings.sortSlot, controlButton(
                 guiSettings.sortMaterial,
                 guiSettings.sortCustomModelData,
-                sort.messageKey(),
-                Map.of()
+                "button-sort",
+                "button-sort-lore",
+                Map.of("sort", messageService.raw(viewerId, sort.messageKey()))
         ));
         inventory.setItem(guiSettings.refreshSlot, controlButton(
                 guiSettings.refreshMaterial,
                 guiSettings.refreshCustomModelData,
                 "region-button-refresh",
+                "region-button-refresh-lore",
                 Map.of("total", String.valueOf(total))
         ));
         inventory.setItem(regionSettings.sellButtonSlot, controlButton(
                 "EMERALD",
                 -1,
                 "region-button-sell",
+                "region-button-sell-lore",
                 Map.of()
         ));
     }
 
-    private ItemStack controlButton(String materialName, int customModelData, String titleKey, Map<String, String> placeholders) {
+    private ItemStack controlButton(String materialName, int customModelData, String titleKey, String loreKey, Map<String, String> placeholders) {
         Material material = Material.matchMaterial(materialName);
         if (material == null) {
             material = Material.STONE;
@@ -193,7 +211,6 @@ public final class RegionMarketMenu implements InventoryHolder {
         }
         Component title = messageService.component(viewerId, titleKey, placeholders);
         meta.displayName(title);
-        String loreKey = titleKey + "-lore";
         List<Component> lore = messageService.components(viewerId, loreKey, placeholders);
         if (!lore.isEmpty()) {
             meta.lore(lore);

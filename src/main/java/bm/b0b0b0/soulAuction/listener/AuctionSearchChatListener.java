@@ -70,6 +70,9 @@ public final class AuctionSearchChatListener implements Listener {
     }
 
     private void openBrowser(Player player, String auctionId) {
+        if (!auctionService.guardAuctionAccess(player, auctionId)) {
+            return;
+        }
         AuctionBrowserMenu menu = new AuctionBrowserMenu(
                 player.getUniqueId(),
                 auctionId,

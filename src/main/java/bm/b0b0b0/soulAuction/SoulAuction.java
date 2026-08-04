@@ -5,8 +5,12 @@ import bm.b0b0b0.soulAuction.bootstrap.SoulAuctionStartupLog;
 import bm.b0b0b0.soulAuction.command.AuctionCommand;
 import bm.b0b0b0.soulAuction.command.AuctionCommandRegistrar;
 import bm.b0b0b0.soulAuction.command.AuctionAliasListener;
+import bm.b0b0b0.soulAuction.command.RegionMarketCommandHandler;
+import bm.b0b0b0.soulAuction.command.RegionMarketCommandRegistrar;
+import bm.b0b0b0.soulAuction.command.RegionMarketRouting;
 import bm.b0b0b0.soulAuction.config.AuctionDefinitionWriter;
 import bm.b0b0b0.soulAuction.config.AuctionEconomyBootstrap;
+import bm.b0b0b0.soulAuction.config.AuctionDefinitionPermissionRegistrar;
 import bm.b0b0b0.soulAuction.config.ConfigurationLoader;
 import bm.b0b0b0.soulAuction.config.FakeActivityConfig;
 import bm.b0b0b0.soulAuction.config.FakeActivityConfigLoader;
@@ -77,6 +81,7 @@ public final class SoulAuction extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        RegionMarketCommandRegistrar.register(this);
         AuctionCommandRegistrar.registerHandler(this);
         startupLog = new SoulAuctionStartupLog();
         startupLog.bannerStart(getPluginMeta().getVersion());
@@ -87,6 +92,7 @@ public final class SoulAuction extends JavaPlugin {
             startupLog.info("Loading configuration...");
             configurationLoader = new ConfigurationLoader(this);
             pluginConfig = configurationLoader.load();
+            AuctionDefinitionPermissionRegistrar.register(this, pluginConfig.auctionDefinitions());
             fakeActivityConfigLoader = new FakeActivityConfigLoader(this);
             fakeActivityConfig = fakeActivityConfigLoader.load(pluginConfig.auctionSettings());
             SoulAuctionMetrics.tryStart(this, pluginConfig.auctionSettings().bstats.enabled);
@@ -365,11 +371,22 @@ public final class SoulAuction extends JavaPlugin {
         logSellerSkins();
     }
 
+    private void logRegionMarketCommandHints() {
+        var regionMarket = pluginConfig.auctionSettings().regionMarket;
+        for (String warning : RegionMarketRouting.skippedStandaloneWarnings(
+                regionMarket,
+                RegionMarketActivation.worldGuardPresent()
+        )) {
+            getLogger().warning("Region market: " + warning);
+        }
+    }
+
     private void logRegionMarketIntegration() {
         if (!RegionMarketActivation.configured(pluginConfig)) {
             return;
         }
         if (regionMarketLifecycle != null && regionMarketLifecycle.isActive()) {
+            logRegionMarketCommandHints();
             startupLog.stepOk("WorldGuard — region market active");
             return;
         }
@@ -402,6 +419,7 @@ public final class SoulAuction extends JavaPlugin {
 
     private void reloadAll() {
         pluginConfig = configurationLoader.load();
+        AuctionDefinitionPermissionRegistrar.register(this, pluginConfig.auctionDefinitions());
         fakeActivityConfig = fakeActivityConfigLoader.load(pluginConfig.auctionSettings());
         wireMessageServiceConfig();
         messageService.reload();
@@ -525,5 +543,17 @@ public final class SoulAuction extends JavaPlugin {
 
     public AuctionCommand auctionCommand() {
         return auctionCommand;
+    }
+
+    public RegionMarketCommandHandler regionMarketCommandHandler() {
+        return regionMarketLifecycle == null ? null : regionMarketLifecycle.commandHandler();
+    }
+
+    public PluginConfig loadedPluginConfig() {
+        return pluginConfig;
+    }
+
+    public MessageService messageService() {
+        return messageService;
     }
 }

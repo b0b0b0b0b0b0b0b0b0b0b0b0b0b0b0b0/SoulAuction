@@ -105,6 +105,29 @@ public final class AuctionDefinitionSettings extends YamlSerializable {
     @Comment({@CommentValue("Permission to create listings in this auction")})
     public String sellPermission = "soulauction.sell.global";
 
+    @Comment({
+            @CommentValue("WorldGuard: restrict ITEM trading in THIS auction (open /ah, sell items, buy items)."),
+            @CommentValue("NOT the same as region market (config.yml → region-market) — that sells WG regions as lots."),
+            @CommentValue("Requires WorldGuard plugin. Empty list [] = no restriction, works everywhere."),
+            @CommentValue(""),
+            @CommentValue("Entry formats:"),
+            @CommentValue("  shop          — region id in the player's current world"),
+            @CommentValue("  world:shop    — region in a specific Bukkit world name"),
+            @CommentValue("  world_nether:hub — example for nether hub region"),
+            @CommentValue(""),
+            @CommentValue("Player must stand inside at least ONE listed region to open/sell/buy here."),
+            @CommentValue(""),
+            @CommentValue("Examples:"),
+            @CommentValue("  world-guard-trade-regions: []"),
+            @CommentValue("  world-guard-trade-regions:"),
+            @CommentValue("    - shop"),
+            @CommentValue("    - market"),
+            @CommentValue("  world-guard-trade-regions:"),
+            @CommentValue("    - world:mall"),
+            @CommentValue("    - world_nether:trade_hub"),
+    })
+    public List<String> worldGuardTradeRegions = List.of();
+
     @Comment({@CommentValue("Listing lifetime in seconds before auto-expire; 0 or less = no expiry")})
     public int listingTtlSeconds = 86400;
 

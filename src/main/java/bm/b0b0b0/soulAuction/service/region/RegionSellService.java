@@ -12,6 +12,7 @@ import bm.b0b0b0.soulAuction.model.region.RegionRef;
 import bm.b0b0b0.soulAuction.model.result.RegionSellFailure;
 import bm.b0b0b0.soulAuction.model.result.RegionSellResult;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
+import bm.b0b0b0.soulAuction.service.AuctionAnnouncementBroadcaster;
 import bm.b0b0b0.soulAuction.service.AuctionExternalNotifier;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
 import bm.b0b0b0.soulAuction.service.PermissionLimitResolver;
@@ -19,6 +20,8 @@ import bm.b0b0b0.soulAuction.service.PriceLimitResolver;
 import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
+import bm.b0b0b0.soulAuction.region.RegionMarketPermissions;
+import bm.b0b0b0.soulAuction.util.PermissionChecks;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
@@ -40,6 +43,7 @@ public final class RegionSellService {
     private final RegionBrowseService browseService;
     private final RegionDisplayItemFactory displayItemFactory;
     private final java.util.function.Consumer<String> invalidateCacheForAuction;
+    private final AuctionAnnouncementBroadcaster announcementBroadcaster;
 
     public RegionSellService(
             AuctionRepository repository,
@@ -54,7 +58,8 @@ public final class RegionSellService {
             WorldGuardBridge worldGuardBridge,
             RegionBrowseService browseService,
             RegionDisplayItemFactory displayItemFactory,
-            java.util.function.Consumer<String> invalidateCacheForAuction
+            java.util.function.Consumer<String> invalidateCacheForAuction,
+            AuctionAnnouncementBroadcaster announcementBroadcaster
     ) {
         this.repository = repository;
         this.configSupplier = configSupplier;
@@ -69,6 +74,7 @@ public final class RegionSellService {
         this.browseService = browseService;
         this.displayItemFactory = displayItemFactory;
         this.invalidateCacheForAuction = invalidateCacheForAuction;
+        this.announcementBroadcaster = announcementBroadcaster;
     }
 
     public RegionSellResult sell(Player seller, RegionRef region, String auctionId, int price, boolean loaded) {
@@ -83,7 +89,7 @@ public final class RegionSellService {
         if (!loaded) {
             return RegionSellResult.failure(RegionSellFailure.STORAGE_NOT_READY);
         }
-        if (!seller.hasPermission(regionSettings.sellPermission)) {
+        if (!PermissionChecks.has(seller, RegionMarketPermissions.SELL)) {
             return RegionSellResult.failure(RegionSellFailure.NO_PERMISSION);
         }
         if (!redisSellGuard.tryAcquireSellLock(seller.getUniqueId())) {
@@ -126,7 +132,7 @@ public final class RegionSellService {
         if (!definition.sellEnabled) {
             return RegionSellResult.failure(RegionSellFailure.SELL_DISABLED_IN_AUCTION);
         }
-        if (!seller.hasPermission(definition.sellPermission)) {
+        if (!PermissionChecks.has(seller, definition.sellPermission)) {
             return RegionSellResult.failure(RegionSellFailure.SELL_PERMISSION_DENIED);
         }
         if (sellPolicy.isPlayerBlacklisted(seller.getUniqueId(), settings)) {
@@ -193,6 +199,7 @@ public final class RegionSellService {
         runtimeStorage.recordSell(seller.getUniqueId());
         invalidateCacheForAuction.accept(normalizedAuctionId);
         externalNotifier.listingCreated(listing, placeholder);
+        announcementBroadcaster.maybeBroadcastRegionListing(seller, listing, region, definition);
         return RegionSellResult.success(listing);
     }
 

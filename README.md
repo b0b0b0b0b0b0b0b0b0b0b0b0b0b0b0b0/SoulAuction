@@ -47,6 +47,7 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 - **Отображение цены per-auction:** свой знак валюты, до/после числа, MiniMessage и опционально PlaceholderAPI в символе (иконки из ресурспака / ItemsAdder и т.п.).
 - **Автофейки (fake activity):** синтетические лоты от пула ников и предметов, включаются **per-auction**; пополнение по таймеру, ручной `/ah admin fake`, toggle в админ-GUI.
 - **Скины продавцов:** головы в «Избранные продавцы» через SkinsRestorer / Mojang; fallback и общий скин для всех фейков (логотип сервера).
+- **Рынок регионов (WorldGuard):** продажа и покупка WG-регионов за валюту аукциона; отдельные команды, GUI и права — см. раздел ниже.
 
 ## Отображение цен (`auctions/*.yml`)
 
@@ -58,6 +59,26 @@ SoulAuction — аукцион для Paper **1.21+** и **Folia**, когда �
 | `currencySymbolPosition` | `BEFORE` или `AFTER` числа (`$100` или `100 ₽`). |
 | `currencySymbolPlaceholderApi` | `true` — подставить `%...%` из PlaceholderAPI **для игрока, который видит цену** (нужен PlaceholderAPI). |
 | `listingTtlSeconds` | Срок лота в секундах; **0 или меньше — без срока** (не истекает). |
+| `world-guard-trade-regions` | **Ограничение по WG для предметов** в этом аукционе: открыть GUI, sell, buy — только стоя в одном из регионов. Пустой список `[]` = везде. **Не** рынок регионов (`region-market` в `config.yml`). Примеры ниже. |
+
+Примеры `world-guard-trade-regions` (в `auctions/<id>.yml`):
+
+```yaml
+# без ограничения (по умолчанию)
+world-guard-trade-regions: []
+
+# регионы в текущем мире игрока (/rg list — id региона)
+world-guard-trade-regions:
+  - shop
+  - market
+
+# конкретный мир + регион
+world-guard-trade-regions:
+  - world:mall
+  - world_nether:trade_hub
+```
+
+Нужен WorldGuard. Это **не** `/ah regions` — там продаются сами регионы WG как лоты.
 
 ### Срок лотов (TTL) и claim
 
@@ -194,6 +215,74 @@ fake-activity-enabled: true
 - Снять `/ah cancel` может только админ с `soulauction.command.cancel.any` (продавец — synthetic UUID).
 - На прокси с MySQL+Redis фейки синхронизируются как обычные listing records.
 
+## Рынок регионов (WorldGuard)
+
+Продажа **регионов WorldGuard** через ту же экономику, что и предметный аукцион: цена списывается у покупателя, владение региона передаётся через WG. Лоты регионов хранятся в общей БД/файлах листингов.
+
+### Требования
+
+- **WorldGuard** на сервере (softdepend).
+- В `config.yml` → `region-market.enabled: true`, затем **`/ah reload`** (или рестарт).
+- У продавца регион должен быть **его** (owner в WG); у покупателя — деньги на выбранном аукционе.
+
+### Включение (fresh install)
+
+Дефолт в Java — `enabled: false`. После `true` создаётся папка `plugins/SoulAuction/regions/` (служебная).
+
+```yaml
+region-market:
+  enabled: true
+  hide-world-name: true
+  ah-subcommand-aliases: [rg]
+  standalone-commands: [regions]
+  allowed-auction-ids: []
+```
+
+| Поле | Назначение |
+|------|------------|
+| `hide-world-name` | `true` — только id региона (`shop`), без `world:shop`. |
+| `allowed-auction-ids` | Пусто = любой аукцион с sell в `auctions/*.yml`. |
+| `ah-subcommand-aliases` | Короткие подкоманды `/ah`, напр. `rg` → `/ah rg sell …`. |
+| `standalone-commands` | Верхний уровень: `/regions sell …`. **`rg` не добавляй**, если есть WG — их `/rg`; используй `/ah rg` или своё имя. |
+| `max-listings-per-player` | Лимит лотов регионов; `0` = общие лимиты из `limits`. |
+
+`standalone-commands` — только после **рестарта** сервера.
+
+### Команды
+
+| Команда | Действие |
+|---------|----------|
+| `/ah regions` | Рынок регионов (GUI). |
+| `/ah rg` | То же (алиас). |
+| `/regions` | То же (standalone). |
+| `/rg sell …` | То же, если WorldGuard: перехват до WG (`sell`, `cancel`, `my`, `clear`). |
+| `/ah regions sell <region> <auctionId> <price>` | Выставить, напр. `shop global 10000`. |
+| `/ah regions sell` | Ввод в чате; отмена — `cancel`. |
+| `/ah regions my` | GUI ваших лотов («Мои регионы»). |
+| `/ah regions cancel <id>` | Снять лот. |
+| `/ah regions clear` | Сброс незавершённого sell в чате. |
+
+### GUI
+
+Layout из `gui/general.yml` (как предметный AH). Регионы **не** в обычной витрине `/ah`. Клик по лоту — подтверждение покупки → смена owner в WG.
+
+### Права (два слоя)
+
+**Рынок регионов:**
+
+| Право | Назначение |
+|-------|------------|
+| `soulauction.command.regions` | Команды рынка |
+| `soulauction.region.sell` | Продать регион |
+| `soulauction.region.buy` | Купить регион |
+
+**Валюта аукциона** (`auctions/<id>.yml`): `soulauction.buy.global`, `soulauction.sell.global`, …
+
+Покупка региона = **`region.buy`** + **`buy.<auctionId>`**.  
+Продажа = **`region.sell`** + **`sell.<auctionId>`**.
+
+Без LuckPerms — дефолты `true` в `plugin.yml`. С LP — выдавай ноды в группах сам.
+
 ## Скины продавцов (`config.yml` → `seller-skins`)
 
 Текстуры **голов продавцов** в GUI «Избранные продавцы» (hub → звезда). Лоты в витрине показывают сам предмет, не голову.
@@ -276,6 +365,7 @@ Lookup при открытии GUI — async; голова обновляетс�
 - `/ah page <номер> [auctionId]` — открыть нужную страницу аукциона.
 - `/ah claim [all]` — забрать просроченные/снятые предметы.
 - `/ah cancel <id>` — снять свой лот и вернуть предмет.
+- **Рынок регионов (WorldGuard):** `/ah regions`, `/ah rg`, `/regions` — см. раздел «Рынок регионов».
 - Алиасы команды настраиваются в `config.yml` через `commandAliases` (например `ax`, `auction`).
 
 ### Админы
@@ -307,7 +397,15 @@ Lookup при открытии GUI — async; голова обновляетс�
 - `soulauction.command.claim` — использовать `/ah claim`.
 - `soulauction.command.cancel.any` — снимать чужие лоты командой `/ah cancel`.
 
-### Аукцион-специфичные (задаются в `config.yml`)
+### Рынок регионов (WorldGuard)
+
+- `soulauction.command.regions` — `/ah regions`, `/regions` и алиасы.
+- `soulauction.region.sell` — выставить регион на продажу.
+- `soulauction.region.buy` — купить регион на рынке.
+
+Плюс права аукциона-валюты (`soulauction.buy.global`, `soulauction.sell.global`, …) — см. раздел «Рынок регионов».
+
+### Аукцион-специфичные (задаются в `auctions/*.yml`)
 
 Для каждого аукциона есть отдельные узлы:
 - `openPermission` — право открыть этот аукцион.
@@ -342,6 +440,38 @@ Lookup при открытии GUI — async; голова обновляетс�
 - Per-auction: `minPrice`, `maxPrice` (0 = взять глобальные).
 - `soulauction.price.min.<цена>` — минимальная цена лота для игрока.
 - `soulauction.price.max.<цена>` — максимальная цена лота для игрока.
+
+### Объявления на весь сервер (чат)
+
+В `config.yml` → `announcements` — **четыре отдельных переключателя** (тексты в `lang/messages_*.yml`):
+
+| Блок | Поле | Событие | Lang-ключ |
+|------|------|---------|-----------|
+| `items` | `broadcast-purchase` | игрок **купил** предмет | `announce-item-purchase` |
+| `items` | `broadcast-listing` | игрок **выставил** предмет | `announce-item-listing` |
+| `regions` | `broadcast-purchase` | игрок **купил** регион WG | `region-announce-purchase` |
+| `regions` | `broadcast-listing` | игрок **выставил** регион | `region-announce-listing` |
+
+Фильтр по цене: `min-purchase-price` / `min-listing-price` в каждом блоке (`0` = все сделки).  
+По умолчанию: покупки включены от 5000, выставление — выключено.
+
+Пример:
+
+```yaml
+announcements:
+  items:
+    broadcast-purchase: true
+    broadcast-listing: true
+    min-purchase-price: 5000
+    min-listing-price: 0
+  regions:
+    broadcast-purchase: true
+    broadcast-listing: false
+    min-purchase-price: 10000
+    min-listing-price: 0
+```
+
+Старые ключи `announcements.enabled` / `min-price` заменены на `items.broadcast-purchase` / `items.min-purchase-price`.
 
 ### Discord и Telegram
 

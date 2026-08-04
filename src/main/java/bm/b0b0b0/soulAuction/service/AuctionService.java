@@ -39,6 +39,7 @@ import bm.b0b0b0.soulAuction.service.listing.AuctionPurchaseService;
 import bm.b0b0b0.soulAuction.service.listing.ListingLockRunner;
 import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
+import bm.b0b0b0.soulAuction.service.policy.AuctionTradeRegionPolicy;
 import bm.b0b0b0.soulAuction.service.region.RegionListingHelper;
 import bm.b0b0b0.soulAuction.util.ListingSearchResolveCache;
 import bm.b0b0b0.soulAuction.util.ItemDisplayNames;
@@ -86,11 +87,13 @@ public final class AuctionService {
     private final AuctionListingCache listingCache;
     private final AuctionListingCreator listingCreator;
     private final AuctionPurchaseService purchaseService;
+    private final AuctionTradeRegionPolicy tradeRegionPolicy;
     private final AuctionBrowseService browseService;
     private final ListingLockRunner listingLocks;
     private final ListingSaleClaimer listingSaleClaimer;
     private final AuctionExternalNotifier externalNotifier;
     private final MessageService messageService;
+    private final AuctionAnnouncementBroadcaster announcementBroadcaster;
     private volatile SellerSkinBridge sellerSkinBridge;
     private volatile FakeActivityService fakeActivityService;
     private volatile SyntheticListingCounts syntheticListingCounts;
@@ -139,13 +142,16 @@ public final class AuctionService {
         this.listingCache = listingCache;
         this.externalNotifier = externalNotifier;
         this.messageService = messageService;
+        this.announcementBroadcaster = new AuctionAnnouncementBroadcaster(configSupplier, messageService, economy);
         this.listingLocks = new ListingLockRunner();
         AuctionSellPolicy sellPolicy = new AuctionSellPolicy(runtimeStorage);
+        AuctionTradeRegionPolicy tradeRegionPolicy = new AuctionTradeRegionPolicy();
         CustomItemRuleEngine customItemRuleEngine = new CustomItemRuleEngine();
         java.util.function.Consumer<String> invalidate = this::invalidateListingCache;
         java.util.function.BiConsumer<String, AuctionListing> listingSync = this::publishListingNetworkChange;
         ListingSaleClaimer listingSaleClaimer = new ListingSaleClaimer(repository, redisSellGuard);
         this.listingSaleClaimer = listingSaleClaimer;
+        this.tradeRegionPolicy = tradeRegionPolicy;
         this.listingCreator = new AuctionListingCreator(
                 repository,
                 configSupplier,
@@ -155,6 +161,7 @@ public final class AuctionService {
                 redisSellGuard,
                 runtimeStorage,
                 sellPolicy,
+                tradeRegionPolicy,
                 externalNotifier,
                 customItemRuleEngine,
                 invalidate,
@@ -169,9 +176,10 @@ public final class AuctionService {
                 externalNotifier,
                 listingLocks,
                 listingSaleClaimer,
+                tradeRegionPolicy,
                 invalidate,
                 listingSync,
-                messageService
+                announcementBroadcaster
         );
         this.browseService = new AuctionBrowseService(
                 repository,
@@ -306,6 +314,10 @@ public final class AuctionService {
             ListingSearchResolveCache.clear();
         }
         redisSellGuard.publishCacheInvalidate(auctionId);
+    }
+
+    public AuctionAnnouncementBroadcaster announcementBroadcaster() {
+        return announcementBroadcaster;
     }
 
     public void publishListingChange(String action, AuctionListing listing) {
@@ -1369,7 +1381,47 @@ public final class AuctionService {
 
     public boolean canOpenAuction(Player player, String auctionId) {
         AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
-        return definition != null && hasPermission(player, definition.openPermission);
+        if (definition == null) {
+            return false;
+        }
+        if (!hasPermission(player, definition.openPermission)) {
+            return false;
+        }
+        return tradeRegionPolicy.allowsTrade(player, definition);
+    }
+
+    public boolean guardAuctionAccess(Player player, String auctionId) {
+        if (!auctionExists(auctionId)) {
+            messageService.send(player, "error-auction-not-found");
+            return false;
+        }
+        AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
+        if (definition == null) {
+            messageService.send(player, "error-auction-not-found");
+            return false;
+        }
+        if (!hasPermission(player, definition.openPermission)) {
+            messageService.send(player, "error-open-auction-denied");
+            return false;
+        }
+        if (!tradeRegionPolicy.allowsTrade(player, definition)) {
+            messageService.send(
+                    player,
+                    "error-trade-region-denied",
+                    tradeRegionPlaceholders(definition)
+            );
+            return false;
+        }
+        return true;
+    }
+
+    public Map<String, String> tradeRegionPlaceholders(String auctionId) {
+        AuctionDefinitionSettings definition = findAuction(auctionId, configSupplier.get());
+        return tradeRegionPlaceholders(definition);
+    }
+
+    public Map<String, String> tradeRegionPlaceholders(AuctionDefinitionSettings definition) {
+        return Map.of("regions", tradeRegionPolicy.formattedAllowedRegions(definition));
     }
 
     public String auctionDisplayName(String auctionId) {
@@ -1545,6 +1597,8 @@ public final class AuctionService {
         } else {
             messageService.send(player, "success-listed-expiry-unlimited");
         }
+        AuctionDefinitionSettings definition = findAuction(listing.auctionId(), configSupplier.get());
+        announcementBroadcaster.maybeBroadcastItemListing(player, listing, definition);
     }
 
     public List<PendingExpiredListingNotification> takePendingExpiredListingNotifications(UUID playerId) {

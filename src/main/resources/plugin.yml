@@ -37,6 +37,12 @@ permissions:
     default: true
   soulauction.region.buy:
     default: true
+  soulauction.open.global:
+    default: true
+  soulauction.buy.global:
+    default: true
+  soulauction.sell.global:
+    default: true
   soulauction.priority.1:
     default: false
     description: Higher listing sort priority (use soulauction.priority.N)

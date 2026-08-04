@@ -4,16 +4,17 @@ import bm.b0b0b0.soulAuction.api.event.AuctionListingSoldEvent;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.config.settings.AuctionDefinitionSettings;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
-import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
 import bm.b0b0b0.soulAuction.model.result.PurchaseFailure;
 import bm.b0b0b0.soulAuction.model.result.PurchaseResult;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
+import bm.b0b0b0.soulAuction.service.AuctionAnnouncementBroadcaster;
 import bm.b0b0b0.soulAuction.service.AuctionExternalNotifier;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
+import bm.b0b0b0.soulAuction.service.policy.AuctionTradeRegionPolicy;
 import bm.b0b0b0.soulAuction.service.region.RegionListingHelper;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import java.util.Map;
@@ -33,9 +34,10 @@ public final class AuctionPurchaseService {
     private final AuctionExternalNotifier externalNotifier;
     private final ListingLockRunner listingLocks;
     private final ListingSaleClaimer saleClaimer;
+    private final AuctionTradeRegionPolicy tradeRegionPolicy;
     private final java.util.function.Consumer<String> invalidateCacheForAuction;
     private final java.util.function.BiConsumer<String, AuctionListing> publishListingChange;
-    private final MessageService messageService;
+    private final AuctionAnnouncementBroadcaster announcementBroadcaster;
 
     public AuctionPurchaseService(
             AuctionRepository repository,
@@ -46,9 +48,10 @@ public final class AuctionPurchaseService {
             AuctionExternalNotifier externalNotifier,
             ListingLockRunner listingLocks,
             ListingSaleClaimer saleClaimer,
+            AuctionTradeRegionPolicy tradeRegionPolicy,
             java.util.function.Consumer<String> invalidateCacheForAuction,
             java.util.function.BiConsumer<String, AuctionListing> publishListingChange,
-            MessageService messageService
+            AuctionAnnouncementBroadcaster announcementBroadcaster
     ) {
         this.repository = repository;
         this.configSupplier = configSupplier;
@@ -58,9 +61,10 @@ public final class AuctionPurchaseService {
         this.externalNotifier = externalNotifier;
         this.listingLocks = listingLocks;
         this.saleClaimer = saleClaimer;
+        this.tradeRegionPolicy = tradeRegionPolicy;
         this.invalidateCacheForAuction = invalidateCacheForAuction;
         this.publishListingChange = publishListingChange;
-        this.messageService = messageService;
+        this.announcementBroadcaster = announcementBroadcaster;
     }
 
     public PurchaseResult purchase(Player buyer, long listingId, ListingDefinitionLookup definitions) {
@@ -91,6 +95,10 @@ public final class AuctionPurchaseService {
             if (!definitions.hasPermission(buyer, definition.buyPermission)) {
                 saleClaimer.rollback(listing);
                 return PurchaseResult.failure(PurchaseFailure.BUY_PERMISSION_DENIED);
+            }
+            if (!tradeRegionPolicy.allowsTrade(buyer, definition)) {
+                saleClaimer.rollback(listing);
+                return PurchaseResult.failure(PurchaseFailure.TRADE_REGION_DENIED);
             }
             if (!economy.isAvailable(listing.economyType(), definition)) {
                 saleClaimer.rollback(listing);
@@ -168,29 +176,13 @@ public final class AuctionPurchaseService {
                 publishListingChange.accept("REMOVE", listing);
             }
             Bukkit.getPluginManager().callEvent(new AuctionListingSoldEvent(listing, buyer, payout, saleTax, buyTax));
-            maybeAnnounceSale(listing, buyer.getName(), definition);
+            announcementBroadcaster.maybeBroadcastItemPurchase(listing, buyer.getName(), definition);
             externalNotifier.sold(listing, buyer.getName(), buyer.getUniqueId(), economy.format(listing.price(), listing.economyType(), definition));
             return PurchaseResult.success(listing, sellerOnline, payout, saleTax, buyTax, charge);
         } catch (RuntimeException exception) {
             saleClaimer.rollback(listing);
             throw exception;
         }
-    }
-
-    private void maybeAnnounceSale(AuctionListing listing, String buyerName, AuctionDefinitionSettings definition) {
-        AuctionSettings.AnnouncementSettings announcements = configSupplier.get().auctionSettings().announcements;
-        if (!announcements.enabled || listing.price() < announcements.minPrice) {
-            return;
-        }
-        messageService.broadcast(
-                "announce-sale",
-                Map.of(
-                        "buyer", buyerName,
-                        "seller", listing.sellerName(),
-                        "price", economy.format(listing.price(), listing.economyType(), definition),
-                        "auction", definition.displayName
-                )
-        );
     }
 
     public interface ListingDefinitionLookup {

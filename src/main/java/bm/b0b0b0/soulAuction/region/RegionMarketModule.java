@@ -3,6 +3,7 @@ package bm.b0b0b0.soulAuction.region;
 import bm.b0b0b0.soulAuction.command.RegionMarketCommandHandler;
 import bm.b0b0b0.soulAuction.gui.region.RegionGuiListener;
 import bm.b0b0b0.soulAuction.integration.worldguard.WorldGuardBridge;
+import bm.b0b0b0.soulAuction.listener.RegionMarketCommandInterceptListener;
 import bm.b0b0b0.soulAuction.listener.RegionSellChatListener;
 import bm.b0b0b0.soulAuction.service.region.RegionBrowseService;
 import bm.b0b0b0.soulAuction.service.region.RegionDisplayItemFactory;
@@ -17,17 +18,20 @@ public final class RegionMarketModule {
     private final RegionMarketCommandHandler commandHandler;
     private final RegionGuiListener guiListener;
     private final RegionSellChatListener chatListener;
+    private final RegionMarketCommandInterceptListener commandInterceptListener;
 
     private RegionMarketModule(
             RegionMarketService marketService,
             RegionMarketCommandHandler commandHandler,
             RegionGuiListener guiListener,
-            RegionSellChatListener chatListener
+            RegionSellChatListener chatListener,
+            RegionMarketCommandInterceptListener commandInterceptListener
     ) {
         this.marketService = marketService;
         this.commandHandler = commandHandler;
         this.guiListener = guiListener;
         this.chatListener = chatListener;
+        this.commandInterceptListener = commandInterceptListener;
     }
 
     public static RegionMarketModule create(RegionMarketDependencies dependencies) {
@@ -56,7 +60,8 @@ public final class RegionMarketModule {
                 worldGuardBridge,
                 browseService,
                 displayItemFactory,
-                auctionService::invalidateListingCache
+                auctionService::invalidateListingCache,
+                auctionService.announcementBroadcaster()
         );
         RegionPurchaseService purchaseService = new RegionPurchaseService(
                 dependencies.repository(),
@@ -70,7 +75,7 @@ public final class RegionMarketModule {
                 worldGuardBridge,
                 auctionService::invalidateListingCache,
                 auctionService::publishListingChange,
-                dependencies.messageService()
+                auctionService.announcementBroadcaster()
         );
         RegionMarketService marketService = new RegionMarketService(
                 dependencies.configSupplier(),
@@ -100,7 +105,10 @@ public final class RegionMarketModule {
                 marketService,
                 dependencies.messageService()
         );
-        return new RegionMarketModule(marketService, commandHandler, guiListener, chatListener);
+        RegionMarketCommandInterceptListener commandInterceptListener = new RegionMarketCommandInterceptListener(
+                () -> commandHandler
+        );
+        return new RegionMarketModule(marketService, commandHandler, guiListener, chatListener, commandInterceptListener);
     }
 
     public RegionMarketService marketService() {
@@ -117,5 +125,9 @@ public final class RegionMarketModule {
 
     public RegionSellChatListener chatListener() {
         return chatListener;
+    }
+
+    public RegionMarketCommandInterceptListener commandInterceptListener() {
+        return commandInterceptListener;
     }
 }

@@ -8,6 +8,8 @@ import bm.b0b0b0.soulAuction.model.region.RegionRef;
 import bm.b0b0b0.soulAuction.model.result.CancelFailure;
 import bm.b0b0b0.soulAuction.model.result.CancelResult;
 import bm.b0b0b0.soulAuction.model.result.RegionSellResult;
+import bm.b0b0b0.soulAuction.region.RegionMarketPermissions;
+import bm.b0b0b0.soulAuction.service.region.RegionMarketPresentation;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketService;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.List;
@@ -44,7 +46,7 @@ public final class RegionMarketCommandHandler {
             return true;
         }
         AuctionSettings.RegionMarketSettings settings = regionMarketService.settings();
-        if (settings == null || !player.hasPermission(settings.commandPermission)) {
+        if (settings == null || !player.hasPermission(RegionMarketPermissions.COMMAND)) {
             messageService.send(player, "error-no-permission");
             return true;
         }
@@ -69,7 +71,7 @@ public final class RegionMarketCommandHandler {
             return List.of();
         }
         AuctionSettings.RegionMarketSettings settings = regionMarketService.settings();
-        if (settings == null || !player.hasPermission(settings.commandPermission)) {
+        if (settings == null || !player.hasPermission(RegionMarketPermissions.COMMAND)) {
             return List.of();
         }
         if (args.length <= 1) {
@@ -95,15 +97,14 @@ public final class RegionMarketCommandHandler {
     }
 
     private boolean handleSell(Player player, String[] args) {
-        AuctionSettings.RegionMarketSettings settings = regionMarketService.settings();
-        if (!player.hasPermission(settings.sellPermission)) {
+        if (!player.hasPermission(RegionMarketPermissions.SELL)) {
             messageService.send(player, "error-no-permission");
             return true;
         }
         if (args.length >= 4) {
-            RegionRef region = RegionRef.parse(args[1], player.getWorld().getName());
+            RegionRef region = regionMarketService.resolveSellerRegion(player, args[1]);
             if (region == null) {
-                messageService.send(player, "region-sell-chat-invalid-region");
+                messageService.send(player, RegionMarketPresentation.sellChatInvalidRegionKey(regionMarketService.settings()));
                 return true;
             }
             int price;
@@ -131,7 +132,7 @@ public final class RegionMarketCommandHandler {
             return true;
         }
         regionMarketService.sessionService().start(player.getUniqueId());
-        messageService.send(player, "region-sell-chat-region");
+        messageService.send(player, RegionMarketPresentation.sellChatRegionKey(regionMarketService.settings()));
         return true;
     }
 

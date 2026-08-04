@@ -108,6 +108,9 @@ public final class AuctionPriceFilterMenu implements InventoryHolder {
         if (player == null) {
             return;
         }
+        if (!auctionService.guardAuctionAccess(player, auctionId)) {
+            return;
+        }
         AuctionBrowserMenu menu = new AuctionBrowserMenu(
                 viewerId,
                 auctionId,

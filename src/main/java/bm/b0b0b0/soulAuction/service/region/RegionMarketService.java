@@ -123,8 +123,12 @@ public final class RegionMarketService {
         return auctionService.cancelRegionListing(seller, listingId, canCancelAny);
     }
 
+    public RegionRef resolveSellerRegion(Player player, String input) {
+        return RegionRef.resolveForSeller(input, player, worldGuardBridge);
+    }
+
     public List<String> tabCompleteOwnedRegions(Player player, String partial) {
-        return worldGuardBridge.tabCompleteOwnedRegions(player, partial);
+        return worldGuardBridge.tabCompleteOwnedRegions(player, partial, RegionMarketPresentation.hideWorldName(settings()));
     }
 
     public List<String> tabCompleteSellableAuctions(Player player, String partial) {

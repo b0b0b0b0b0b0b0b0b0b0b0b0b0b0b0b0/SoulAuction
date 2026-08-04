@@ -19,6 +19,7 @@ import bm.b0b0b0.soulAuction.service.RedisSellGuard;
 import bm.b0b0b0.soulAuction.service.customitem.CustomItemRuleEngine;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
 import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
+import bm.b0b0b0.soulAuction.service.policy.AuctionTradeRegionPolicy;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
 import bm.b0b0b0.soulAuction.util.ListingSearchText;
 import bm.b0b0b0.soulAuction.util.SyntheticSellerIds;
@@ -39,6 +40,7 @@ public final class AuctionListingCreator {
     private final RedisSellGuard redisSellGuard;
     private final AuctionRuntimeStorage runtimeStorage;
     private final AuctionSellPolicy sellPolicy;
+    private final AuctionTradeRegionPolicy tradeRegionPolicy;
     private final AuctionExternalNotifier externalNotifier;
     private final CustomItemRuleEngine customItemRuleEngine;
     private final java.util.function.Consumer<String> invalidateCacheForAuction;
@@ -53,6 +55,7 @@ public final class AuctionListingCreator {
             RedisSellGuard redisSellGuard,
             AuctionRuntimeStorage runtimeStorage,
             AuctionSellPolicy sellPolicy,
+            AuctionTradeRegionPolicy tradeRegionPolicy,
             AuctionExternalNotifier externalNotifier,
             CustomItemRuleEngine customItemRuleEngine,
             java.util.function.Consumer<String> invalidateCacheForAuction,
@@ -66,6 +69,7 @@ public final class AuctionListingCreator {
         this.redisSellGuard = redisSellGuard;
         this.runtimeStorage = runtimeStorage;
         this.sellPolicy = sellPolicy;
+        this.tradeRegionPolicy = tradeRegionPolicy;
         this.externalNotifier = externalNotifier;
         this.customItemRuleEngine = customItemRuleEngine;
         this.invalidateCacheForAuction = invalidateCacheForAuction;
@@ -110,6 +114,9 @@ public final class AuctionListingCreator {
         }
         if (sellPolicy.isWorldSellBlocked(seller, settings)) {
             return SellResult.failure(SellFailure.WORLD_BLOCKED);
+        }
+        if (!tradeRegionPolicy.allowsTrade(seller, definition)) {
+            return SellResult.failure(SellFailure.TRADE_REGION_DENIED);
         }
         if (sellPolicy.isSellCooldownActive(seller.getUniqueId(), settings)) {
             return SellResult.failure(SellFailure.COOLDOWN);

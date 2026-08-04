@@ -1,7 +1,12 @@
 package bm.b0b0b0.soulAuction.model.region;
 
+import bm.b0b0b0.soulAuction.integration.worldguard.WorldGuardBridge;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import org.bukkit.entity.Player;
 
 public record RegionRef(String worldName, String regionId) {
 
@@ -29,6 +34,36 @@ public record RegionRef(String worldName, String regionId) {
             return null;
         }
         return new RegionRef(defaultWorld, trimmed);
+    }
+
+    public static RegionRef resolveForSeller(String input, Player player, WorldGuardBridge bridge) {
+        if (input == null || input.isBlank() || player == null || bridge == null) {
+            return null;
+        }
+        String trimmed = input.trim();
+        if (trimmed.indexOf(':') > 0) {
+            return parse(trimmed, null);
+        }
+        List<RegionRef> owned = bridge.listOwnedRegions(player.getUniqueId());
+        List<RegionRef> matches = new ArrayList<>();
+        for (RegionRef ref : owned) {
+            if (ref.regionId().equalsIgnoreCase(trimmed)) {
+                matches.add(ref);
+            }
+        }
+        if (matches.size() == 1) {
+            return matches.get(0);
+        }
+        if (matches.size() > 1) {
+            String currentWorld = player.getWorld().getName();
+            for (RegionRef ref : matches) {
+                if (ref.worldName().equalsIgnoreCase(currentWorld)) {
+                    return ref;
+                }
+            }
+            return null;
+        }
+        return parse(trimmed, player.getWorld().getName());
     }
 
     public boolean matchesIgnoreCase(RegionRef other) {

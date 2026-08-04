@@ -1,6 +1,9 @@
 package bm.b0b0b0.soulAuction.command;
 
+import bm.b0b0b0.soulAuction.config.PluginConfig;
+import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
 import bm.b0b0b0.soulAuction.gui.admin.AdminGuiAccess;
+import bm.b0b0b0.soulAuction.region.RegionMarketPermissions;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,15 +28,18 @@ public final class AuctionTabCompleter implements TabCompleter {
     private final AuctionService auctionService;
     private final AuctionAdminCommand adminCommand;
     private final Supplier<RegionMarketCommandHandler> regionMarketCommandHandler;
+    private final Supplier<PluginConfig> configSupplier;
 
     public AuctionTabCompleter(
             AuctionService auctionService,
             AuctionAdminCommand adminCommand,
-            Supplier<RegionMarketCommandHandler> regionMarketCommandHandler
+            Supplier<RegionMarketCommandHandler> regionMarketCommandHandler,
+            Supplier<PluginConfig> configSupplier
     ) {
         this.auctionService = auctionService;
         this.adminCommand = adminCommand;
         this.regionMarketCommandHandler = regionMarketCommandHandler;
+        this.configSupplier = configSupplier;
     }
 
     private RegionMarketCommandHandler activeRegionHandler() {
@@ -72,7 +78,7 @@ public final class AuctionTabCompleter implements TabCompleter {
             }
             return adminCommand.tabComplete(sender, copyFrom(args, 1), partial);
         }
-        if (root.equals("regions")) {
+        if (RegionMarketRouting.isAhRegionsSubcommand(root, regionMarketSettings())) {
             RegionMarketCommandHandler handler = activeRegionHandler();
             if (handler == null) {
                 return List.of();
@@ -202,8 +208,8 @@ public final class AuctionTabCompleter implements TabCompleter {
                 if (player.hasPermission(PERMISSION_VIEW)) {
                     suggestions.add("view");
                 }
-                if (activeRegionHandler() != null && player.hasPermission("soulauction.command.regions")) {
-                    suggestions.add("regions");
+                if (activeRegionHandler() != null && player.hasPermission(RegionMarketPermissions.COMMAND)) {
+                    suggestions.addAll(RegionMarketRouting.ahSubcommandSuggestions(regionMarketSettings()));
                 }
             }
         } else {
@@ -231,6 +237,14 @@ public final class AuctionTabCompleter implements TabCompleter {
         return auctionService.sortedAuctionDefinitions().stream()
                 .map(definition -> definition.id)
                 .toList();
+    }
+
+    private AuctionSettings.RegionMarketSettings regionMarketSettings() {
+        PluginConfig config = configSupplier.get();
+        if (config == null) {
+            return new AuctionSettings().regionMarket;
+        }
+        return config.auctionSettings().regionMarket;
     }
 
     private static String[] copyFrom(String[] args, int from) {

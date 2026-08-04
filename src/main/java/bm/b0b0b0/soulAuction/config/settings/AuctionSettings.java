@@ -63,7 +63,11 @@ public final class AuctionSettings extends YamlSerializable {
     public SecuritySettings security = new SecuritySettings();
 
     @NewLine
-    @Comment({@CommentValue("In-game broadcast on large sales")})
+    @Comment({
+            @CommentValue("Server-wide chat broadcasts (texts in lang: announce-item-*, region-announce-*)."),
+            @CommentValue("Each event has its own toggle. min-*-price: 0 = announce every deal."),
+            @CommentValue("Old keys announcements.enabled / min-price → use items.broadcast-purchase / min-purchase-price."),
+    })
     public AnnouncementSettings announcements = new AnnouncementSettings();
 
     @NewLine
@@ -101,6 +105,10 @@ public final class AuctionSettings extends YamlSerializable {
             @CommentValue("WorldGuard region marketplace (requires WorldGuard plugin)."),
             @CommentValue("Default off — set region-market.enabled: true and /ah reload to activate."),
             @CommentValue("While off: no listeners, no commands, no runtime cost."),
+            @CommentValue(""),
+            @CommentValue("NOT the same as world-guard-trade-regions in auctions/*.yml:"),
+            @CommentValue("  region-market here = sell/buy WorldGuard regions as auction lots (/ah regions)."),
+            @CommentValue("  world-guard-trade-regions = limit where players trade ITEMS in a given auction."),
     })
     public RegionMarketSettings regionMarket = new RegionMarketSettings();
 
@@ -445,10 +453,34 @@ public final class AuctionSettings extends YamlSerializable {
 
     public static final class AnnouncementSettings {
 
-        @Comment({@CommentValue("Broadcast to server when a listing is sold")})
-        public boolean enabled = true;
-        @Comment({@CommentValue("Minimum sale price to announce, 0 = all sales")})
-        public int minPrice = 5000;
+        @Comment({@CommentValue("Item auctions (/ah): purchase and listing broadcasts.")})
+        public ItemAnnouncementSettings items = new ItemAnnouncementSettings();
+        @Comment({@CommentValue("Region market (/ah regions): purchase and listing broadcasts.")})
+        public RegionAnnouncementSettings regions = new RegionAnnouncementSettings();
+    }
+
+    public static final class ItemAnnouncementSettings {
+
+        @Comment({@CommentValue("Broadcast when a player buys an item listing")})
+        public boolean broadcastPurchase = true;
+        @Comment({@CommentValue("Broadcast when a player lists an item on the auction")})
+        public boolean broadcastListing = false;
+        @Comment({@CommentValue("Minimum purchase price to broadcast, 0 = all purchases")})
+        public int minPurchasePrice = 5000;
+        @Comment({@CommentValue("Minimum listing price to broadcast, 0 = all listings")})
+        public int minListingPrice = 0;
+    }
+
+    public static final class RegionAnnouncementSettings {
+
+        @Comment({@CommentValue("Broadcast when a player buys a WorldGuard region on the market")})
+        public boolean broadcastPurchase = true;
+        @Comment({@CommentValue("Broadcast when a player lists a WorldGuard region for sale")})
+        public boolean broadcastListing = false;
+        @Comment({@CommentValue("Minimum purchase price to broadcast, 0 = all purchases")})
+        public int minPurchasePrice = 5000;
+        @Comment({@CommentValue("Minimum listing price to broadcast, 0 = all listings")})
+        public int minListingPrice = 0;
     }
 
     public static final class NotificationsSettings {
@@ -519,15 +551,6 @@ public final class AuctionSettings extends YamlSerializable {
         })
         public String directory = "regions";
 
-        @Comment({@CommentValue("Permission for /ah regions")})
-        public String commandPermission = "soulauction.command.regions";
-
-        @Comment({@CommentValue("Permission to list a region for sale")})
-        public String sellPermission = "soulauction.region.sell";
-
-        @Comment({@CommentValue("Permission to buy a listed region")})
-        public String buyPermission = "soulauction.region.buy";
-
         @Comment({
                 @CommentValue("Auction ids allowed for region sales (economy per auction)."),
                 @CommentValue("Empty = every auction with sell-enabled in auctions/*.yml."),
@@ -542,5 +565,25 @@ public final class AuctionSettings extends YamlSerializable {
 
         @Comment({@CommentValue("Max active region listings per player, 0 = use global listing limits")})
         public int maxListingsPerPlayer = 0;
+
+        @Comment({
+                @CommentValue("Hide Bukkit world name in region market UI and sell input."),
+                @CommentValue("Players sell with region id only (/ah regions sell shop global 5000)."),
+                @CommentValue("world:region still works when false or for duplicate ids across worlds."),
+        })
+        public boolean hideWorldName = true;
+
+        @Comment({
+                @CommentValue("Extra /ah subcommands for region market (besides regions)."),
+                @CommentValue("Example: rg → /ah rg sell … (same as /ah regions …)."),
+        })
+        public List<String> ahSubcommandAliases = List.of("rg");
+
+        @Comment({
+                @CommentValue("Top-level commands for region market, e.g. /regions sell …"),
+                @CommentValue("Do not add rg here when WorldGuard is installed — it owns /rg."),
+                @CommentValue("Use /ah rg instead, or pick a custom name (soulregions, ahregions, …)."),
+        })
+        public List<String> standaloneCommands = List.of("regions");
     }
 }

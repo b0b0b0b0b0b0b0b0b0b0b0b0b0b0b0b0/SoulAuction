@@ -554,7 +554,7 @@ public final class AuctionGuiListener implements Listener {
         }
         PurchaseResult result = auctionService.purchase(player, menu.listingId());
         if (!result.success()) {
-            sendPurchaseError(player, result.failure());
+            sendPurchaseError(player, result.failure(), menu.auctionId());
             openBrowser(player, menu.auctionId());
             return;
         }
@@ -876,6 +876,9 @@ public final class AuctionGuiListener implements Listener {
     }
 
     private void openBrowser(Player player, String auctionId) {
+        if (!auctionService.guardAuctionAccess(player, auctionId)) {
+            return;
+        }
         var prefs = auctionService.consumeBrowsePreferences(player.getUniqueId());
         int page = prefs.map(AuctionService.BrowsePreferences::page).orElse(0);
         String search = prefs.map(AuctionService.BrowsePreferences::searchQuery).orElse(null);
@@ -1037,7 +1040,7 @@ public final class AuctionGuiListener implements Listener {
         );
         if (!result.success()) {
             returnHeldStack(player, stack);
-            sendSellError(player, result.failure());
+            sendSellError(player, result.failure(), menu.auctionId());
             openSellSetup(player, menu.auctionId(), stack, menu.price(), menu.sellAmount());
             return;
         }
@@ -1051,11 +1054,19 @@ public final class AuctionGuiListener implements Listener {
         openBrowser(player, menu.auctionId());
     }
 
-    private void sendPurchaseError(Player player, PurchaseFailure failure) {
+    private void sendPurchaseError(Player player, PurchaseFailure failure, String auctionId) {
+        if (failure == PurchaseFailure.TRADE_REGION_DENIED) {
+            messageService.send(player, failure.messageKey(), auctionService.tradeRegionPlaceholders(auctionId));
+            return;
+        }
         messageService.send(player, failure.messageKey());
     }
 
-    private void sendSellError(Player player, SellFailure failure) {
+    private void sendSellError(Player player, SellFailure failure, String auctionId) {
+        if (failure == SellFailure.TRADE_REGION_DENIED) {
+            messageService.send(player, failure.messageKey(), auctionService.tradeRegionPlaceholders(auctionId));
+            return;
+        }
         messageService.send(player, failure.messageKey());
     }
 }

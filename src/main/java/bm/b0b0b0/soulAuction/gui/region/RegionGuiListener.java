@@ -3,10 +3,15 @@ package bm.b0b0b0.soulAuction.gui.region;
 import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.model.AuctionSort;
 import bm.b0b0b0.soulAuction.model.result.RegionPurchaseResult;
+import bm.b0b0b0.soulAuction.service.region.RegionMarketPresentation;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketService;
+import bm.b0b0b0.soulAuction.region.RegionMarketPermissions;
+import bm.b0b0b0.soulAuction.util.PermissionChecks;
 import bm.b0b0b0.soulAuction.util.PluginSchedulers;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Supplier;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -74,13 +79,13 @@ public final class RegionGuiListener implements Listener {
         int slot = event.getSlot();
         if (menu.isSellButton(slot)) {
             AuctionSettings.RegionMarketSettings settings = regionMarketService.settings();
-            if (settings == null || !player.hasPermission(settings.sellPermission)) {
-                messageService.send(player, "error-no-permission");
+            if (settings == null || !PermissionChecks.has(player, RegionMarketPermissions.SELL)) {
+                messageService.send(player, "region-error-sell-permission");
                 return;
             }
             regionMarketService.sessionService().start(player.getUniqueId());
             player.closeInventory();
-            messageService.send(player, "region-sell-chat-region");
+            messageService.send(player, RegionMarketPresentation.sellChatRegionKey(regionMarketService.settings()));
             return;
         }
         menu.click(slot);
@@ -89,13 +94,16 @@ public final class RegionGuiListener implements Listener {
             return;
         }
         AuctionSettings.RegionMarketSettings settings = regionMarketService.settings();
-        if (settings == null || !player.hasPermission(settings.buyPermission)) {
-            messageService.send(player, "error-no-permission");
+        if (settings == null || !PermissionChecks.has(player, RegionMarketPermissions.BUY)) {
+            messageService.send(player, "region-error-buy-permission");
             return;
         }
         RegionPurchaseConfirmMenu confirmMenu = new RegionPurchaseConfirmMenu(
                 player.getUniqueId(),
                 listingId,
+                menu.sellerFilter(),
+                menu.page(),
+                menu.sort(),
                 regionMarketService,
                 messageService
         );
@@ -114,7 +122,7 @@ public final class RegionGuiListener implements Listener {
         event.setCancelled(true);
         int slot = event.getSlot();
         if (menu.isNo(slot)) {
-            openMarket(player);
+            openMarket(player, menu.returnSellerFilter(), menu.returnPage(), menu.returnSort());
             return;
         }
         if (!menu.isYes(slot)) {
@@ -123,29 +131,32 @@ public final class RegionGuiListener implements Listener {
         RegionPurchaseResult result = regionMarketService.purchase(player, menu.listingId());
         if (!result.success()) {
             messageService.send(player, result.failure().messageKey());
-            openMarket(player);
+            openMarket(player, menu.returnSellerFilter(), menu.returnPage(), menu.returnSort());
             return;
         }
         messageService.send(
                 player,
-                "region-success-purchase",
+                RegionMarketPresentation.successPurchaseKey(regionMarketService.settings()),
                 Map.of(
                         "region", result.listing().metadata().regionId,
                         "world", result.listing().metadata().regionWorld,
                         "price", regionMarketService.formatPrice(result.buyerCharge(), result.listing().auctionId(), player.getUniqueId())
                 )
         );
-        openMarket(player);
+        openMarket(player, menu.returnSellerFilter(), menu.returnPage(), menu.returnSort());
     }
 
-    private void openMarket(Player player) {
+    private void openMarket(Player player, UUID sellerFilter, int page, AuctionSort sort) {
         AuctionSettings.RegionMarketSettings regionSettings = regionMarketService.settings();
         RegionMarketMenu menu = new RegionMarketMenu(
                 player.getUniqueId(),
                 regionMarketService,
                 messageService,
                 configSupplier.get().guiGeneralSettings(),
-                regionSettings
+                regionSettings,
+                page,
+                sort,
+                sellerFilter
         );
         PluginSchedulers.run(plugin, player, () -> player.openInventory(menu.getInventory()));
     }

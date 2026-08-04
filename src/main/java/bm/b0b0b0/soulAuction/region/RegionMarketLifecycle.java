@@ -48,6 +48,7 @@ public final class RegionMarketLifecycle {
         module = RegionMarketModule.create(dependencies);
         dependencies.plugin().getServer().getPluginManager().registerEvents(module.guiListener(), dependencies.plugin());
         dependencies.plugin().getServer().getPluginManager().registerEvents(module.chatListener(), dependencies.plugin());
+        dependencies.plugin().getServer().getPluginManager().registerEvents(module.commandInterceptListener(), dependencies.plugin());
     }
 
     private void deactivate() {
@@ -56,6 +57,7 @@ public final class RegionMarketLifecycle {
         }
         HandlerList.unregisterAll(module.guiListener());
         HandlerList.unregisterAll(module.chatListener());
+        HandlerList.unregisterAll(module.commandInterceptListener());
         module = null;
     }
 

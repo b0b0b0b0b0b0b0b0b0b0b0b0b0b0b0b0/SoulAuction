@@ -1,8 +1,10 @@
 package bm.b0b0b0.soulAuction.gui.region;
 
 import bm.b0b0b0.soulAuction.lang.MessageService;
+import bm.b0b0b0.soulAuction.model.AuctionSort;
 import bm.b0b0b0.soulAuction.model.result.PurchaseQuote;
 import bm.b0b0b0.soulAuction.service.region.RegionListingHelper;
+import bm.b0b0b0.soulAuction.service.region.RegionMarketPresentation;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketService;
 import java.util.Map;
 import java.util.UUID;
@@ -21,6 +23,9 @@ public final class RegionPurchaseConfirmMenu implements InventoryHolder {
 
     private final UUID viewerId;
     private final long listingId;
+    private final UUID returnSellerFilter;
+    private final int returnPage;
+    private final AuctionSort returnSort;
     private final RegionMarketService regionMarketService;
     private final MessageService messageService;
     private final Inventory inventory;
@@ -28,11 +33,17 @@ public final class RegionPurchaseConfirmMenu implements InventoryHolder {
     public RegionPurchaseConfirmMenu(
             UUID viewerId,
             long listingId,
+            UUID returnSellerFilter,
+            int returnPage,
+            AuctionSort returnSort,
             RegionMarketService regionMarketService,
             MessageService messageService
     ) {
         this.viewerId = viewerId;
         this.listingId = listingId;
+        this.returnSellerFilter = returnSellerFilter;
+        this.returnPage = returnPage;
+        this.returnSort = returnSort;
         this.regionMarketService = regionMarketService;
         this.messageService = messageService;
         this.inventory = Bukkit.createInventory(this, 27, messageService.component(viewerId, "region-buy-confirm-title"));
@@ -52,6 +63,18 @@ public final class RegionPurchaseConfirmMenu implements InventoryHolder {
         return listingId;
     }
 
+    public UUID returnSellerFilter() {
+        return returnSellerFilter;
+    }
+
+    public int returnPage() {
+        return returnPage;
+    }
+
+    public AuctionSort returnSort() {
+        return returnSort;
+    }
+
     public void refresh() {
         inventory.clear();
         Player buyer = Bukkit.getPlayer(viewerId);
@@ -61,6 +84,7 @@ public final class RegionPurchaseConfirmMenu implements InventoryHolder {
             return;
         }
         var region = RegionListingHelper.regionRef(quote.listing());
+        var regionSettings = regionMarketService.settings();
         String price = regionMarketService.formatPrice(quote.totalCharge(), quote.listing().auctionId(), viewerId);
         String basePrice = regionMarketService.formatPrice(quote.listing().price(), quote.listing().auctionId(), viewerId);
         inventory.setItem(YES_SLOT, button(
@@ -68,7 +92,7 @@ public final class RegionPurchaseConfirmMenu implements InventoryHolder {
                 messageService.component(viewerId, "region-buy-confirm-yes"),
                 messageService.components(
                         viewerId,
-                        "region-buy-confirm-lore",
+                        RegionMarketPresentation.buyConfirmLoreKey(regionSettings),
                         Map.of(
                                 "region", region.regionId(),
                                 "world", region.worldName(),

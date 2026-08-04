@@ -9,6 +9,7 @@ public enum PurchaseFailure {
     OWN_LISTING("error-own-listing"),
     NOT_ENOUGH_MONEY("error-not-enough-money"),
     INVENTORY_FULL("error-inventory-full"),
+    TRADE_REGION_DENIED("error-trade-region-denied"),
     STORAGE_NOT_READY("error-still-loading");
 
     private final String messageKey;

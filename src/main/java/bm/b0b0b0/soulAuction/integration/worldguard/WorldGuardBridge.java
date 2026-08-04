@@ -4,11 +4,13 @@ import bm.b0b0b0.soulAuction.model.region.RegionRef;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 
@@ -59,16 +61,16 @@ public final class WorldGuardBridge {
         return owned;
     }
 
-    public List<String> tabCompleteOwnedRegions(Player player, String partial) {
+    public List<String> tabCompleteOwnedRegions(Player player, String partial, boolean hideWorldName) {
         String needle = partial == null ? "" : partial.toLowerCase(Locale.ROOT);
-        List<String> suggestions = new ArrayList<>();
+        LinkedHashSet<String> suggestions = new LinkedHashSet<>();
         for (RegionRef ref : listOwnedRegions(player.getUniqueId())) {
-            String key = ref.displayKey();
+            String key = hideWorldName ? ref.regionId() : ref.displayKey();
             if (needle.isEmpty() || key.toLowerCase(Locale.ROOT).startsWith(needle)) {
                 suggestions.add(key);
             }
         }
-        return suggestions;
+        return new ArrayList<>(suggestions);
     }
 
     public boolean regionExists(RegionRef ref) {
@@ -85,6 +87,38 @@ public final class WorldGuardBridge {
         } catch (ReflectiveOperationException exception) {
             return false;
         }
+    }
+
+    public boolean isInAllowedTradeRegions(Player player, List<String> allowedEntries) {
+        if (!pluginPresent || allowedEntries == null || allowedEntries.isEmpty()) {
+            return true;
+        }
+        if (player == null) {
+            return false;
+        }
+        List<String> atLocation = regionIdsAtLocation(player);
+        if (atLocation.isEmpty()) {
+            return false;
+        }
+        String worldName = player.getWorld().getName();
+        for (String entry : allowedEntries) {
+            if (entry == null || entry.isBlank()) {
+                continue;
+            }
+            RegionRef allowed = parseTradeRegionEntry(entry.trim(), worldName);
+            if (allowed == null) {
+                continue;
+            }
+            if (!allowed.worldName().equalsIgnoreCase(worldName)) {
+                continue;
+            }
+            for (String regionId : atLocation) {
+                if (regionId.equalsIgnoreCase(allowed.regionId())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public boolean transferOwnership(RegionRef ref, UUID from, UUID to) {
@@ -143,6 +177,57 @@ public final class WorldGuardBridge {
         Object instance = invokeStatic(worldGuardClass, "getInstance");
         Object platform = invoke(instance, "getPlatform");
         return invoke(platform, "getRegionContainer");
+    }
+
+    private List<String> regionIdsAtLocation(Player player) {
+        if (!pluginPresent || player == null) {
+            return List.of();
+        }
+        try {
+            Location location = player.getLocation();
+            Class<?> adapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+            Object blockVector = invokeStatic(adapterClass, "asBlockVector", location);
+            Object container = regionContainer();
+            if (container == null) {
+                return List.of();
+            }
+            Object query = invoke(container, "createQuery");
+            if (query == null) {
+                return List.of();
+            }
+            Object applicableSet = invoke(query, "getApplicableRegions", blockVector);
+            if (applicableSet == null) {
+                return List.of();
+            }
+            Object regions = invoke(applicableSet, "getRegions");
+            if (!(regions instanceof Iterable<?> iterable)) {
+                return List.of();
+            }
+            LinkedHashSet<String> ids = new LinkedHashSet<>();
+            for (Object region : iterable) {
+                if (region == null) {
+                    continue;
+                }
+                Object id = invoke(region, "getId");
+                if (id != null) {
+                    ids.add(String.valueOf(id));
+                }
+            }
+            return List.copyOf(ids);
+        } catch (ReflectiveOperationException exception) {
+            return List.of();
+        }
+    }
+
+    private RegionRef parseTradeRegionEntry(String entry, String currentWorld) {
+        if (entry == null || entry.isBlank() || currentWorld == null || currentWorld.isBlank()) {
+            return null;
+        }
+        int colon = entry.indexOf(':');
+        if (colon > 0 && colon < entry.length() - 1) {
+            return new RegionRef(entry.substring(0, colon), entry.substring(colon + 1));
+        }
+        return new RegionRef(currentWorld, entry);
     }
 
     private Object regionManager(Object container, World world) throws ReflectiveOperationException {

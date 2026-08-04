@@ -42,11 +42,12 @@ On a proxy: **MYSQL + redis.enabled**. Buy/cancel/expiry go through listing clai
 - Listing TTL (timed or unlimited), claim, seller notification on expiry, per-auction fees, sold/cancelled/expired history.
 - Listing limits: `soulauction.<auctionId>.<N>`, `soulauction.all.<N>`.
 - Sort priority: `soulauction.priority.<N>`.
-- Large-sale broadcast, external notifications (Discord/Telegram).
+- Large-sale broadcast (4 toggles: item/region purchase & listing), external notifications (Discord/Telegram).
 - **Sell GUI:** amount ±1, pull **matching** items from inventory (up to max stack); comparison by full serialization (NBT, name, enchants), not “similar” stacks. Escrow until confirm — returned on cancel/close.
 - **Per-auction price display:** custom currency symbol, before/after number, MiniMessage and optional PlaceholderAPI in the symbol (resource pack / ItemsAdder icons, etc.).
 - **Fake activity:** synthetic listings from a nick/item pool, enabled **per auction**; timer refill, manual `/ah admin fake`, toggle in admin GUI.
 - **Seller skins:** heads in “Favorite sellers” via SkinsRestorer / Mojang; fallback and one shared skin for all fake sellers (server logo).
+- **Region market (WorldGuard):** sell/buy WG regions for auction currency; separate commands, GUI, permissions — see below.
 
 ## Price display (`auctions/*.yml`)
 
@@ -58,6 +59,26 @@ Each auction has its own fields (defaults in Java; after first start — `plugin
 | `currencySymbolPosition` | `BEFORE` or `AFTER` the amount (`$100` or `100 ₽`). |
 | `currencySymbolPlaceholderApi` | `true` — resolve `%...%` from PlaceholderAPI **for the viewer** (requires PlaceholderAPI). |
 | `listingTtlSeconds` | Listing lifetime in seconds; **0 or less — no expiry**. |
+| `world-guard-trade-regions` | **WG whitelist for item trading** in this auction: open GUI, sell, buy — player must stand in one listed region. Empty `[]` = anywhere. **Not** region market (`region-market` in `config.yml`). Examples below. |
+
+Examples for `world-guard-trade-regions` (in `auctions/<id>.yml`):
+
+```yaml
+# no restriction (default)
+world-guard-trade-regions: []
+
+# regions in the player's current world (/rg list — region id)
+world-guard-trade-regions:
+  - shop
+  - market
+
+# specific world + region
+world-guard-trade-regions:
+  - world:mall
+  - world_nether:trade_hub
+```
+
+Requires WorldGuard. This is **not** `/ah regions` — that feature sells WG regions as lots.
 
 ### Listing TTL and claim
 
@@ -194,6 +215,74 @@ Item must be in the **main hand**. Listing is created as synthetic immediately. 
 - Only an admin with `soulauction.command.cancel.any` can `/ah cancel` them (seller is a synthetic UUID).
 - On a proxy with MySQL+Redis, fakes sync like any other listing.
 
+## Region market (WorldGuard)
+
+Sell **WorldGuard regions** using the same economy as the item auction. Region listings use main storage, not item escrow.
+
+### Requirements
+
+- **WorldGuard** (softdepend).
+- `config.yml` → `region-market.enabled: true`, then **`/ah reload`** (or restart).
+- Seller must own the region in WG; buyer must afford the chosen auction.
+
+### Enable (fresh install)
+
+Default is `enabled: false`. After `true`, `plugins/SoulAuction/regions/` is created (runtime folder).
+
+```yaml
+region-market:
+  enabled: true
+  hide-world-name: true
+  ah-subcommand-aliases: [rg]
+  standalone-commands: [regions]
+  allowed-auction-ids: []
+```
+
+| Field | Purpose |
+|-------|---------|
+| `hide-world-name` | `true` — region id only (`shop`), not `world:shop`. |
+| `allowed-auction-ids` | Empty = any sell-enabled auction in `auctions/*.yml`. |
+| `ah-subcommand-aliases` | Short `/ah` subs, e.g. `rg` → `/ah rg sell …`. |
+| `standalone-commands` | Top-level `/regions …`. **Don't add `rg`** with WG — use `/ah rg` or custom name. |
+| `max-listings-per-player` | Region listing cap; `0` = global `limits`. |
+
+`standalone-commands` need a **server restart**.
+
+### Commands
+
+| Command | Action |
+|---------|----------|
+| `/ah regions` | Region market GUI. |
+| `/ah rg` | Same (alias). |
+| `/regions` | Same (standalone). |
+| `/rg sell …` | Same when WorldGuard is installed: intercepted before WG (`sell`, `cancel`, `my`, `clear`). |
+| `/ah regions sell <region> <auctionId> <price>` | List, e.g. `shop global 10000`. |
+| `/ah regions sell` | Chat wizard; cancel with `cancel`. |
+| `/ah regions my` | Your listings only (“My regions”). |
+| `/ah regions cancel <id>` | Remove listing. |
+| `/ah regions clear` | Abort chat sell input. |
+
+### GUI
+
+Layout from `gui/general.yml`. Regions do **not** appear in `/ah` item browser. Click listing → confirm → WG ownership transfer.
+
+### Permissions (two layers)
+
+**Region market:**
+
+| Permission | Purpose |
+|------------|---------|
+| `soulauction.command.regions` | Market commands |
+| `soulauction.region.sell` | List a region |
+| `soulauction.region.buy` | Buy a region |
+
+**Auction currency** (`auctions/<id>.yml`): `soulauction.buy.global`, `soulauction.sell.global`, …
+
+Buy region = **`region.buy`** + **`buy.<auctionId>`**.  
+Sell = **`region.sell`** + **`sell.<auctionId>`**.
+
+Without LuckPerms — `default: true` in `plugin.yml`. With LP — grant nodes in groups.
+
 ## Seller skins (`config.yml` → `seller-skins`)
 
 Textures for **seller heads** in the “Favorite sellers” GUI (hub → star). Browser listings show the item itself, not a head.
@@ -277,6 +366,7 @@ GUI lookup is async; the head updates when the texture arrives (no in-memory cac
 - `/ah page <number> [auctionId]` — open a specific auction page.
 - `/ah claim [all]` — claim expired/cancelled items.
 - `/ah cancel <id>` — remove your listing and return the item.
+- **Region market (WorldGuard):** `/ah regions`, `/ah rg`, `/regions` — see “Region market”.
 - Command aliases are configured in `config.yml` via `commandAliases` (e.g. `ax`, `auction`).
 
 ### Admins
@@ -308,7 +398,15 @@ GUI lookup is async; the head updates when the texture arrives (no in-memory cac
 - `soulauction.command.claim` — use `/ah claim`.
 - `soulauction.command.cancel.any` — remove others' listings via `/ah cancel`.
 
-### Per-auction (set in `config.yml`)
+### Region market (WorldGuard)
+
+- `soulauction.command.regions` — `/ah regions`, `/regions`, aliases.
+- `soulauction.region.sell` — list a region.
+- `soulauction.region.buy` — buy on region market.
+
+Plus auction currency nodes (`soulauction.buy.global`, …) — see “Region market”.
+
+### Per-auction (set in `auctions/*.yml`)
 
 Each auction has separate nodes:
 - `openPermission` — open this auction.
@@ -343,6 +441,36 @@ In `auctions/*.yml`: `saleTaxPercent` (from seller), `buyTaxPercent` (from buyer
 - Per-auction: `minPrice`, `maxPrice` (0 = use global).
 - `soulauction.price.min.<price>` — minimum listing price for a player.
 - `soulauction.price.max.<price>` — maximum listing price for a player.
+
+### Server-wide chat announcements
+
+In `config.yml` → `announcements` — **four separate toggles** (texts in `lang/messages_*.yml`):
+
+| Block | Field | Event | Lang key |
+|-------|-------|-------|----------|
+| `items` | `broadcast-purchase` | player **bought** an item | `announce-item-purchase` |
+| `items` | `broadcast-listing` | player **listed** an item | `announce-item-listing` |
+| `regions` | `broadcast-purchase` | player **bought** a WG region | `region-announce-purchase` |
+| `regions` | `broadcast-listing` | player **listed** a region | `region-announce-listing` |
+
+Price filter: `min-purchase-price` / `min-listing-price` per block (`0` = every deal).  
+Defaults: purchases on from 5000, listings off.
+
+```yaml
+announcements:
+  items:
+    broadcast-purchase: true
+    broadcast-listing: true
+    min-purchase-price: 5000
+    min-listing-price: 0
+  regions:
+    broadcast-purchase: true
+    broadcast-listing: false
+    min-purchase-price: 10000
+    min-listing-price: 0
+```
+
+Old keys `announcements.enabled` / `min-price` → use `items.broadcast-purchase` / `items.min-purchase-price`.
 
 ### Discord and Telegram
 

@@ -73,7 +73,12 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
                 auctionService,
                 adminAuctionCreateService
         );
-        this.tabCompleter = new AuctionTabCompleter(auctionService, adminCommand, regionMarketCommandHandler);
+        this.tabCompleter = new AuctionTabCompleter(
+                auctionService,
+                adminCommand,
+                regionMarketCommandHandler,
+                configSupplier
+        );
     }
 
     @Override
@@ -119,7 +124,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
             messageService.send(player, "error-still-loading");
             return true;
         }
-        if (args.length > 0 && args[0].equalsIgnoreCase("regions")) {
+        if (args.length > 0 && RegionMarketRouting.isAhRegionsSubcommand(args[0], configSupplier.get().auctionSettings().regionMarket)) {
             RegionMarketCommandHandler handler = regionMarketCommandHandler == null ? null : regionMarketCommandHandler.get();
             if (handler == null) {
                 PluginConfig config = configSupplier.get();
@@ -339,7 +344,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         }
         SellResult result = auctionService.createListing(player, sellArgs.auctionId(), sellArgs.price(), sellArgs.amount());
         if (!result.success()) {
-            sendSellError(player, result.failure());
+            sendSellError(player, result.failure(), sellArgs.auctionId());
             return true;
         }
         auctionService.sendListingCreatedMessage(player, result.listing());
@@ -476,12 +481,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
                 auctionService.setBrowseFilterState(player.getUniqueId(), current.withSellerFilter(null));
             }
         }
-        if (!auctionService.auctionExists(auctionId)) {
-            messageService.send(player, "error-auction-not-found");
-            return true;
-        }
-        if (!auctionService.canOpenAuction(player, auctionId)) {
-            messageService.send(player, "error-open-auction-denied");
+        if (!auctionService.guardAuctionAccess(player, auctionId)) {
             return true;
         }
         var prefs = auctionService.consumeBrowsePreferences(player.getUniqueId());
@@ -535,7 +535,11 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    private void sendSellError(Player player, SellFailure failure) {
+    private void sendSellError(Player player, SellFailure failure, String auctionId) {
+        if (failure == SellFailure.TRADE_REGION_DENIED) {
+            messageService.send(player, failure.messageKey(), auctionService.tradeRegionPlaceholders(auctionId));
+            return;
+        }
         messageService.send(player, failure.messageKey());
     }
 

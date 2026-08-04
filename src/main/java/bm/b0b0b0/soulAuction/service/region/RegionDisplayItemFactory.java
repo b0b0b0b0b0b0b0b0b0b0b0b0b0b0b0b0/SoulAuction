@@ -44,12 +44,12 @@ public final class RegionDisplayItemFactory {
         String economyLabel = definition == null ? listing.economyType().name() : definition.economy;
         meta.displayName(messageService.component(
                 viewerId,
-                "region-listing-title",
+                RegionMarketPresentation.listingTitleKey(settings),
                 Map.of("region", regionId, "world", world)
         ));
         meta.lore(messageService.components(
                 viewerId,
-                "region-listing-lore",
+                RegionMarketPresentation.listingLoreKey(settings),
                 Map.of(
                         "region", regionId,
                         "world", world,

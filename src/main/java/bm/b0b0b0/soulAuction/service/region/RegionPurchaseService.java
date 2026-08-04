@@ -5,7 +5,6 @@ import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.config.settings.AuctionDefinitionSettings;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings;
 import bm.b0b0b0.soulAuction.integration.worldguard.WorldGuardBridge;
-import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.AuctionListing;
 import bm.b0b0b0.soulAuction.model.PendingSaleNotification;
 import bm.b0b0b0.soulAuction.model.region.RegionRef;
@@ -13,13 +12,16 @@ import bm.b0b0b0.soulAuction.model.result.PurchaseQuote;
 import bm.b0b0b0.soulAuction.model.result.RegionPurchaseFailure;
 import bm.b0b0b0.soulAuction.model.result.RegionPurchaseResult;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
+import bm.b0b0b0.soulAuction.service.AuctionAnnouncementBroadcaster;
 import bm.b0b0b0.soulAuction.service.AuctionExternalNotifier;
 import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
 import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
 import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
 import bm.b0b0b0.soulAuction.service.listing.ListingLockRunner;
 import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
+import bm.b0b0b0.soulAuction.region.RegionMarketPermissions;
 import bm.b0b0b0.soulAuction.util.ItemStackCodec;
+import bm.b0b0b0.soulAuction.util.PermissionChecks;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -40,7 +42,7 @@ public final class RegionPurchaseService {
     private final WorldGuardBridge worldGuardBridge;
     private final java.util.function.Consumer<String> invalidateCacheForAuction;
     private final java.util.function.BiConsumer<String, AuctionListing> publishListingChange;
-    private final MessageService messageService;
+    private final AuctionAnnouncementBroadcaster announcementBroadcaster;
 
     public RegionPurchaseService(
             AuctionRepository repository,
@@ -54,7 +56,7 @@ public final class RegionPurchaseService {
             WorldGuardBridge worldGuardBridge,
             java.util.function.Consumer<String> invalidateCacheForAuction,
             java.util.function.BiConsumer<String, AuctionListing> publishListingChange,
-            MessageService messageService
+            AuctionAnnouncementBroadcaster announcementBroadcaster
     ) {
         this.repository = repository;
         this.configSupplier = configSupplier;
@@ -67,7 +69,7 @@ public final class RegionPurchaseService {
         this.worldGuardBridge = worldGuardBridge;
         this.invalidateCacheForAuction = invalidateCacheForAuction;
         this.publishListingChange = publishListingChange;
-        this.messageService = messageService;
+        this.announcementBroadcaster = announcementBroadcaster;
     }
 
     public PurchaseQuote quote(Player buyer, long listingId) {
@@ -101,8 +103,8 @@ public final class RegionPurchaseService {
         if (!loaded) {
             return RegionPurchaseResult.failure(RegionPurchaseFailure.STORAGE_NOT_READY);
         }
-        if (!buyer.hasPermission(regionSettings.buyPermission)) {
-            return RegionPurchaseResult.failure(RegionPurchaseFailure.BUY_PERMISSION_DENIED);
+        if (!PermissionChecks.has(buyer, RegionMarketPermissions.BUY)) {
+            return RegionPurchaseResult.failure(RegionPurchaseFailure.REGION_BUY_PERMISSION_DENIED);
         }
         return listingLocks.withLock(listingId, () -> purchaseLocked(buyer, listingId, settings, regionSettings));
     }
@@ -133,9 +135,9 @@ public final class RegionPurchaseService {
                 saleClaimer.rollback(listing);
                 return RegionPurchaseResult.failure(RegionPurchaseFailure.BUY_DISABLED_IN_AUCTION);
             }
-            if (!buyer.hasPermission(definition.buyPermission)) {
+            if (!PermissionChecks.has(buyer, definition.buyPermission)) {
                 saleClaimer.rollback(listing);
-                return RegionPurchaseResult.failure(RegionPurchaseFailure.BUY_PERMISSION_DENIED);
+                return RegionPurchaseResult.failure(RegionPurchaseFailure.AUCTION_BUY_PERMISSION_DENIED);
             }
             if (!economy.isAvailable(listing.economyType(), definition)) {
                 saleClaimer.rollback(listing);
@@ -215,7 +217,7 @@ public final class RegionPurchaseService {
                 publishListingChange.accept("REMOVE", listing);
             }
             Bukkit.getPluginManager().callEvent(new AuctionListingSoldEvent(listing, buyer, payout, saleTax, buyTax));
-            maybeAnnounceSale(listing, buyer.getName(), definition);
+            announcementBroadcaster.maybeBroadcastRegionPurchase(listing, buyer.getName(), definition);
             externalNotifier.sold(
                     listing,
                     buyer.getName(),
@@ -227,23 +229,6 @@ public final class RegionPurchaseService {
             saleClaimer.rollback(listing);
             throw exception;
         }
-    }
-
-    private void maybeAnnounceSale(AuctionListing listing, String buyerName, AuctionDefinitionSettings definition) {
-        AuctionSettings.AnnouncementSettings announcements = configSupplier.get().auctionSettings().announcements;
-        if (!announcements.enabled || listing.price() < announcements.minPrice) {
-            return;
-        }
-        messageService.broadcast(
-                "region-announce-sale",
-                Map.of(
-                        "buyer", buyerName,
-                        "seller", listing.sellerName(),
-                        "price", economy.format(listing.price(), listing.economyType(), definition),
-                        "region", RegionListingHelper.regionRef(listing).regionId(),
-                        "world", RegionListingHelper.regionRef(listing).worldName()
-                )
-        );
     }
 
     private AuctionDefinitionSettings findDefinition(String auctionId) {

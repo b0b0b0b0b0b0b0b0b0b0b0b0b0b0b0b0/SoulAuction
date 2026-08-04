@@ -3,6 +3,7 @@ package bm.b0b0b0.soulAuction.listener;
 import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.model.region.RegionRef;
 import bm.b0b0b0.soulAuction.model.result.RegionSellResult;
+import bm.b0b0b0.soulAuction.service.region.RegionMarketPresentation;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketService;
 import bm.b0b0b0.soulAuction.service.region.RegionSellSessionService;
 import bm.b0b0b0.soulAuction.service.region.RegionSellSessionService.Session;
@@ -53,9 +54,9 @@ public final class RegionSellChatListener implements Listener {
         }
         RegionSellSessionService sessions = regionMarketService.sessionService();
         if (session.step() == Step.REGION) {
-            RegionRef region = RegionRef.parse(text, player.getWorld().getName());
+            RegionRef region = regionMarketService.resolveSellerRegion(player, text);
             if (region == null) {
-                messageService.send(player, "region-sell-chat-invalid-region");
+                messageService.send(player, RegionMarketPresentation.sellChatInvalidRegionKey(regionMarketService.settings()));
                 return;
             }
             if (!regionMarketService.worldGuardBridge().isOwner(player.getUniqueId(), region)) {

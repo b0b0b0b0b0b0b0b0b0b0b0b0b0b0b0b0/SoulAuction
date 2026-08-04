@@ -17,6 +17,7 @@ public enum SellFailure {
     PRICE_TOO_HIGH("error-price-too-high"),
     PLAYER_BLACKLISTED("error-player-blacklisted"),
     WORLD_BLOCKED("error-world-blocked"),
+    TRADE_REGION_DENIED("error-trade-region-denied"),
     COOLDOWN("error-sell-cooldown"),
     CUSTOM_ITEM_BLOCKED("error-custom-item-blocked"),
     STORAGE_NOT_READY("error-still-loading"),
