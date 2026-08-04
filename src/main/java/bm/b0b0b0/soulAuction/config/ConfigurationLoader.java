@@ -27,6 +27,7 @@ public final class ConfigurationLoader {
                 new AuctionSettings(),
                 dataFolderPath.resolve("config.yml")
         );
+        migrateDataLayout(auctionSettings);
         GuiGeneralSettings guiGeneralSettings = SerializedConfigReloader.reload(
                 new GuiGeneralSettings(),
                 dataFolderPath.resolve("gui").resolve("general.yml")
@@ -38,10 +39,18 @@ public final class ConfigurationLoader {
     private void ensureDirectories() {
         try {
             Files.createDirectories(dataFolderPath.resolve("gui"));
-            Files.createDirectories(dataFolderPath.resolve("data"));
             Files.createDirectories(dataFolderPath.resolve("auctions"));
+            DataLayout.ensureDirectories(dataFolderPath);
         } catch (IOException exception) {
             throw new IllegalStateException("Cannot create plugin directories", exception);
+        }
+    }
+
+    private void migrateDataLayout(AuctionSettings auctionSettings) {
+        try {
+            DataLayout.migrateLegacyLayout(dataFolderPath, auctionSettings);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Cannot migrate plugin data layout", exception);
         }
     }
 

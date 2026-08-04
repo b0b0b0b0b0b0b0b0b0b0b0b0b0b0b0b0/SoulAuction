@@ -376,7 +376,7 @@ public final class AuctionSettings extends YamlSerializable {
         @Comment({@CommentValue("Connection pool size for SQL")})
         public int poolSize = 8;
         @Comment({@CommentValue("SQLite file path relative to plugin folder")})
-        public String sqliteFile = "data/auction.db";
+        public String sqliteFile = "data/database/auction.db";
     }
 
     public static final class RedisSettings {

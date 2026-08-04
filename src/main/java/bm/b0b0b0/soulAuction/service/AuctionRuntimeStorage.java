@@ -1,5 +1,6 @@
 package bm.b0b0b0.soulAuction.service;
 
+import bm.b0b0b0.soulAuction.config.DataLayout;
 import bm.b0b0b0.soulAuction.model.AuditLogEntry;
 import bm.b0b0b0.soulAuction.model.ClaimEntry;
 import bm.b0b0b0.soulAuction.model.DealHistoryEntry;
@@ -63,18 +64,17 @@ public final class AuctionRuntimeStorage {
     private final AtomicBoolean flushScheduled;
 
     public AuctionRuntimeStorage(Path dataFolder) {
-        Path dataDirectory = dataFolder.resolve("data");
-        this.claimsFile = dataDirectory.resolve("claims.json");
-        this.historyFile = dataDirectory.resolve("history.json");
-        this.limitsFile = dataDirectory.resolve("limits.json");
-        this.notificationsFile = dataDirectory.resolve("notifications.json");
-        this.favoritesFile = dataDirectory.resolve("favorites.json");
-        this.favoriteListingsFile = dataDirectory.resolve("favorite-listings.json");
-        this.cooldownsFile = dataDirectory.resolve("sell-cooldowns.json");
-        this.runtimeBlacklistFile = dataDirectory.resolve("runtime-blacklist.json");
-        this.auditFile = dataDirectory.resolve("audit.json");
-        this.statsFile = dataDirectory.resolve("stats.json");
-        this.syntheticSellersFile = dataDirectory.resolve("synthetic-sellers.json");
+        this.claimsFile = DataLayout.recordsFile(dataFolder, "claims.json");
+        this.historyFile = DataLayout.recordsFile(dataFolder, "history.json");
+        this.limitsFile = DataLayout.playersFile(dataFolder, "limits.json");
+        this.notificationsFile = DataLayout.playersFile(dataFolder, "notifications.json");
+        this.favoritesFile = DataLayout.playersFile(dataFolder, "favorites.json");
+        this.favoriteListingsFile = DataLayout.playersFile(dataFolder, "favorite-listings.json");
+        this.cooldownsFile = DataLayout.playersFile(dataFolder, "sell-cooldowns.json");
+        this.runtimeBlacklistFile = DataLayout.runtimeFile(dataFolder, "runtime-blacklist.json");
+        this.auditFile = DataLayout.recordsFile(dataFolder, "audit.json");
+        this.statsFile = DataLayout.playersFile(dataFolder, "stats.json");
+        this.syntheticSellersFile = DataLayout.runtimeFile(dataFolder, "synthetic-sellers.json");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
         this.ioExecutor = Executors.newSingleThreadExecutor();
         this.claims = new ArrayList<>();

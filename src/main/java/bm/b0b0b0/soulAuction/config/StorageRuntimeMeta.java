@@ -31,7 +31,7 @@ public final class StorageRuntimeMeta {
     }
 
     public static Path metaPath(Path dataFolder) {
-        return dataFolder.resolve("data").resolve(FILE_NAME);
+        return DataLayout.storageRuntimeMeta(dataFolder);
     }
 
     public static Snapshot read(Path dataFolder) {

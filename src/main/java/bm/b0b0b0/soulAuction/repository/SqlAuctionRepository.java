@@ -1,5 +1,6 @@
 package bm.b0b0b0.soulAuction.repository;
 
+import bm.b0b0b0.soulAuction.config.DataLayout;
 import bm.b0b0b0.soulAuction.config.settings.AuctionSettings.DatabaseSettings;
 import bm.b0b0b0.soulAuction.model.AuctionCategory;
 import bm.b0b0b0.soulAuction.model.AuctionEconomyType;
@@ -379,7 +380,7 @@ public final class SqlAuctionRepository implements AuctionRepository {
         config.setPoolName("SoulAuctionPool");
         config.setMaximumPoolSize(Math.max(2, settings.poolSize));
         if (mode == StorageMode.SQLITE) {
-            Path sqliteFile = dataFolder.resolve(settings.sqliteFile);
+            Path sqliteFile = DataLayout.resolveSqliteFile(dataFolder, settings.sqliteFile);
             try {
                 Path parent = sqliteFile.getParent();
                 if (parent != null) {
