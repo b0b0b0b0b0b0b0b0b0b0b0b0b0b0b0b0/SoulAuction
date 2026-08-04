@@ -48,7 +48,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
     private final Runnable reloadAction;
     private final AuctionAdminCommand adminCommand;
     private final AuctionTabCompleter tabCompleter;
-    private final RegionMarketCommandHandler regionMarketCommandHandler;
+    private final Supplier<RegionMarketCommandHandler> regionMarketCommandHandler;
 
     public AuctionCommand(
             JavaPlugin plugin,
@@ -57,7 +57,7 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
             AuctionService auctionService,
             Runnable reloadAction,
             AdminAuctionCreateService adminAuctionCreateService,
-            RegionMarketCommandHandler regionMarketCommandHandler
+            Supplier<RegionMarketCommandHandler> regionMarketCommandHandler
     ) {
         this.plugin = plugin;
         this.configSupplier = configSupplier;
@@ -118,8 +118,13 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
             messageService.send(player, "error-still-loading");
             return true;
         }
-        if (args.length > 0 && args[0].equalsIgnoreCase("regions") && regionMarketCommandHandler != null) {
-            return regionMarketCommandHandler.handle(player, java.util.Arrays.copyOfRange(args, 1, args.length));
+        if (args.length > 0 && args[0].equalsIgnoreCase("regions")) {
+            RegionMarketCommandHandler handler = regionMarketCommandHandler == null ? null : regionMarketCommandHandler.get();
+            if (handler == null) {
+                messageService.send(player, "region-error-disabled");
+                return true;
+            }
+            return handler.handle(player, java.util.Arrays.copyOfRange(args, 1, args.length));
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("sell")) {
             return handleSell(player, args);

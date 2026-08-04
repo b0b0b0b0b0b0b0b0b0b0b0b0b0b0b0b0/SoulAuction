@@ -99,7 +99,8 @@ public final class AuctionSettings extends YamlSerializable {
     @NewLine
     @Comment({
             @CommentValue("WorldGuard region marketplace (requires WorldGuard plugin)."),
-            @CommentValue("Separate /ah regions menu — sale transfers region ownership, no fake activity."),
+            @CommentValue("Default off — set region-market.enabled: true and /ah reload to activate."),
+            @CommentValue("While off: no listeners, no commands, no runtime cost."),
     })
     public RegionMarketSettings regionMarket = new RegionMarketSettings();
 
@@ -507,8 +508,16 @@ public final class AuctionSettings extends YamlSerializable {
 
     public static final class RegionMarketSettings {
 
-        @Comment({@CommentValue("Enable /ah regions and WorldGuard integration")})
-        public boolean enabled = true;
+        @Comment({
+                @CommentValue("Enable /ah regions (requires WorldGuard on the server)."),
+                @CommentValue("Default false — zero runtime cost until you set true and reload."),
+        })
+        public boolean enabled = false;
+
+        @Comment({
+                @CommentValue("Data subfolder under plugins/SoulAuction/ (created when module activates)."),
+        })
+        public String directory = "regions";
 
         @Comment({@CommentValue("Permission for /ah regions")})
         public String commandPermission = "soulauction.command.regions";

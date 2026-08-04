@@ -1,33 +1,15 @@
 package bm.b0b0b0.soulAuction.region;
 
 import bm.b0b0b0.soulAuction.command.RegionMarketCommandHandler;
-import bm.b0b0b0.soulAuction.config.PluginConfig;
 import bm.b0b0b0.soulAuction.gui.region.RegionGuiListener;
 import bm.b0b0b0.soulAuction.integration.worldguard.WorldGuardBridge;
-import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.listener.RegionSellChatListener;
-import bm.b0b0b0.soulAuction.repository.AuctionRepository;
-import bm.b0b0b0.soulAuction.service.AuctionExternalNotifier;
-import bm.b0b0b0.soulAuction.service.AuctionListingCache;
-import bm.b0b0b0.soulAuction.service.AuctionRuntimeStorage;
-import bm.b0b0b0.soulAuction.service.AuctionService;
-import bm.b0b0b0.soulAuction.service.PermissionLimitResolver;
-import bm.b0b0b0.soulAuction.service.PermissionPriorityResolver;
-import bm.b0b0b0.soulAuction.service.PriceLimitResolver;
-import bm.b0b0b0.soulAuction.service.RedisSellGuard;
-import bm.b0b0b0.soulAuction.service.TaxPolicyResolver;
-import bm.b0b0b0.soulAuction.service.economy.AuctionEconomyService;
-import bm.b0b0b0.soulAuction.service.listing.ListingLockRunner;
-import bm.b0b0b0.soulAuction.service.listing.ListingSaleClaimer;
-import bm.b0b0b0.soulAuction.service.policy.AuctionSellPolicy;
 import bm.b0b0b0.soulAuction.service.region.RegionBrowseService;
 import bm.b0b0b0.soulAuction.service.region.RegionDisplayItemFactory;
 import bm.b0b0b0.soulAuction.service.region.RegionMarketService;
 import bm.b0b0b0.soulAuction.service.region.RegionPurchaseService;
 import bm.b0b0b0.soulAuction.service.region.RegionSellService;
 import bm.b0b0b0.soulAuction.service.region.RegionSellSessionService;
-import java.util.function.Supplier;
-import org.bukkit.plugin.java.JavaPlugin;
 
 public final class RegionMarketModule {
 
@@ -48,64 +30,50 @@ public final class RegionMarketModule {
         this.chatListener = chatListener;
     }
 
-    public static RegionMarketModule create(
-            JavaPlugin plugin,
-            Supplier<PluginConfig> configSupplier,
-            MessageService messageService,
-            AuctionService auctionService,
-            AuctionRepository repository,
-            AuctionListingCache listingCache,
-            AuctionEconomyService economy,
-            PermissionLimitResolver permissionLimitResolver,
-            PermissionPriorityResolver priorityResolver,
-            PriceLimitResolver priceLimitResolver,
-            RedisSellGuard redisSellGuard,
-            AuctionRuntimeStorage runtimeStorage,
-            AuctionSellPolicy sellPolicy,
-            AuctionExternalNotifier externalNotifier,
-            TaxPolicyResolver taxPolicyResolver,
-            ListingLockRunner listingLocks,
-            ListingSaleClaimer saleClaimer
-    ) {
+    public static RegionMarketModule create(RegionMarketDependencies dependencies) {
         WorldGuardBridge worldGuardBridge = new WorldGuardBridge();
         RegionBrowseService browseService = new RegionBrowseService(
-                repository,
-                listingCache,
-                priorityResolver,
-                configSupplier
+                dependencies.repository(),
+                dependencies.listingCache(),
+                dependencies.priorityResolver(),
+                dependencies.configSupplier()
         );
-        RegionDisplayItemFactory displayItemFactory = new RegionDisplayItemFactory(messageService, economy);
+        RegionDisplayItemFactory displayItemFactory = new RegionDisplayItemFactory(
+                dependencies.messageService(),
+                dependencies.economy()
+        );
+        var auctionService = dependencies.auctionService();
         RegionSellService sellService = new RegionSellService(
-                repository,
-                configSupplier,
-                economy,
-                permissionLimitResolver,
-                priceLimitResolver,
-                redisSellGuard,
-                runtimeStorage,
-                sellPolicy,
-                externalNotifier,
+                dependencies.repository(),
+                dependencies.configSupplier(),
+                dependencies.economy(),
+                dependencies.permissionLimitResolver(),
+                dependencies.priceLimitResolver(),
+                dependencies.redisSellGuard(),
+                dependencies.runtimeStorage(),
+                dependencies.sellPolicy(),
+                dependencies.externalNotifier(),
                 worldGuardBridge,
                 browseService,
                 displayItemFactory,
                 auctionService::invalidateListingCache
         );
         RegionPurchaseService purchaseService = new RegionPurchaseService(
-                repository,
-                configSupplier,
-                economy,
-                taxPolicyResolver,
-                runtimeStorage,
-                externalNotifier,
-                listingLocks,
-                saleClaimer,
+                dependencies.repository(),
+                dependencies.configSupplier(),
+                dependencies.economy(),
+                dependencies.taxPolicyResolver(),
+                dependencies.runtimeStorage(),
+                dependencies.externalNotifier(),
+                dependencies.listingLocks(),
+                dependencies.listingSaleClaimer(),
                 worldGuardBridge,
                 auctionService::invalidateListingCache,
                 auctionService::publishListingChange,
-                messageService
+                dependencies.messageService()
         );
         RegionMarketService marketService = new RegionMarketService(
-                configSupplier,
+                dependencies.configSupplier(),
                 auctionService::isLoaded,
                 worldGuardBridge,
                 browseService,
@@ -116,13 +84,22 @@ public final class RegionMarketModule {
                 auctionService
         );
         RegionMarketCommandHandler commandHandler = new RegionMarketCommandHandler(
-                plugin,
-                configSupplier,
-                messageService,
+                dependencies.plugin(),
+                dependencies.configSupplier(),
+                dependencies.messageService(),
                 marketService
         );
-        RegionGuiListener guiListener = new RegionGuiListener(plugin, configSupplier, marketService, messageService);
-        RegionSellChatListener chatListener = new RegionSellChatListener(plugin, marketService, messageService);
+        RegionGuiListener guiListener = new RegionGuiListener(
+                dependencies.plugin(),
+                dependencies.configSupplier(),
+                marketService,
+                dependencies.messageService()
+        );
+        RegionSellChatListener chatListener = new RegionSellChatListener(
+                dependencies.plugin(),
+                marketService,
+                dependencies.messageService()
+        );
         return new RegionMarketModule(marketService, commandHandler, guiListener, chatListener);
     }
 

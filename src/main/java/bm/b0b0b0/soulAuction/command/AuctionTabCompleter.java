@@ -5,6 +5,7 @@ import bm.b0b0b0.soulAuction.service.AuctionService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Supplier;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
@@ -23,12 +24,20 @@ public final class AuctionTabCompleter implements TabCompleter {
 
     private final AuctionService auctionService;
     private final AuctionAdminCommand adminCommand;
-    private final RegionMarketCommandHandler regionMarketCommandHandler;
+    private final Supplier<RegionMarketCommandHandler> regionMarketCommandHandler;
 
-    public AuctionTabCompleter(AuctionService auctionService, AuctionAdminCommand adminCommand, RegionMarketCommandHandler regionMarketCommandHandler) {
+    public AuctionTabCompleter(
+            AuctionService auctionService,
+            AuctionAdminCommand adminCommand,
+            Supplier<RegionMarketCommandHandler> regionMarketCommandHandler
+    ) {
         this.auctionService = auctionService;
         this.adminCommand = adminCommand;
         this.regionMarketCommandHandler = regionMarketCommandHandler;
+    }
+
+    private RegionMarketCommandHandler activeRegionHandler() {
+        return regionMarketCommandHandler == null ? null : regionMarketCommandHandler.get();
     }
 
     @Override
@@ -63,8 +72,12 @@ public final class AuctionTabCompleter implements TabCompleter {
             }
             return adminCommand.tabComplete(sender, copyFrom(args, 1), partial);
         }
-        if (root.equals("regions") && regionMarketCommandHandler != null) {
-            return regionMarketCommandHandler.tabComplete(sender, copyFrom(args, 1));
+        if (root.equals("regions")) {
+            RegionMarketCommandHandler handler = activeRegionHandler();
+            if (handler == null) {
+                return List.of();
+            }
+            return handler.tabComplete(sender, copyFrom(args, 1));
         }
         if (!(sender instanceof Player player)) {
             return List.of();
@@ -189,7 +202,7 @@ public final class AuctionTabCompleter implements TabCompleter {
                 if (player.hasPermission(PERMISSION_VIEW)) {
                     suggestions.add("view");
                 }
-                if (regionMarketCommandHandler != null && player.hasPermission("soulauction.command.regions")) {
+                if (activeRegionHandler() != null && player.hasPermission("soulauction.command.regions")) {
                     suggestions.add("regions");
                 }
             }

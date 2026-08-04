@@ -17,9 +17,10 @@ import bm.b0b0b0.soulAuction.lang.MessageService;
 import bm.b0b0b0.soulAuction.listener.AdminAuctionCreateChatListener;
 import bm.b0b0b0.soulAuction.listener.AuctionSearchChatListener;
 import bm.b0b0b0.soulAuction.listener.PlayerSaleNotificationListener;
-import bm.b0b0b0.soulAuction.listener.RegionSellChatListener;
 import bm.b0b0b0.soulAuction.model.StorageMode;
-import bm.b0b0b0.soulAuction.region.RegionMarketModule;
+import bm.b0b0b0.soulAuction.region.RegionMarketActivation;
+import bm.b0b0b0.soulAuction.region.RegionMarketDependencies;
+import bm.b0b0b0.soulAuction.region.RegionMarketLifecycle;
 import bm.b0b0b0.soulAuction.service.migration.AuctionStorageMigrator;
 import bm.b0b0b0.soulAuction.placeholder.SoulAuctionPlaceholderExpansion;
 import bm.b0b0b0.soulAuction.repository.AuctionRepository;
@@ -71,7 +72,8 @@ public final class SoulAuction extends JavaPlugin {
     private FakeActivityConfig fakeActivityConfig;
     private FakeActivityService fakeActivityService;
     private AuctionCommand auctionCommand;
-    private RegionMarketModule regionMarketModule;
+    private RegionMarketLifecycle regionMarketLifecycle;
+    private AuctionListingCache listingCache;
 
     @Override
     public void onEnable() {
@@ -115,7 +117,7 @@ public final class SoulAuction extends JavaPlugin {
             PriceLimitResolver priceLimitResolver = new PriceLimitResolver();
             ExperienceEconomyBridge experienceEconomyBridge = new ExperienceEconomyBridge();
             CoinsEngineBridge coinsEngineBridge = new CoinsEngineBridge(this, pluginConfig.auctionSettings().coinsEngineCurrency);
-            AuctionListingCache listingCache = new AuctionListingCache();
+            listingCache = new AuctionListingCache();
             AuctionExternalNotifier externalNotifier = new AuctionExternalNotifier(this, () -> pluginConfig.auctionSettings());
             auctionService = new AuctionService(
                     repository,
@@ -196,8 +198,7 @@ public final class SoulAuction extends JavaPlugin {
                     ),
                     this
             );
-            AuctionSellPolicy regionSellPolicy = new AuctionSellPolicy(runtimeStorage);
-            regionMarketModule = RegionMarketModule.create(
+            regionMarketLifecycle = new RegionMarketLifecycle(new RegionMarketDependencies(
                     this,
                     this::pluginConfig,
                     messageService,
@@ -210,14 +211,13 @@ public final class SoulAuction extends JavaPlugin {
                     priceLimitResolver,
                     redisSellGuard,
                     runtimeStorage,
-                    regionSellPolicy,
+                    new AuctionSellPolicy(runtimeStorage),
                     externalNotifier,
                     taxPolicyResolver,
                     auctionService.listingLocks(),
                     auctionService.listingSaleClaimer()
-            );
-            getServer().getPluginManager().registerEvents(regionMarketModule.guiListener(), this);
-            getServer().getPluginManager().registerEvents(regionMarketModule.chatListener(), this);
+            ));
+            regionMarketLifecycle.sync(pluginConfig);
             auctionCommand = new AuctionCommand(
                     this,
                     this::pluginConfig,
@@ -225,7 +225,7 @@ public final class SoulAuction extends JavaPlugin {
                     auctionService,
                     this::reloadAll,
                     adminAuctionCreateService,
-                    regionMarketModule.commandHandler()
+                    () -> regionMarketLifecycle == null ? null : regionMarketLifecycle.commandHandler()
             );
             PluginSchedulers.runGlobalTimer(
                     this,
@@ -364,12 +364,16 @@ public final class SoulAuction extends JavaPlugin {
     }
 
     private void logRegionMarketIntegration() {
-        if (regionMarketModule != null && regionMarketModule.marketService().isOperational()) {
-            startupLog.stepOk("WorldGuard — region market enabled");
+        if (regionMarketLifecycle != null && regionMarketLifecycle.isActive()) {
+            startupLog.stepOk("WorldGuard — region market active");
             return;
         }
-        if (getServer().getPluginManager().getPlugin("WorldGuard") != null) {
-            startupLog.stepSkipped("WorldGuard — present, region market disabled in config");
+        if (RegionMarketActivation.configured(pluginConfig) && !RegionMarketActivation.worldGuardPresent()) {
+            startupLog.stepSkipped("WorldGuard — region-market enabled in config, plugin missing");
+            return;
+        }
+        if (RegionMarketActivation.worldGuardPresent()) {
+            startupLog.stepSkipped("WorldGuard — present, region-market disabled in config");
             return;
         }
         startupLog.stepSkipped("WorldGuard — not found");
@@ -387,6 +391,9 @@ public final class SoulAuction extends JavaPlugin {
         }
         if (redisSellGuard != null) {
             redisSellGuard.close();
+        }
+        if (regionMarketLifecycle != null) {
+            regionMarketLifecycle.shutdown();
         }
         if (pluginConfig != null) {
             StorageRuntimeMeta.write(getDataFolder().toPath(), pluginConfig.auctionSettings());
@@ -409,6 +416,9 @@ public final class SoulAuction extends JavaPlugin {
         }
         if (auctionService != null) {
             scheduleSellerSkinWarmup();
+        }
+        if (regionMarketLifecycle != null) {
+            regionMarketLifecycle.sync(pluginConfig);
         }
     }
 
