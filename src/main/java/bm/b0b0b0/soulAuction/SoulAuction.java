@@ -147,7 +147,6 @@ public final class SoulAuction extends JavaPlugin {
                     () -> fakeActivityConfig = fakeActivityConfigLoader.load(pluginConfig.auctionSettings())
             );
             auctionService.attachFakeActivityService(fakeActivityService);
-            logIntegrations();
             AuctionDefinitionWriter definitionWriter = new AuctionDefinitionWriter(this);
             adminAuctionCreateService = new AdminAuctionCreateService(
                     this::pluginConfig,
@@ -218,6 +217,8 @@ public final class SoulAuction extends JavaPlugin {
                     auctionService.listingSaleClaimer()
             ));
             regionMarketLifecycle.sync(pluginConfig);
+            logIntegrations();
+            logRegionMarketIntegration();
             auctionCommand = new AuctionCommand(
                     this,
                     this::pluginConfig,
@@ -234,12 +235,13 @@ public final class SoulAuction extends JavaPlugin {
                     () -> auctionService.expireListings()
             );
             startupLog.info("Loading listings...");
+            startupLog.release();
             auctionService.load().whenComplete((unused, exception) -> PluginSchedulers.runGlobal(this, () -> finishStartup(exception)));
         } catch (Throwable throwable) {
             String reason = startupFailureReason(throwable);
             getLogger().severe("SoulAuction enable failed: " + reason);
             startupLog.stepFail(reason);
-            startupLog.bannerFailure("enable failed");
+            startupLog.releaseFailure("enable failed");
             getServer().getPluginManager().disablePlugin(this);
         }
     }
@@ -263,12 +265,14 @@ public final class SoulAuction extends JavaPlugin {
         if (exception != null) {
             String reason = startupFailureReason(exception);
             getLogger().severe("Cannot load auctions: " + reason);
+            startupLog.beginFinishSection();
             startupLog.stepFail("Storage — load failed: " + reason);
-            startupLog.bannerFailure("load failed");
+            startupLog.finishFailure("load failed");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
         int listings = auctionService.totalListingsCount();
+        startupLog.beginFinishSection();
         startupLog.stepOk("Listings — active " + listings);
         StorageMode activeStorage = StorageMode.fromString(pluginConfig.auctionSettings().storage.mode);
         if (listings == 0) {
@@ -289,7 +293,6 @@ public final class SoulAuction extends JavaPlugin {
         }
         startFakeActivityIfEnabled();
         scheduleSellerSkinWarmup();
-        logRegionMarketIntegration();
         startupLog.bannerSuccess();
         if (pluginConfig.auctionSettings().checkForUpdates) {
             SoulAuctionUpdateChecker.schedule(this, getPluginMeta().getVersion());
@@ -316,7 +319,6 @@ public final class SoulAuction extends JavaPlugin {
 
     private void logRedis(boolean useRedisSellGuard) {
         if (!useRedisSellGuard) {
-            startupLog.stepSkipped("Redis — not used (storage ≠ MYSQL)");
             return;
         }
         var redis = pluginConfig.auctionSettings().storage.redis;
@@ -364,19 +366,14 @@ public final class SoulAuction extends JavaPlugin {
     }
 
     private void logRegionMarketIntegration() {
+        if (!RegionMarketActivation.configured(pluginConfig)) {
+            return;
+        }
         if (regionMarketLifecycle != null && regionMarketLifecycle.isActive()) {
             startupLog.stepOk("WorldGuard — region market active");
             return;
         }
-        if (RegionMarketActivation.configured(pluginConfig) && !RegionMarketActivation.worldGuardPresent()) {
-            startupLog.stepSkipped("WorldGuard — region-market enabled in config, plugin missing");
-            return;
-        }
-        if (RegionMarketActivation.worldGuardPresent()) {
-            startupLog.stepSkipped("WorldGuard — present, region-market disabled in config");
-            return;
-        }
-        startupLog.stepSkipped("WorldGuard — not found");
+        startupLog.stepFail("WorldGuard — region-market enabled in config, plugin missing");
     }
 
     @Override

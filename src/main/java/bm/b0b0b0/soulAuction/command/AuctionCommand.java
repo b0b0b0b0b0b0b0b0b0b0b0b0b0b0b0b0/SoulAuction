@@ -12,6 +12,7 @@ import bm.b0b0b0.soulAuction.model.result.CancelResult;
 import bm.b0b0b0.soulAuction.model.result.ClaimResult;
 import bm.b0b0b0.soulAuction.model.result.SellFailure;
 import bm.b0b0b0.soulAuction.model.result.SellResult;
+import bm.b0b0b0.soulAuction.region.RegionMarketActivation;
 import bm.b0b0b0.soulAuction.service.AuctionService;
 import bm.b0b0b0.soulAuction.service.admin.AdminAuctionCreateService;
 import bm.b0b0b0.soulAuction.service.browse.AuctionBrowseService.BrowseFilterState;
@@ -121,7 +122,12 @@ public final class AuctionCommand implements CommandExecutor, TabCompleter {
         if (args.length > 0 && args[0].equalsIgnoreCase("regions")) {
             RegionMarketCommandHandler handler = regionMarketCommandHandler == null ? null : regionMarketCommandHandler.get();
             if (handler == null) {
-                messageService.send(player, "region-error-disabled");
+                PluginConfig config = configSupplier.get();
+                if (RegionMarketActivation.configured(config) && !RegionMarketActivation.worldGuardPresent()) {
+                    messageService.send(player, "region-error-worldguard-unavailable");
+                } else {
+                    messageService.send(player, "region-error-disabled");
+                }
                 return true;
             }
             return handler.handle(player, java.util.Arrays.copyOfRange(args, 1, args.length));

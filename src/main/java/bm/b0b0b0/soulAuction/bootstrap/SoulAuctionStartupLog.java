@@ -1,5 +1,7 @@
 package bm.b0b0b0.soulAuction.bootstrap;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.bukkit.Bukkit;
 import org.bukkit.command.ConsoleCommandSender;
 
@@ -9,82 +11,102 @@ public final class SoulAuctionStartupLog {
 
     private static final String GREEN = "\u001B[32m";
     private static final String RED = "\u001B[31m";
-    private static final String YELLOW = "\u001B[33m";
     private static final String GRAY = "\u001B[90m";
     private static final String CYAN = "\u001B[36m";
     private static final String RESET = "\u001B[0m";
-    private static final boolean FOLIA = detectFolia();
+    private static final ServerPlatformProbe.Platform PLATFORM = ServerPlatformProbe.detect();
+
+    private static final String DIVIDER = PREFIX + "==============================";
 
     private final ConsoleCommandSender console;
+    private final List<String> pending = new ArrayList<>();
+    private boolean released;
 
     public SoulAuctionStartupLog() {
         this.console = Bukkit.getConsoleSender();
     }
 
     public void bannerStart(String version) {
-        console.sendMessage(" ");
-        console.sendMessage(PREFIX + "==============================");
-        console.sendMessage(PREFIX + "Version:" + GRAY + " " + version + " " + RESET + "| Author:" + GRAY + " b0b0b0" + RESET);
-        if (FOLIA) {
-            console.sendMessage(PREFIX + CYAN + "Folia" + RESET + GRAY + " · region threads · entity/global/async" + RESET);
-        } else {
-            console.sendMessage(PREFIX + GRAY + "Paper" + RESET);
+        pending.add(" ");
+        pending.add(DIVIDER);
+        pending.add(PREFIX + "Version:" + GRAY + " " + version + " " + RESET + "| Author:" + GRAY + " b0b0b0" + RESET);
+        pending.add(PREFIX + CYAN + PLATFORM.bannerDetail() + RESET);
+        pending.add(PREFIX + " ");
+        pending.add(PREFIX + " Startup:");
+    }
+
+    public void release() {
+        if (released) {
+            return;
         }
-        console.sendMessage(PREFIX + " ");
-        console.sendMessage(PREFIX + " Startup:");
+        pending.add(DIVIDER);
+        pending.add(" ");
+        released = true;
+        for (String line : pending) {
+            console.sendMessage(line);
+        }
+        pending.clear();
+    }
+
+    public void beginFinishSection() {
+        console.sendMessage(" ");
+        console.sendMessage(DIVIDER);
+        console.sendMessage(PREFIX + " Finish:");
+    }
+
+    public void finishFailure(String reason) {
+        console.sendMessage(PREFIX + RED + reason + RESET);
+        console.sendMessage(DIVIDER);
+        console.sendMessage(" ");
+    }
+
+    public void releaseFailure(String reason) {
+        release();
+        console.sendMessage(PREFIX + RED + reason + RESET);
+        console.sendMessage(DIVIDER);
+        console.sendMessage(" ");
     }
 
     public void bannerSuccess() {
-        if (FOLIA) {
-            console.sendMessage(PREFIX + GREEN + "SoulAuction enabled successfully" + RESET
+        if (PLATFORM.folia()) {
+            emit(PREFIX + GREEN + "SoulAuction enabled successfully" + RESET
                     + GRAY + " · " + RESET + CYAN + "Folia OK" + RESET);
         } else {
-            console.sendMessage(PREFIX + GREEN + "SoulAuction enabled successfully" + RESET);
+            emit(PREFIX + GREEN + "SoulAuction enabled successfully" + RESET);
         }
-        console.sendMessage(PREFIX + "==============================");
-        console.sendMessage(" ");
-    }
-
-    public void bannerFailure(String reason) {
-        console.sendMessage(PREFIX + RED + reason + RESET);
-        console.sendMessage(PREFIX + "==============================");
-        console.sendMessage(" ");
+        emit(DIVIDER);
+        emit(" ");
     }
 
     public void info(String message) {
-        console.sendMessage(PREFIX + message);
+        emit(PREFIX + message);
     }
 
     public void stepOk(String message) {
-        console.sendMessage(PREFIX + GREEN + "\u2713 " + RESET + message);
+        emit(PREFIX + GREEN + "\u2713 " + RESET + message);
     }
 
     public void stepFail(String message) {
-        console.sendMessage(PREFIX + RED + "\u274c " + RESET + message);
+        emit(PREFIX + RED + "\u274c " + RESET + message);
     }
 
     public void stepSkipped(String message) {
-        console.sendMessage(PREFIX + GRAY + "\u2014 " + message + RESET);
+        emit(PREFIX + GRAY + "\u2014 " + message + RESET);
     }
 
     public void stepSchedulers() {
-        if (FOLIA) {
-            stepOk("Schedulers — Folia region threads");
-            return;
-        }
-        stepOk("Schedulers — Paper");
+        stepOk("Schedulers — " + PLATFORM.schedulersLabel());
     }
 
     public void unload() {
         console.sendMessage(PREFIX + GRAY + "SoulAuction disabled" + RESET);
     }
 
-    private static boolean detectFolia() {
-        try {
-            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
-            return true;
-        } catch (ClassNotFoundException ignored) {
-            return false;
+    private void emit(String message) {
+        if (!released) {
+            pending.add(message);
+            return;
         }
+        console.sendMessage(message);
     }
 }

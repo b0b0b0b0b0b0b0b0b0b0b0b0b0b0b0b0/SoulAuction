@@ -28,7 +28,8 @@ public final class SkinRestorerBridge {
     }
 
     public static boolean isPluginInstalled() {
-        return Bukkit.getPluginManager().getPlugin("SkinsRestorer") != null;
+        org.bukkit.plugin.Plugin plugin = Bukkit.getPluginManager().getPlugin("SkinsRestorer");
+        return plugin != null && plugin.isEnabled();
     }
 
     public boolean enabled() {

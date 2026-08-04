@@ -4,7 +4,7 @@ main: bm.b0b0b0.soulAuction.SoulAuction
 api-version: '1.21'
 folia-supported: true
 authors: [ b0b0b0 ]
-softdepend: [ Vault, PlayerPoints, PlaceholderAPI, CoinsEngine, SkinsRestorer, WorldGuard ]
+softdepend: [ Vault, PlayerPoints, PlaceholderAPI, CoinsEngine, WorldGuard ]
 libraries:
   - net.elytrium:serializer:1.1.1
   - com.google.code.gson:gson:2.14.0
